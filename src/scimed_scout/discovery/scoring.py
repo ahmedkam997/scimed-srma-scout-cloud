@@ -7,13 +7,16 @@ from typing import Any
 from scimed_scout.ai import AIProvider, AIRequest
 from scimed_scout.storage import CandidateRecord
 
+from .evidence_metrics import composite_score, evidence_metrics
+
 
 SYSTEM_PROMPT = """Score a candidate systematic-review/meta-analysis topic for discovery prioritization.
 This is topic discovery only. Do not claim that studies are eligible, synthesis-ready, or extracted.
 Use the supplied deterministic search counts and competitor summaries as context, but never alter them.
 Return strict JSON only. Be conservative. A fatal methodological flaw means the proposed review question itself
-is not defensible as framed. Publication-Oriented Score must reflect novelty, importance, feasibility, and likely
-editorial interest rather than study-count inflation."""
+is not defensible as framed. AI ratings of importance, methodological feasibility and editorial quality are preliminary
+and require human review. Novelty, information gain proxy and MCDA composite are calculated
+from retrieved records by deterministic code. Do not invent study counts or search dates."""
 
 
 ALLOWED = {
@@ -45,6 +48,10 @@ class DiscoveryScoringService:
         published_review_hits: int,
         registration_hits: int,
         competitor_summary: str,
+        review_records: list[dict] | None = None,
+        registration_records: list[dict] | None = None,
+        primary_records: list[dict] | None = None,
+        semantically_capped: bool = False,
     ) -> dict[str, Any]:
         response = self.provider.complete(
             AIRequest(
@@ -80,6 +87,37 @@ class DiscoveryScoringService:
             "editorial_grade": str(raw.get("editorial_grade") or "").strip().upper(),
             "rationale": str(raw.get("rationale") or "").strip(),
             "scored_by": f"{response.provider}:{response.model}",
+        }
+        metrics = evidence_metrics(
+            review_records or [],
+            registration_records or [],
+            primary_records or [],
+            semantically_capped=semantically_capped,
+        )
+        # Ignore self-reported AI novelty/information-gain/composite numbers.
+        result["clinical_question_novelty"] = metrics["clinical_question_novelty"]
+        result["overall_novelty"] = metrics["overall_novelty"]
+        result["new_information_gain"] = metrics["new_information_gain"]
+        composite = composite_score(
+            novelty=result["overall_novelty"],
+            information_gain=result["new_information_gain"],
+            clinical_importance=result["clinical_importance"],
+            feasibility=result["feasibility"],
+            publication_potential=result["publication_potential"],
+        )
+        result["publication_oriented_score"] = composite["publication_oriented_score"]
+        result["scoring_trace"] = {
+            **metrics,
+            **composite,
+            "model_only_judgments": [
+                "clinical_importance",
+                "publication_potential",
+                "feasibility",
+                "editorial_grade",
+                "meaningful_synthesis_plausible",
+                "fatal_methodological_flaw",
+            ],
+            "human_confirmation_needed": True,
         }
         return result
 
