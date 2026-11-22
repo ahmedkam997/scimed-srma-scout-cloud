@@ -154,15 +154,11 @@ Return:
 {{
   "design_framework_defined": true,
   "meaningful_synthesis_plausible": true,
-  "clinical_question_novelty": 0,
-  "overall_novelty": 0,
   "question_framework_coherent": true,
   "feasibility": "HIGH|STRONG MODERATE|MODERATE|LOW",
   "fatal_methodological_flaw": false,
   "clinical_importance": 0,
   "publication_potential": 0,
-  "new_information_gain": 0,
-  "publication_oriented_score": 0,
   "editorial_grade": "A|B|CORRECTED C|C|D",
   "rationale": ""
 }}"""
