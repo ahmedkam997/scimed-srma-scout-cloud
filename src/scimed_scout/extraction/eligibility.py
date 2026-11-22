@@ -11,7 +11,7 @@ from .models import EligibilityStatus, ProvenanceField, StudyEligibilityExtracti
 
 SYSTEM_PROMPT = """Extract study-design and eligibility information for a systematic review.
 Use only the supplied title/abstract/metadata. Never invent missing fields.
-Every extracted field must include a short supporting evidence snippet copied or closely paraphrased from the supplied text.
+Every non-empty extracted field must include a short exact supporting quote copied from the supplied text.
 If eligibility cannot be established from supplied evidence, return UNCERTAIN.
 Do not mark any field as manually verified. Return strict JSON only."""
 
@@ -55,7 +55,7 @@ class StudyEligibilityExtractor:
             unresolved_fields=[str(x) for x in (raw.get("unresolved_fields") or []) if str(x).strip()],
             raw=raw,
         )
-        return extracted
+        return _validate_provenance(extracted, evidence_text)
 
 
 def _prompt(candidate: CandidateRecord, record: dict, evidence_text: str) -> str:
@@ -163,3 +163,48 @@ def _unresolved(record: dict, reason: str) -> StudyEligibilityExtraction:
         unresolved_fields=["all"],
         raw={"reason": reason},
     )
+
+
+
+def _validate_provenance(extraction: StudyEligibilityExtraction, evidence_text: str) -> StudyEligibilityExtraction:
+    normalized_source = _norm(evidence_text)
+    unresolved = list(extraction.unresolved_fields)
+    field_names = [
+        "design_label",
+        "population",
+        "intervention_exposure_index_test",
+        "comparator_reference",
+        "outcomes",
+        "sample_size",
+        "registry_ids",
+        "first_author",
+        "year",
+    ]
+    for name in field_names:
+        field = getattr(extraction, name)
+        if field.value in (None, "", []):
+            continue
+        quote = _norm(field.evidence)
+        if not quote or quote not in normalized_source:
+            setattr(
+                extraction,
+                name,
+                ProvenanceField(
+                    value=field.value,
+                    evidence=field.evidence,
+                    source_section=field.source_section,
+                    confidence=0.0,
+                ),
+            )
+            if name not in unresolved:
+                unresolved.append(name)
+    extraction.unresolved_fields = unresolved
+    if unresolved:
+        extraction.overall_confidence = min(extraction.overall_confidence, 0.79)
+        if extraction.eligibility == EligibilityStatus.ELIGIBLE:
+            extraction.eligibility = EligibilityStatus.UNCERTAIN
+    return extraction
+
+
+def _norm(text: str) -> str:
+    return " ".join(str(text or "").casefold().split())
