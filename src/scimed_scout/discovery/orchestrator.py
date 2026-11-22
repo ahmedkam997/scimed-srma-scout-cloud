@@ -1,0 +1,251 @@
+from __future__ import annotations
+
+from dataclasses import asdict
+from typing import Any
+
+from scimed_scout.domain import CandidateStatus, SourceStatus
+from scimed_scout.ranking import CandidateRankingService
+from scimed_scout.sources.base import SearchRecord, SourceClient
+from scimed_scout.storage import DecisionRecord, SearchLogRecord, SQLiteLedger
+from scimed_scout.verification.coverage import DEFINITIVE, evaluate_coverage
+from scimed_scout.verification.policy import policy_for_question_type
+from scimed_scout.verification.queries import build_search_plan
+
+from .constants import MIN_DISCOVERY_STUDIES
+from .evidence import discovery_evidence_snapshot
+from .gates import final_discovery_decision
+from .models import DiscoveryCandidateResult, DiscoveryRunResult
+from .novelty import DiscoveryNoveltyService
+from .scoring import DiscoveryScoringService
+
+
+class ReviewDiscoveryOrchestrator:
+    """Discovery-only workflow. No full-text review, extraction, or meta-analysis."""
+
+    def __init__(
+        self,
+        ledger: SQLiteLedger,
+        clients: list[SourceClient],
+        *,
+        novelty_service: DiscoveryNoveltyService | None = None,
+        scoring_service: DiscoveryScoringService | None = None,
+    ):
+        self.ledger = ledger
+        self.clients = {client.name: client for client in clients}
+        self.novelty_service = novelty_service
+        self.scoring_service = scoring_service
+
+    def run(
+        self,
+        project_id: str,
+        *,
+        min_verify: int = 3,
+        max_verify: int = 10,
+        final_options: int = 3,
+        limit_per_query: int = 20,
+    ) -> DiscoveryRunResult:
+        if min_verify < 1 or max_verify < min_verify:
+            raise ValueError("Require 1 <= min_verify <= max_verify")
+        if final_options < 2 or final_options > max_verify:
+            raise ValueError("Require 2 <= final_options <= max_verify")
+        if self.ledger.get_project(project_id) is None:
+            raise ValueError(f"Project not found: {project_id}")
+
+        ranked = CandidateRankingService(self.ledger).rank_project(project_id, top_n=max_verify)
+        self.ledger.update_checkpoint(project_id, stage="DISCOVERY_RANKING", progress=20, message=f"Ranked {len(ranked)} review-topic candidates")
+
+        results: list[DiscoveryCandidateResult] = []
+        qualified: list[str] = []
+        for index, ranked_item in enumerate(ranked[:max_verify], 1):
+            candidate = self.ledger.get_candidate(ranked_item.candidate_id)
+            if candidate is None:
+                continue
+            self.ledger.set_candidate_status(candidate.candidate_id, CandidateStatus.DEEP_VERIFYING)
+            self.ledger.update_checkpoint(
+                project_id,
+                stage="REVIEW_DISCOVERY",
+                progress=min(90, 20 + int(65 * index / max(1, min(max_verify, len(ranked))))),
+                message=f"Checking review topic {index}: {candidate.title}",
+            )
+            result = self.verify_candidate(candidate.candidate_id, ranking_score=ranked_item.score, limit_per_query=limit_per_query)
+            results.append(result)
+            if result.candidate_status == CandidateStatus.QUALIFIED:
+                qualified.append(result.candidate_id)
+            if index >= min_verify and len(qualified) >= final_options:
+                break
+
+        final_ids = qualified[:final_options]
+        self.ledger.update_checkpoint(
+            project_id,
+            stage="DISCOVERY_EXPORT" if final_ids else "REVIEW_DISCOVERY",
+            progress=95 if final_ids else 75,
+            message=f"Prepared {len(final_ids)} first-choice review topics for ChatGPT" if final_ids else "No fully qualified review topic is ready for the final list",
+        )
+        return DiscoveryRunResult(project_id, ranked, results, final_ids, qualified, final_options)
+
+    def verify_candidate(self, candidate_id: str, *, ranking_score: float = 0.0, limit_per_query: int = 20) -> DiscoveryCandidateResult:
+        candidate = self.ledger.get_candidate(candidate_id)
+        if candidate is None:
+            raise ValueError(f"Candidate not found: {candidate_id}")
+
+        policy = policy_for_question_type(candidate.question_type)
+        plan = build_search_plan(candidate)
+        self._search_sources(candidate, policy.literature_sources, plan.review_queries, evidence_type="PUBLISHED_REVIEW", purpose="published-review novelty", limit_per_query=limit_per_query)
+        self._search_sources(candidate, policy.literature_sources, plan.primary_queries, evidence_type="PRIMARY_STUDY", purpose="primary-study feasibility discovery", limit_per_query=limit_per_query)
+        self._search_sources(candidate, policy.registry_sources, plan.registry_queries, evidence_type="REGISTRATION", purpose="review/protocol registration novelty", limit_per_query=limit_per_query)
+        if policy.require_pipeline_source:
+            self._search_sources(candidate, policy.pipeline_sources, plan.pipeline_queries, evidence_type="ONGOING_STUDY", purpose="future evidence pipeline", limit_per_query=limit_per_query)
+
+        logs = self.ledger.list_search_log(candidate_id)
+        coverage = evaluate_coverage(logs, policy)
+        evidence = discovery_evidence_snapshot(self.ledger, candidate_id)
+        pending = list(coverage.blockers)
+        reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
+        registrations = self.ledger.list_external_evidence(candidate_id, "REGISTRATION")
+        ongoing = self.ledger.list_external_evidence(candidate_id, "ONGOING_STUDY")
+
+        novelty = None
+        if self.novelty_service is not None:
+            try:
+                novelty = self.novelty_service.assess_candidate(candidate_id)
+            except Exception as exc:
+                pending.append(f"TYPE-A: novelty assessment failed: {exc}")
+            candidate = self.ledger.get_candidate(candidate_id) or candidate
+
+        meta = candidate.metadata or {}
+        if reviews and not bool(meta.get("discovery_competitor_assessment_complete")):
+            pending.append("TYPE-A: competing published reviews are not fully assessed")
+        if registrations and not bool(meta.get("discovery_registration_assessment_complete")):
+            pending.append("TYPE-A: competing review registrations are not fully assessed")
+
+        material_regs = list(meta.get("discovery_material_registration_overlap_ids") or [])
+        if material_regs and not bool(meta.get("discovery_material_registration_overlap_resolved")):
+            pending.append("TYPE-A: materially overlapping review registration(s): " + ", ".join(material_regs))
+
+        complete_literature = sum(coverage.source_statuses.get(name) in DEFINITIVE for name in policy.literature_sources)
+        gate_inputs = dict(meta.get("discovery_gate_inputs") or {})
+        if self.scoring_service is not None:
+            try:
+                gate_inputs = self.scoring_service.score(
+                    candidate,
+                    unique_primary_studies=evidence.unique_primary_study_candidates,
+                    published_review_hits=len(reviews),
+                    registration_hits=len(registrations),
+                    competitor_summary=(novelty or {}).get("summary", ""),
+                )
+                candidate.metadata = {**(candidate.metadata or {}), "discovery_gate_inputs": gate_inputs}
+                self.ledger.upsert_candidate(candidate)
+            except Exception as exc:
+                pending.append(f"TYPE-A: discovery scoring failed: {exc}")
+
+        required_scoring = {
+            "design_framework_defined", "meaningful_synthesis_plausible", "clinical_question_novelty",
+            "overall_novelty", "question_framework_coherent", "feasibility", "fatal_methodological_flaw",
+            "clinical_importance", "publication_potential", "new_information_gain",
+            "publication_oriented_score", "editorial_grade",
+        }
+        missing = sorted(required_scoring - set(gate_inputs))
+        if missing:
+            pending.append("Pending discovery scoring fields: " + ", ".join(missing))
+
+        status = CandidateStatus.DEEP_VERIFYING
+        decision = "PENDING — DISCOVERY VERIFICATION INCOMPLETE"
+        final_gate_result = None
+
+        if coverage.complete and evidence.unique_primary_study_candidates < MIN_DISCOVERY_STUDIES:
+            status = CandidateStatus.REJECTED
+            decision = f"REJECT — FEWER THAN {MIN_DISCOVERY_STUDIES} UNIQUE PRIMARY-STUDY CANDIDATES FOUND"
+        elif bool(meta.get("discovery_fatal_redundancy")):
+            status = CandidateStatus.REJECTED
+            decision = "REJECT — FATAL REVIEW REDUNDANCY"
+        elif not pending:
+            required_source_names = set(policy.literature_sources + policy.registry_sources)
+            if policy.require_pipeline_source:
+                required_source_names.update(policy.pipeline_sources)
+            payload = {
+                **gate_inputs,
+                "unique_primary_study_candidates": evidence.unique_primary_study_candidates,
+                "complete_literature_sources": complete_literature,
+                "fatal_redundancy": bool(meta.get("discovery_fatal_redundancy", False)),
+                "sources": [
+                    {"source": source, "status": source_status.value}
+                    for source, source_status in coverage.source_statuses.items()
+                    if source in required_source_names
+                ],
+                "unresolved_type_a": [],
+            }
+            final_gate_result = final_discovery_decision(payload)
+            decision = final_gate_result["decision"]
+            status = CandidateStatus.QUALIFIED if decision == "QUALIFIED — FIRST-CHOICE REVIEW TOPIC" else CandidateStatus.REJECTED
+        elif coverage.blockers:
+            status = CandidateStatus.PROVISIONAL_BACKUP
+            decision = "PROVISIONAL — SOURCE COVERAGE INCOMPLETE"
+
+        self.ledger.set_candidate_status(candidate_id, status)
+        self._append_decision(candidate, decision=decision, reason="; ".join(pending), payload={
+            "scope": "REVIEW_DISCOVERY_ONLY",
+            "ranking_score": ranking_score,
+            "coverage": {"source_statuses": {k: v.value for k, v in coverage.source_statuses.items()}, "blockers": list(coverage.blockers), "warnings": list(coverage.warnings)},
+            "discovery_evidence": asdict(evidence),
+            "published_review_hits": len(reviews),
+            "registration_hits": len(registrations),
+            "ongoing_study_hits": len(ongoing),
+            "novelty_assessment": novelty,
+            "final_gate_result": final_gate_result,
+        })
+        return DiscoveryCandidateResult(candidate_id, ranking_score, coverage, evidence, pending, decision, status, final_gate_result)
+
+    def _search_sources(self, candidate, source_names: tuple[str, ...], queries: tuple[str, ...], *, evidence_type: str, purpose: str, limit_per_query: int) -> None:
+        for source_name in source_names:
+            client = self.clients.get(source_name)
+            if client is None:
+                self.ledger.append_search_log(SearchLogRecord(candidate.project_id, candidate.candidate_id, source_name, "", SourceStatus.NOT_SEARCHED, message="No configured source client"))
+                continue
+            for query in queries:
+                self.ledger.add_query(candidate.project_id, candidate.candidate_id, source_name, query, purpose)
+                result = client.search(query, limit=limit_per_query)
+                self.ledger.append_search_log(SearchLogRecord(candidate.project_id, candidate.candidate_id, source_name, query, result.status, result.total_count, message=result.message))
+                for record in result.records:
+                    if evidence_type == "PRIMARY_STUDY" and _obvious_review(record):
+                        continue
+                    self._store_record(candidate.candidate_id, evidence_type, record, query, purpose)
+
+    def _store_record(self, candidate_id: str, evidence_type: str, record: SearchRecord, query: str, purpose: str) -> None:
+        existing = next((item for item in self.ledger.list_external_evidence(candidate_id, evidence_type) if str(item.get("source_record_id") or "") == str(record.record_id)), None)
+        previous = dict((existing or {}).get("payload") or {})
+        previous_metadata = previous.get("metadata") if isinstance(previous.get("metadata"), dict) else {}
+        new_metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        payload = {
+            **previous,
+            "url": record.url or previous.get("url", ""),
+            "year": record.year if record.year is not None else previous.get("year"),
+            "doi": record.doi or previous.get("doi", ""),
+            "query": query,
+            "purpose": purpose,
+            "metadata": {**previous_metadata, **new_metadata},
+        }
+        self.ledger.upsert_external_evidence(candidate_id, evidence_type, record.record_id, source=record.source or str((existing or {}).get("source") or ""), title=record.title or str((existing or {}).get("title") or ""), payload=payload)
+
+    def _append_decision(self, candidate, *, decision: str, reason: str, payload: dict[str, Any]) -> None:
+        sequence = len(self.ledger.list_decisions(candidate.candidate_id)) + 1
+        self.ledger.append_decision(DecisionRecord(
+            decision_id=f"{candidate.candidate_id}-DISCOVERY-{sequence:04d}",
+            project_id=candidate.project_id,
+            candidate_id=candidate.candidate_id,
+            decision=decision,
+            stage="REVIEW_DISCOVERY",
+            reason=reason,
+            payload=payload,
+        ))
+
+
+def _obvious_review(record: SearchRecord) -> bool:
+    title = " ".join(str(record.title or "").casefold().split())
+    if any(marker in title for marker in ("systematic review", "meta-analysis", "meta analysis", "scoping review", "umbrella review", "narrative review", "review protocol")):
+        return True
+    metadata = record.metadata if isinstance(record.metadata, dict) else {}
+    publication_types = metadata.get("publicationTypes") or metadata.get("pubtype") or []
+    if isinstance(publication_types, str):
+        publication_types = [publication_types]
+    joined = " ".join(str(x).casefold() for x in publication_types)
+    return "review" in joined or "meta-analysis" in joined or "meta analysis" in joined

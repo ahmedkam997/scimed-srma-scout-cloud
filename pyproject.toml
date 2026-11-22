@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scimed-srma-scout-cloud"
-version = "0.1.0"
-description = "Mobile-first, AI-assisted SRMA topic discovery and novelty-audit engine."
+version = "0.2.0"
+description = "Discovery-only engine for high-value systematic review and meta-analysis topics."
 requires-python = ">=3.11"
 dependencies = []
 

@@ -1,22 +1,29 @@
-# SciMed SRMA Scout Cloud Architecture
+# SciMed Review Scout Cloud Architecture
 
 ## Purpose
 
-SciMed SRMA Scout Cloud is a mobile-first, publication-oriented discovery and verification system for systematic review and meta-analysis topics across study designs.
+SciMed Review Scout Cloud is a discovery-only system for identifying strong systematic review and meta-analysis topics.
 
-## Core design
+## Active workflow
 
-The system separates deterministic research safeguards from AI-assisted interpretation.
+1. Candidate topic generation.
+2. Preliminary ranking.
+3. Published-review search.
+4. PROSPERO and OSF registration search.
+5. Primary-study candidate discovery.
+6. Ongoing/future evidence search when relevant.
+7. Deterministic deduplication of primary-study candidates.
+8. Semantic overlap and redundancy assessment.
+9. Discovery-only qualification gates.
+10. Export of several FIRST-CHOICE review topics for independent ChatGPT comparison.
 
-- Deterministic engine: source states, study-family counts, synthesis usability, locked gates, Type-A blocking logic, audit logs.
-- AI layer: candidate generation, PICO refinement, semantic overlap interpretation, clinical rationale, editorial stress testing.
-- External evidence layer: PubMed, Europe PMC, OpenAlex, Crossref, ClinicalTrials.gov, PROSPERO, OSF and additional registries when relevant.
-- Persistence layer: project checkpoints, source logs, candidate ledger and final review packages.
-- Final review layer: independent ChatGPT Plus review of the exported evidence package.
+## Out of scope
+
+The active product does not perform screening, full-text eligibility assessment, PDF analysis, data extraction, study-family resolution, risk-of-bias assessment, synthesis-usability assessment, meta-analysis, TSA, or manuscript writing.
 
 ## Fail-closed source rule
 
-A source failure must never be converted into a negative search result. Supported states are:
+Supported source states are:
 
 - SEARCHED_NEGATIVE
 - SEARCHED_POSITIVE
@@ -25,6 +32,12 @@ A source failure must never be converted into a negative search result. Supporte
 - NOT_SEARCHED
 - MANUAL_VERIFIED
 
-## Locked final-review option requirements
+PARTIAL and ACCESS_FAILED never become SEARCHED_NEGATIVE.
 
-Every candidate admitted to the final-review list must be FIRST-CHOICE eligible: all locked gates passed, at least four verified independent eligible studies, at least four verified synthesis-usable studies, conclusive required source coverage, and no unresolved Type-A issue. Pending, provisional, incomplete, or gate-failing candidates are excluded even when this leaves fewer than the requested number of final options. The engine does not select the overall winner. ChatGPT compares only the fully qualified options.
+## Discovery threshold
+
+At least four unique primary-study candidates must be found in the discovery search. This is a feasibility signal only. It does not assert final eligibility or synthesis readiness.
+
+## Final handoff
+
+Only topics passing every discovery gate and carrying no unresolved Type-A issue enter the final JSON package. ChatGPT compares those topics and selects the strongest one for a real systematic review project.

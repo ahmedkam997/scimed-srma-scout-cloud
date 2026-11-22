@@ -1,2 +1,2 @@
-"""SciMed SRMA Scout Cloud core package."""
-__version__ = "0.1.0"
+"""SciMed Review Scout Cloud discovery-only package."""
+__version__ = "0.2.0"

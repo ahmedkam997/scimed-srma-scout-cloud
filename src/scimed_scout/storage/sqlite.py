@@ -9,11 +9,11 @@ from scimed_scout.domain import CandidateStatus, SourceStatus
 from .models import CandidateRecord, DecisionRecord, ProjectRecord, SearchLogRecord, utc_now
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class SQLiteLedger:
-    """Persistent evidence ledger using only Python's standard library."""
+    """Persistent discovery ledger using only Python's standard library."""
 
     def __init__(self, path: str | Path):
         self.path = str(path)
@@ -72,32 +72,6 @@ class SQLiteLedger:
                 metadata_json TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS study_families (
-                family_id TEXT NOT NULL,
-                candidate_id TEXT NOT NULL REFERENCES candidates(candidate_id) ON DELETE CASCADE,
-                payload_json TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                PRIMARY KEY (candidate_id, family_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS studies (
-                study_id TEXT NOT NULL,
-                candidate_id TEXT NOT NULL REFERENCES candidates(candidate_id) ON DELETE CASCADE,
-                family_id TEXT NOT NULL DEFAULT '',
-                payload_json TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                PRIMARY KEY (candidate_id, study_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS outcomes (
-                outcome_id TEXT NOT NULL,
-                candidate_id TEXT NOT NULL REFERENCES candidates(candidate_id) ON DELETE CASCADE,
-                family_id TEXT NOT NULL DEFAULT '',
-                payload_json TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                PRIMARY KEY (candidate_id, outcome_id)
             );
 
             CREATE TABLE IF NOT EXISTS external_evidence (
@@ -259,48 +233,6 @@ class SQLiteLedger:
         )
         self.connection.commit()
 
-    def upsert_payload(self, table: str, candidate_id: str, item_id: str, payload: dict[str, Any], *, family_id: str = "") -> None:
-        allowed = {"study_families", "studies", "outcomes"}
-        if table not in allowed:
-            raise ValueError(f"Unsupported ledger table: {table}")
-        id_column = {"study_families": "family_id", "studies": "study_id", "outcomes": "outcome_id"}[table]
-        if table == "study_families":
-            sql = f"""
-                INSERT INTO {table}({id_column},candidate_id,payload_json,updated_at)
-                VALUES(?,?,?,?)
-                ON CONFLICT(candidate_id,{id_column}) DO UPDATE SET
-                    payload_json=excluded.payload_json,updated_at=excluded.updated_at
-            """
-            values = (item_id, candidate_id, _dump(payload), utc_now())
-        else:
-            sql = f"""
-                INSERT INTO {table}({id_column},candidate_id,family_id,payload_json,updated_at)
-                VALUES(?,?,?,?,?)
-                ON CONFLICT(candidate_id,{id_column}) DO UPDATE SET
-                    family_id=excluded.family_id,payload_json=excluded.payload_json,updated_at=excluded.updated_at
-            """
-            values = (item_id, candidate_id, family_id, _dump(payload), utc_now())
-        self.connection.execute(sql, values)
-        self.connection.commit()
-
-    def list_payloads(self, table: str, candidate_id: str) -> list[dict[str, Any]]:
-        if table not in {"study_families", "studies", "outcomes"}:
-            raise ValueError(f"Unsupported ledger table: {table}")
-        rows = self.connection.execute(
-            f"SELECT payload_json FROM {table} WHERE candidate_id=? ORDER BY rowid",
-            (candidate_id,),
-        ).fetchall()
-        return [_load(row["payload_json"], {}) for row in rows]
-
-    def clear_payloads(self, table: str, candidate_id: str) -> None:
-        if table not in {"study_families", "studies", "outcomes"}:
-            raise ValueError(f"Unsupported ledger table: {table}")
-        self.connection.execute(
-            f"DELETE FROM {table} WHERE candidate_id=?",
-            (candidate_id,),
-        )
-        self.connection.commit()
-
     def upsert_external_evidence(
         self,
         candidate_id: str,
@@ -337,18 +269,15 @@ class SQLiteLedger:
                 "SELECT * FROM external_evidence WHERE candidate_id=? AND evidence_type=? ORDER BY source_record_id",
                 (candidate_id, evidence_type.strip().upper()),
             ).fetchall()
-        return [
-            {
-                "candidate_id": row["candidate_id"],
-                "evidence_type": row["evidence_type"],
-                "source_record_id": row["source_record_id"],
-                "source": row["source"],
-                "title": row["title"],
-                "payload": _load(row["payload_json"], {}),
-                "updated_at": row["updated_at"],
-            }
-            for row in rows
-        ]
+        return [{
+            "candidate_id": row["candidate_id"],
+            "evidence_type": row["evidence_type"],
+            "source_record_id": row["source_record_id"],
+            "source": row["source"],
+            "title": row["title"],
+            "payload": _load(row["payload_json"], {}),
+            "updated_at": row["updated_at"],
+        } for row in rows]
 
     def append_search_log(self, record: SearchLogRecord) -> int:
         cursor = self.connection.execute(
