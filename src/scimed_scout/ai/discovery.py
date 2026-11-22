@@ -7,6 +7,7 @@ from typing import Iterable
 
 from scimed_scout.domain import CandidateStatus
 from scimed_scout.storage import CandidateRecord, SQLiteLedger
+from scimed_scout.storage.models import utc_now
 from .models import AIRequest, CandidateProposal
 from .providers import AIProvider
 
@@ -127,7 +128,7 @@ class CandidateDiscoveryService:
                     "ai_model": response.model,
                     "ai_role": "candidate_generation_only",
                 },
-                created_at=existing.created_at if existing is not None else CandidateRecord.__dataclass_fields__["created_at"].default_factory(),
+                created_at=existing.created_at if existing is not None else utc_now(),
             )
             self.ledger.upsert_candidate(record)
             records.append(record)
