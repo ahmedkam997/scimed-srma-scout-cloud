@@ -9,7 +9,7 @@ from typing import Any
 from scimed_scout.evidence import MIN_STUDIES
 from scimed_scout.studies import EvidenceFamilyResolver, StudyRecord
 from scimed_scout.studies.classifier import classify_design
-from scimed_scout.storage import SQLiteLedger
+from scimed_scout.storage import DecisionRecord, SQLiteLedger
 
 
 class PromotionStatus(StrEnum):
@@ -214,6 +214,16 @@ class StudyVerificationBridge:
             updated,
             family_id=str(updated.get("family_id") or ""),
         )
+        self._append_manual_decision(
+            candidate_id,
+            "MANUAL_STUDY_VERIFICATION",
+            reason or f"Study {study_id} marked {'ELIGIBLE' if eligible else 'INELIGIBLE'}",
+            {
+                "study_id": study_id,
+                "eligibility": "ELIGIBLE" if eligible else "INELIGIBLE",
+                "design_label": design_label.strip(),
+            },
+        )
         return self.run(candidate_id)
 
     def set_family_link_override(
@@ -248,6 +258,16 @@ class StudyVerificationBridge:
         metadata["family_link_overrides"] = overrides
         candidate.metadata = metadata
         self.ledger.upsert_candidate(candidate)
+        self._append_manual_decision(
+            candidate_id,
+            "MANUAL_FAMILY_LINK_RESOLUTION",
+            reason or f"{study_a} and {study_b} resolved as {value}",
+            {
+                "study_a": study_a,
+                "study_b": study_b,
+                "resolution": value,
+            },
+        )
         return self.run(candidate_id)
 
     def _apply_same_family_overrides(self, records: list[StudyRecord], overrides: dict[str, Any]) -> None:
@@ -394,6 +414,29 @@ class StudyVerificationBridge:
                 profile.effective_design_label,
             ),
             record,
+        )
+
+    def _append_manual_decision(
+        self,
+        candidate_id: str,
+        decision: str,
+        reason: str,
+        payload: dict[str, Any],
+    ) -> None:
+        candidate = self.ledger.get_candidate(candidate_id)
+        if candidate is None:
+            raise ValueError(f"Candidate not found: {candidate_id}")
+        sequence = len(self.ledger.list_decisions(candidate_id)) + 1
+        self.ledger.append_decision(
+            DecisionRecord(
+                decision_id=f"{candidate_id}-STUDY_AUDIT-{sequence:04d}",
+                project_id=candidate.project_id,
+                candidate_id=candidate_id,
+                decision=decision,
+                stage="STUDY_AUDIT",
+                reason=reason,
+                payload=payload,
+            )
         )
 
     def _record_from_fields(self, payload, fields, profile, *, notes: str) -> StudyRecord:
