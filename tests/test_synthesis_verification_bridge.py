@@ -245,3 +245,57 @@ def test_same_family_multiple_publications_counts_once(tmp_path):
         assert summary.outcomes_extracted == 2
         assert summary.verified_usable_families == 1
         assert summary.conservative_verified_usable_families == 1
+
+
+def test_full_text_definitive_non_usability_closes_audit_without_passing_threshold(tmp_path):
+    with SQLiteLedger(tmp_path / "synth.sqlite3") as ledger:
+        seed_verified_families(ledger, 4)
+
+        for sid in ["S1", "S2", "S3", "S4"]:
+            record = ledger.list_external_evidence("C1", "PRIMARY_STUDY")
+            item = next(x for x in record if x["source_record_id"] == sid)
+            payload = dict(item["payload"])
+            payload["full_text"] = "Full text reviewed. The study reports no extractable 2x2 data, no sensitivity/specificity denominators, and no other quantitative synthesis pathway."
+            ledger.upsert_external_evidence(
+                "C1",
+                "PRIMARY_STUDY",
+                sid,
+                source=item["source"],
+                title=item["title"],
+                payload=payload,
+            )
+
+        blank_response = json.dumps({
+            "outcomes": [{
+                "outcome_name": "Diagnostic accuracy",
+                "outcome_type": "DIAGNOSTIC_ACCURACY",
+                "follow_up": "",
+                "overall_confidence": 0.96,
+                "unresolved_fields": [],
+                "data": {},
+                "signals": {
+                    "graph_only": {"value": False, "evidence": ""},
+                    "kaplan_meier": {"value": False, "evidence": ""},
+                    "median_iqr_only": {"value": False, "evidence": ""},
+                    "qualitative_findings_present": {"value": False, "evidence": ""},
+                },
+            }],
+            "no_data_reason": "No synthesis-ready diagnostic data found in full text.",
+        })
+
+        bridge = SynthesisVerificationBridge(
+            ledger,
+            SynthesisDataExtractor(StaticAIProvider(blank_response)),
+        )
+        summary = bridge.run("C1")
+
+        assert summary.verified_usable_families == 0
+        assert summary.definitively_not_usable_families == 4
+        assert summary.families_needing_full_text == 0
+        assert not summary.threshold_met
+        assert summary.synthesis_audit_complete
+
+        snap = snapshot_from_ledger(ledger, "C1")
+        assert snap.threshold_ready
+        assert snap.verified_usable_studies == 0
+        assert not snap.minimum_passes
