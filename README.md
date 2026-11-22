@@ -140,9 +140,24 @@ Inspect candidates:
 
     scimed-scout list-candidates data/scout.sqlite3 RAD-DTA
 
+Rank candidates and shortlist the strongest three for verification priority:
+
+    scimed-scout rank-candidates data/scout.sqlite3 RAD-DTA --top 3
+
+Run sequential deep verification of the strongest 2 to 3 candidates:
+
+    scimed-scout deep-verify data/scout.sqlite3 RAD-DTA --min-verify 2 --max-verify 3
+
+Recheck one candidate after manual overlap or study-family work:
+
+    scimed-scout verify-candidate data/scout.sqlite3 CANDIDATE_ID
+
+Deep verification writes every source query, source status, discovered review/registration/study record, checkpoint and decision back to the SQLite ledger. Raw search hits remain DISCOVERED_UNVERIFIED and do not count toward the four-study threshold.
+
 ## Next milestones
 
-- Candidate ranking orchestration and sequential deep verification of the strongest 2-3 candidates.
+- Semantic overlap assessment for discovered published reviews and registrations.
+- Automated study-level eligibility/design extraction from abstracts/full texts with human-verifiable provenance.
 - Specialty and review-question configuration modules.
 - Automated connection between source searches, novelty firewall and the persistent ledger.
 - Background GitHub Actions research jobs with resumable checkpoints.
