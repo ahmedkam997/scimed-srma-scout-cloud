@@ -206,3 +206,49 @@ def test_final_shortlist_never_backfills_pending_or_provisional_candidates(tmp_p
         assert result.final_option_candidate_ids == ["C1", "C2"]
         assert "C3" not in result.final_option_candidate_ids
         assert ledger.get_candidate("C3").status == CandidateStatus.DEEP_VERIFYING
+
+
+def test_repeated_search_preserves_full_text_and_existing_assessments(tmp_path):
+    with SQLiteLedger(tmp_path / "preserve.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Radiology"))
+        ledger.upsert_candidate(CandidateRecord("C1", "P1", "Topic", "Radiology"))
+        ledger.upsert_external_evidence(
+            "C1",
+            "PRIMARY_STUDY",
+            "S1",
+            source="PubMed",
+            title="Old title",
+            payload={
+                "full_text": "Important full text content",
+                "supplement_text": "Supplement content",
+                "semantic_assessment": {"overall_overlap": "LOW"},
+                "verification_status": "AUTO_EXTRACTED",
+                "metadata": {"abstract": "Old abstract"},
+            },
+        )
+
+        verifier = SequentialDeepVerifier(ledger, [])
+        verifier._store_record(
+            "C1",
+            "PRIMARY_STUDY",
+            SearchRecord(
+                source="PubMed",
+                record_id="S1",
+                title="Updated title",
+                url="https://example.invalid/S1",
+                year=2026,
+                doi="10.1000/test",
+                metadata={"abstract": "Updated abstract", "journal": "Journal X"},
+            ),
+            "updated query",
+            "primary-study discovery",
+        )
+
+        stored = ledger.list_external_evidence("C1", "PRIMARY_STUDY")[0]
+        payload = stored["payload"]
+        assert payload["full_text"] == "Important full text content"
+        assert payload["supplement_text"] == "Supplement content"
+        assert payload["semantic_assessment"]["overall_overlap"] == "LOW"
+        assert payload["verification_status"] == "AUTO_EXTRACTED"
+        assert payload["metadata"]["abstract"] == "Updated abstract"
+        assert payload["metadata"]["journal"] == "Journal X"
