@@ -81,7 +81,9 @@ def dta_response(sentence):
 
 def seed_verified_families(ledger, n=4, possible_link=False):
     ledger.upsert_project(ProjectRecord("P1", "Radiology", question_type="DIAGNOSTIC_ACCURACY"))
-    ledger.upsert_candidate(candidate())
+    c = candidate()
+    c.metadata["study_audit_complete"] = True
+    ledger.upsert_candidate(c)
     sentence = "Test A versus Histopathology yielded TP 40, FN 10, FP 5, and TN 45."
 
     for i in range(1, n + 1):
