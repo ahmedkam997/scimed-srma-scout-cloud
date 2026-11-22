@@ -112,6 +112,7 @@ def build_review_package(
             "provisional_or_pending_options_allowed": False,
             "desired_options": result.desired_options,
             "available_fully_qualified_options": len(options),
+            "comparison_ready": len(options) >= 2,
             "shortfall": max(0, result.desired_options - len(options)),
             "qualified_option_candidate_ids": [option["candidate_id"] for option in options],
             "final_option_candidate_ids": [option["candidate_id"] for option in options],
