@@ -66,14 +66,35 @@ def _key(record: dict) -> str:
 
 
 def _unique_records(records: list[dict]) -> list[dict]:
-    unique: dict[str, dict] = {}
-    for item in records:
-        key = _key(item)
-        if key not in unique:
-            unique[key] = item
-        elif not (unique[key].get("payload") or {}).get("year") and (item.get("payload") or {}).get("year"):
-            unique[key] = item
-    return list(unique.values())
+    # Match discovery evidence's DOI-or-title deduplication. Records are only
+    # bibliographic candidates, not confirmed independent study populations.
+    unique = []
+    seen_doi: set[str] = set()
+    seen_title: set[str] = set()
+    for record in records:
+        payload = record.get("payload") or {}
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        external = metadata.get("externalIds") if isinstance(metadata.get("externalIds"), dict) else {}
+        article_ids = metadata.get("articleids") or metadata.get("articleIds") or []
+        article_doi = ""
+        if isinstance(article_ids, list):
+            for item in article_ids:
+                if isinstance(item, dict) and str(item.get("idtype") or item.get("idType") or "").casefold() == "doi":
+                    article_doi = str(item.get("value") or item.get("id") or "")
+                    break
+        doi = str(
+            payload.get("doi") or metadata.get("doi")
+            or external.get("DOI") or external.get("doi") or article_doi or ""
+        ).strip().casefold().removeprefix("https://doi.org/").removeprefix("http://doi.org/").rstrip(".")
+        title = " ".join(re.findall(r"[a-z0-9]+", str(record.get("title") or "").casefold()))
+        if (doi and doi in seen_doi) or (title and title in seen_title):
+            continue
+        unique.append(record)
+        if doi:
+            seen_doi.add(doi)
+        if title:
+            seen_title.add(title)
+    return unique
 
 
 def _assessed(records: list[dict]) -> list[tuple[dict, dict]]:
