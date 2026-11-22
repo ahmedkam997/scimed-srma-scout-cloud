@@ -100,6 +100,26 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 key = item.candidate_status.value
                 status_counts[key] = status_counts.get(key, 0) + 1
 
+            candidate_audits = []
+            for verified in result.verified:
+                checked = ledger.get_candidate(verified.candidate_id)
+                scorecard = dict((checked.metadata or {}).get("discovery_gate_inputs") or {}) if checked else {}
+                failed_gates = [
+                    {"name": gate.get("name"), "requirement": gate.get("requirement")}
+                    for gate in (verified.final_gate_result or {}).get("gates", [])
+                    if gate.get("passed") is False
+                ]
+                candidate_audits.append({
+                    "candidate_id": verified.candidate_id,
+                    "title": checked.title if checked else verified.candidate_id,
+                    "status": verified.candidate_status.value,
+                    "decision": verified.decision,
+                    "pending": list(verified.pending)[:12],
+                    "failed_gates": failed_gates,
+                    "unique_primary_study_candidates": verified.evidence.unique_primary_study_candidates,
+                    "scorecard": scorecard,
+                })
+
             result_json = {
                 "package": package,
                 "run_summary": {
@@ -109,6 +129,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "final_option_candidate_ids": result.final_option_candidate_ids,
                     "desired_options": result.desired_options,
                     "status_counts": status_counts,
+                    "candidate_audits": candidate_audits,
                 },
             }
             return result_json
