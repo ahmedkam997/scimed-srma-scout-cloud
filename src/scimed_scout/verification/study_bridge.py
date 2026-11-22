@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timezone
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from typing import Any
@@ -79,7 +80,15 @@ class StudyVerificationBridge:
             if record is not None and promotion.status == PromotionStatus.VERIFIED_ELIGIBLE:
                 eligible_records.append(record)
 
+        overrides = dict((candidate.metadata or {}).get("family_link_overrides") or {})
+        self._apply_same_family_overrides(eligible_records, overrides)
         audit = self.resolver.audit(eligible_records)
+        audit.possible_links = [
+            link for link in audit.possible_links
+            if _pair_override(overrides, link.study_a, link.study_b) != "DISTINCT_FAMILIES"
+        ]
+
+        self.ledger.clear_payloads("study_families", candidate_id)
         possible_by_study: dict[str, list[dict[str, Any]]] = {}
         for link in audit.possible_links:
             item = {
@@ -174,8 +183,100 @@ class StudyVerificationBridge:
             study_audit_complete=study_audit_complete,
         )
 
+    def set_manual_study_verification(
+        self,
+        candidate_id: str,
+        study_id: str,
+        *,
+        eligible: bool,
+        design_label: str = "",
+        reason: str = "",
+    ) -> StudyVerificationSummary:
+        payloads = self.ledger.list_payloads("studies", candidate_id)
+        target = next((x for x in payloads if str(x.get("study_id") or "") == study_id), None)
+        if target is None:
+            raise ValueError(f"Study not found: {study_id}")
+        updated = dict(target)
+        updated["manual_verification"] = {
+            "eligibility": "ELIGIBLE" if eligible else "INELIGIBLE",
+            "design_label": design_label.strip(),
+            "reason": reason.strip(),
+            "verified_at": datetime.now(timezone.utc).isoformat(),
+            "verified_by": "MANUAL",
+        }
+        self.ledger.upsert_payload(
+            "studies",
+            candidate_id,
+            study_id,
+            updated,
+            family_id=str(updated.get("family_id") or ""),
+        )
+        return self.run(candidate_id)
+
+    def set_family_link_override(
+        self,
+        candidate_id: str,
+        study_a: str,
+        study_b: str,
+        *,
+        resolution: str,
+        reason: str = "",
+    ) -> StudyVerificationSummary:
+        value = resolution.strip().upper()
+        if value not in {"SAME_FAMILY", "DISTINCT_FAMILIES"}:
+            raise ValueError("resolution must be SAME_FAMILY or DISTINCT_FAMILIES")
+        candidate = self.ledger.get_candidate(candidate_id)
+        if candidate is None:
+            raise ValueError(f"Candidate not found: {candidate_id}")
+        metadata = dict(candidate.metadata or {})
+        overrides = dict(metadata.get("family_link_overrides") or {})
+        overrides[_pair_key(study_a, study_b)] = {
+            "resolution": value,
+            "reason": reason.strip(),
+            "verified_at": datetime.now(timezone.utc).isoformat(),
+            "verified_by": "MANUAL",
+        }
+        metadata["family_link_overrides"] = overrides
+        candidate.metadata = metadata
+        self.ledger.upsert_candidate(candidate)
+        return self.run(candidate_id)
+
+    def _apply_same_family_overrides(self, records: list[StudyRecord], overrides: dict[str, Any]) -> None:
+        ids = {record.study_id for record in records}
+        parent = {study_id: study_id for study_id in ids}
+
+        def find(x: str) -> str:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(a: str, b: str) -> None:
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[rb] = ra
+
+        for key, raw in overrides.items():
+            if not isinstance(raw, dict) or str(raw.get("resolution") or "").upper() != "SAME_FAMILY":
+                continue
+            parts = key.split("||", 1)
+            if len(parts) == 2 and parts[0] in ids and parts[1] in ids:
+                union(parts[0], parts[1])
+
+        groups: dict[str, list[str]] = {}
+        for study_id in ids:
+            groups.setdefault(find(study_id), []).append(study_id)
+        by_id = {record.study_id: record for record in records}
+        for members in groups.values():
+            if len(members) < 2:
+                continue
+            manual_id = "MANUAL-" + hashlib.sha256("|".join(sorted(members)).encode("utf-8")).hexdigest()[:12].upper()
+            for study_id in members:
+                by_id[study_id].manually_verified_family_id = manual_id
+
     def _promote(self, candidate, payload: dict[str, Any]) -> tuple[StudyPromotion, StudyRecord | None]:
         extraction = payload.get("extraction") or {}
+        manual = payload.get("manual_verification") if isinstance(payload.get("manual_verification"), dict) else None
         eligibility = str(extraction.get("eligibility") or payload.get("eligibility_status") or "").upper()
         confidence = _float(extraction.get("overall_confidence"))
         unresolved = {str(x) for x in extraction.get("unresolved_fields") or []}
@@ -183,8 +284,40 @@ class StudyVerificationBridge:
         if not isinstance(fields, dict):
             fields = _fields_from_serialized_extraction(extraction)
 
-        if eligibility == "INELIGIBLE" and confidence >= self.minimum_overall_confidence:
-            reason = str(extraction.get("exclusion_reason") or "High-confidence ineligible extraction")
+        if manual is not None:
+            manual_eligibility = str(manual.get("eligibility") or "").upper()
+            if manual_eligibility == "INELIGIBLE":
+                return (
+                    StudyPromotion(
+                        str(payload.get("study_id") or ""),
+                        PromotionStatus.VERIFIED_INELIGIBLE,
+                        (str(manual.get("reason") or "manual exclusion"),),
+                    ),
+                    None,
+                )
+            if manual_eligibility == "ELIGIBLE":
+                design_label = str(manual.get("design_label") or _field_value(fields, "design_label") or "")
+                profile = classify_design(candidate.question_type, design_label)
+                profile.design_verified = True
+                record = self._record_from_fields(payload, fields, profile, notes="Manually verified eligibility/design")
+                return (
+                    StudyPromotion(
+                        record.study_id,
+                        PromotionStatus.VERIFIED_ELIGIBLE,
+                        (str(manual.get("reason") or "manual eligibility/design verification"),),
+                        profile.effective_design_label,
+                    ),
+                    record,
+                )
+
+        if (
+            eligibility == "INELIGIBLE"
+            and confidence >= self.minimum_overall_confidence
+            and str(extraction.get("exclusion_reason") or "").strip()
+            and str(extraction.get("exclusion_evidence") or "").strip()
+            and "exclusion_evidence" not in unresolved
+        ):
+            reason = str(extraction.get("exclusion_reason") or "High-confidence source-supported exclusion")
             return StudyPromotion(str(payload.get("study_id") or ""), PromotionStatus.VERIFIED_INELIGIBLE, (reason,)), None
 
         reasons: list[str] = []
@@ -193,7 +326,9 @@ class StudyVerificationBridge:
         if confidence < self.minimum_overall_confidence:
             reasons.append(f"overall confidence {confidence:.2f} below {self.minimum_overall_confidence:.2f}")
 
-        critical = ["design_label", "population", "intervention_exposure_index_test"]
+        critical = ["design_label", "population"]
+        if candidate.intervention_exposure_index_test.strip():
+            critical.append("intervention_exposure_index_test")
         if candidate.comparator_reference.strip():
             critical.append("comparator_reference")
 
@@ -227,21 +362,10 @@ class StudyVerificationBridge:
                 None,
             )
 
-        registry_ids = _list_value(fields, "registry_ids")
-        sample_size = _int_value(fields, "sample_size")
-        first_author = str(_field_value(fields, "first_author") or "")
-        year = _int_value(fields, "year")
-        record = StudyRecord(
-            study_id=str(payload.get("study_id") or ""),
-            title=str(payload.get("title") or ""),
-            design=profile,
-            year=year,
-            first_author=first_author,
-            doi=str(payload.get("doi") or ""),
-            registry_ids=registry_ids,
-            sample_size=sample_size,
-            eligibility_verified=True,
-            independence_verified=True,
+        record = self._record_from_fields(
+            payload,
+            fields,
+            profile,
             notes="Automatically promoted by deterministic provenance/confidence bridge",
         )
         return (
@@ -253,6 +377,30 @@ class StudyVerificationBridge:
             ),
             record,
         )
+
+    def _record_from_fields(self, payload, fields, profile, *, notes: str) -> StudyRecord:
+        return StudyRecord(
+            study_id=str(payload.get("study_id") or ""),
+            title=str(payload.get("title") or ""),
+            design=profile,
+            year=_int_value(fields, "year"),
+            first_author=str(_field_value(fields, "first_author") or ""),
+            doi=str(payload.get("doi") or ""),
+            registry_ids=_list_value(fields, "registry_ids"),
+            sample_size=_int_value(fields, "sample_size"),
+            eligibility_verified=True,
+            independence_verified=True,
+            notes=notes,
+        )
+
+
+def _pair_key(study_a: str, study_b: str) -> str:
+    return "||".join(sorted((str(study_a), str(study_b))))
+
+
+def _pair_override(overrides: dict[str, Any], study_a: str, study_b: str) -> str:
+    raw = overrides.get(_pair_key(study_a, study_b))
+    return str(raw.get("resolution") or "").upper() if isinstance(raw, dict) else ""
 
 
 def _fields_from_serialized_extraction(extraction: dict[str, Any]) -> dict[str, Any]:
