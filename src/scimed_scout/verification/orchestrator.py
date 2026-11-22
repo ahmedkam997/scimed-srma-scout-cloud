@@ -225,9 +225,13 @@ class SequentialDeepVerifier:
                 gate_inputs["verified_usable_studies"] = evidence.verified_usable_studies
                 gate_inputs["principal_outcome_studies"] = evidence.principal_outcome_studies
                 gate_inputs["unresolved_type_a"] = []
+                required_source_names = set(policy.literature_sources + policy.registry_sources)
+                if policy.require_pipeline_source:
+                    required_source_names.update(policy.pipeline_sources)
                 gate_inputs["sources"] = [
                     {"source": source, "status": status_value.value}
                     for source, status_value in coverage.source_statuses.items()
+                    if source in required_source_names
                 ]
                 final_gate_result = final_decision(gate_inputs)
                 decision = final_gate_result["decision"]
