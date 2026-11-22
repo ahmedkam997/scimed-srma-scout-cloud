@@ -62,10 +62,58 @@ def snapshot_from_ledger(ledger: SQLiteLedger, candidate_id: str) -> LedgerEvide
         and bool(item.get("principal"))
     }
 
+    possible_links = list(meta.get("family_possible_links_detail") or [])
+    study_to_family = {
+        str(study_id): str(item.get("family_id") or "")
+        for item in families
+        for study_id in (item.get("study_ids") or [])
+        if str(item.get("family_id") or "")
+    }
+
+    conservative_verified = _conservative_family_count(
+        verified_family_ids, possible_links, study_to_family
+    )
+    conservative_usable = _conservative_family_count(
+        usable_family_ids, possible_links, study_to_family
+    )
+    conservative_principal = _conservative_family_count(
+        principal_ids, possible_links, study_to_family
+    )
+
     return LedgerEvidenceSnapshot(
         study_audit_complete=study_audit_complete,
         synthesis_audit_complete=synthesis_audit_complete,
-        verified_independent_studies=len(verified_family_ids),
-        verified_usable_studies=len(usable_family_ids),
-        principal_outcome_studies=len(principal_ids),
+        verified_independent_studies=conservative_verified,
+        verified_usable_studies=conservative_usable,
+        principal_outcome_studies=conservative_principal,
     )
+
+
+def _conservative_family_count(
+    family_ids: set[str],
+    possible_links: list[dict],
+    study_to_family: dict[str, str],
+) -> int:
+    ids = {x for x in family_ids if x}
+    if not ids:
+        return 0
+    parent = {x: x for x in ids}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: str, b: str) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for link in possible_links:
+        a = study_to_family.get(str(link.get("study_a") or ""))
+        b = study_to_family.get(str(link.get("study_b") or ""))
+        if a in ids and b in ids and a != b:
+            union(a, b)
+
+    return len({find(x) for x in ids})
