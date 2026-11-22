@@ -80,9 +80,18 @@ class CandidateRankingService:
             key=lambda x: (-x.score, x.candidate_id),
         )
 
+        ranking_by_id = {item.candidate_id: item for item in ranked}
         top_ids = {item.candidate_id for item in ranked[:max(0, top_n)]}
         for candidate in candidates:
+            item = ranking_by_id[candidate.candidate_id]
+            candidate.metadata = {
+                **(candidate.metadata or {}),
+                "preliminary_ranking_score": item.score,
+                "preliminary_ranking_reasons": list(item.reasons),
+                "preliminary_ranking_role": "verification_priority_only",
+            }
             if candidate.candidate_id in top_ids:
-                self.ledger.set_candidate_status(candidate.candidate_id, CandidateStatus.SHORTLISTED)
+                candidate.status = CandidateStatus.SHORTLISTED
+            self.ledger.upsert_candidate(candidate)
 
         return ranked
