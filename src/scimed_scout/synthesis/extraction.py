@@ -33,7 +33,11 @@ class SynthesisDataExtractor:
         evidence_scope: EvidenceScope = EvidenceScope.TITLE_ABSTRACT,
     ) -> StudySynthesisExtraction:
         text = evidence_text_for_record(
-            source_record, candidate, purpose="SYNTHESIS", max_chars=48000, max_chunks=8
+            source_record,
+            candidate,
+            purpose="SYNTHESIS",
+            max_chars=48000,
+            max_chunks=8,
         )
         study_id = str(study.get("study_id") or "")
         source_record_id = str(source_record.get("source_record_id") or study_id)
@@ -285,8 +289,7 @@ def _evidence_text(record: dict[str, Any]) -> str:
         payload.get("full_text"),
         payload.get("supplement_text"),
     ]
-    return "
-".join(str(x).strip() for x in pieces if x and str(x).strip())[:50000]
+    return "\n".join(str(x).strip() for x in pieces if x and str(x).strip())[:50000]
 
 
 def _json_object(text: str) -> dict[str, Any]:

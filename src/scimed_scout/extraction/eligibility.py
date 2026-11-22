@@ -23,7 +23,11 @@ class StudyEligibilityExtractor:
 
     def extract(self, candidate: CandidateRecord, record: dict) -> StudyEligibilityExtraction:
         evidence_text = evidence_text_for_record(
-            record, candidate, purpose="ELIGIBILITY", max_chars=36000, max_chunks=7
+            record,
+            candidate,
+            purpose="ELIGIBILITY",
+            max_chars=36000,
+            max_chunks=7,
         )
         if not evidence_text:
             return _unresolved(record, "No supplied evidence text sufficient for eligibility extraction")
@@ -103,8 +107,7 @@ def _record_evidence_text(record: dict) -> str:
     payload = record.get("payload") or {}
     metadata = payload.get("metadata") or {}
     pieces = [record.get("title"), metadata.get("abstract"), metadata.get("summary"), metadata.get("description")]
-    return "
-".join(str(x).strip() for x in pieces if x and str(x).strip())[:16000]
+    return "\n".join(str(x).strip() for x in pieces if x and str(x).strip())[:16000]
 
 
 def _field(value) -> ProvenanceField:
