@@ -27,8 +27,13 @@ class VerificationCoverage:
 
 
 def evaluate_coverage(logs: list[SearchLogRecord], policy: VerificationPolicy) -> VerificationCoverage:
+    latest: dict[tuple[str, str], SearchLogRecord] = {}
+    for entry in logs:
+        latest[(entry.source, entry.query)] = entry
+
+    current_logs = list(latest.values())
     statuses = {
-        source: _aggregate([x.status for x in logs if x.source == source])
+        source: _aggregate([x.status for x in current_logs if x.source == source])
         for source in set(policy.literature_sources + policy.registry_sources + policy.pipeline_sources)
     }
 
