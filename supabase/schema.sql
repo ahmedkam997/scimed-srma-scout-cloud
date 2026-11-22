@@ -16,12 +16,14 @@ create table if not exists private.scimed_worker_config (
 
 revoke all on table private.scimed_worker_config from public, anon, authenticated;
 
-create or replace function public.scimed_client_hash()
+grant usage on schema private to anon, authenticated;
+
+create or replace function private.scimed_client_hash()
 returns text
 language sql
 stable
-security definer
-set search_path = public, extensions
+security invoker
+set search_path = public, private, extensions
 as $$
   select case
     when coalesce(current_setting('request.headers', true), '') = '' then null
@@ -35,7 +37,7 @@ as $$
   end
 $$;
 
-create or replace function public.scimed_is_worker()
+create or replace function private.scimed_is_worker()
 returns boolean
 language sql
 stable
@@ -55,13 +57,13 @@ as $$
   )
 $$;
 
-grant execute on function public.scimed_client_hash() to anon, authenticated;
-grant execute on function public.scimed_is_worker() to anon, authenticated;
+grant execute on function private.scimed_client_hash() to anon, authenticated;
+grant execute on function private.scimed_is_worker() to anon, authenticated;
 
 create table if not exists public.discovery_jobs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid default auth.uid(),
-  client_token_hash text not null default public.scimed_client_hash(),
+  client_token_hash text not null default private.scimed_client_hash(),
   specialty text not null default 'ALL',
   question_type text not null default 'ALL',
   status text not null default 'QUEUED'
@@ -89,7 +91,7 @@ alter table public.discovery_jobs
   add column if not exists client_token_hash text;
 
 alter table public.discovery_jobs
-  alter column client_token_hash set default public.scimed_client_hash();
+  alter column client_token_hash set default private.scimed_client_hash();
 
 update public.discovery_jobs
 set client_token_hash = encode(extensions.digest(id::text, 'sha256'), 'hex')
@@ -116,23 +118,23 @@ create policy "clients_insert_own_discovery_jobs"
   on public.discovery_jobs
   for insert
   to anon, authenticated
-  with check (client_token_hash = public.scimed_client_hash());
+  with check (client_token_hash = private.scimed_client_hash());
 
 create policy "clients_read_own_discovery_jobs"
   on public.discovery_jobs
   for select
   to anon, authenticated
   using (
-    client_token_hash = public.scimed_client_hash()
-    or public.scimed_is_worker()
+    client_token_hash = private.scimed_client_hash()
+    or private.scimed_is_worker()
   );
 
 create policy "worker_updates_discovery_jobs"
   on public.discovery_jobs
   for update
   to anon, authenticated
-  using (public.scimed_is_worker())
-  with check (public.scimed_is_worker());
+  using (private.scimed_is_worker())
+  with check (private.scimed_is_worker());
 
 -- Configure the worker token separately. Store only SHA-256(token) here:
 -- insert into private.scimed_worker_config(singleton, token_hash)
