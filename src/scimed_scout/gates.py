@@ -84,7 +84,7 @@ def final_decision(data: dict[str, Any]) -> dict[str, Any]:
     unresolved = list(data.get("unresolved_type_a") or [])
     passed = all(g.passed for g in gates) and not unresolved
     return {
-        "decision": "QUALIFIED — FINAL REVIEW OPTION" if passed else "DO NOT PROCEED",
+        "decision": "QUALIFIED — FIRST-CHOICE ELIGIBLE" if passed else "DO NOT PROCEED",
         "all_15_gates_passed": all(g.passed for g in gates),
         "unresolved_type_a": unresolved,
         "gates": [asdict(g) for g in gates],
