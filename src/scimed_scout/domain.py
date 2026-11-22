@@ -38,12 +38,24 @@ class CandidateEvidence:
     candidate_id: str
     title: str
     specialty: str
-    verified_independent_rcts: int = 0
-    verified_usable_rcts: int = 0
-    principal_outcome_rcts: int = 0
+    verified_independent_studies: int = 0
+    verified_usable_studies: int = 0
+    principal_outcome_studies: int = 0
     unresolved_type_a: list[str] = field(default_factory=list)
     sources: list[SourceAudit] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def verified_independent_rcts(self) -> int:
+        return self.verified_independent_studies
+
+    @property
+    def verified_usable_rcts(self) -> int:
+        return self.verified_usable_studies
+
+    @property
+    def principal_outcome_rcts(self) -> int:
+        return self.principal_outcome_studies
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
