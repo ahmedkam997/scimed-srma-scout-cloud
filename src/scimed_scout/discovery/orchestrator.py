@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from typing import Any, Callable
 
 from scimed_scout.domain import CandidateStatus, SourceStatus
 from scimed_scout.ranking import CandidateRankingService
-from scimed_scout.sources.base import SearchRecord, SourceClient
+from scimed_scout.sources.base import SearchRecord, SearchResult, SourceClient
 from scimed_scout.storage import DecisionRecord, SearchLogRecord, SQLiteLedger
 from scimed_scout.verification.coverage import DEFINITIVE, evaluate_coverage
 from scimed_scout.verification.policy import policy_for_question_type
@@ -211,19 +212,77 @@ class ReviewDiscoveryOrchestrator:
         return DiscoveryCandidateResult(candidate_id, ranking_score, coverage, evidence, pending, decision, status, final_gate_result)
 
     def _search_sources(self, candidate, source_names: tuple[str, ...], queries: tuple[str, ...], *, evidence_type: str, purpose: str, limit_per_query: int) -> None:
+        if not source_names or not queries:
+            return
+
+        configured: list[tuple[str, SourceClient]] = []
         for source_name in source_names:
             client = self.clients.get(source_name)
             if client is None:
-                self.ledger.append_search_log(SearchLogRecord(candidate.project_id, candidate.candidate_id, source_name, "", SourceStatus.NOT_SEARCHED, message="No configured source client"))
+                self.ledger.append_search_log(
+                    SearchLogRecord(
+                        candidate.project_id,
+                        candidate.candidate_id,
+                        source_name,
+                        "",
+                        SourceStatus.NOT_SEARCHED,
+                        message="No configured source client",
+                    )
+                )
                 continue
+
+            configured.append((source_name, client))
             for query in queries:
-                self.ledger.add_query(candidate.project_id, candidate.candidate_id, source_name, query, purpose)
-                result = client.search(query, limit=limit_per_query)
-                self.ledger.append_search_log(SearchLogRecord(candidate.project_id, candidate.candidate_id, source_name, query, result.status, result.total_count, message=result.message))
-                for record in result.records:
-                    if evidence_type == "PRIMARY_STUDY" and _obvious_review(record):
-                        continue
-                    self._store_record(candidate.candidate_id, evidence_type, record, query, purpose)
+                self.ledger.add_query(
+                    candidate.project_id,
+                    candidate.candidate_id,
+                    source_name,
+                    query,
+                    purpose,
+                )
+
+        if not configured:
+            return
+
+        with ThreadPoolExecutor(
+            max_workers=min(5, len(configured)),
+            thread_name_prefix="scout-source",
+        ) as executor:
+            futures = {
+                source_name: executor.submit(
+                    _run_source_queries,
+                    client,
+                    queries,
+                    limit_per_query,
+                )
+                for source_name, client in configured
+            }
+
+            # Remote sources run concurrently, but SQLite writes stay on the main
+            # thread so the discovery ledger remains deterministic and thread-safe.
+            for source_name, _ in configured:
+                for query, result in futures[source_name].result():
+                    self.ledger.append_search_log(
+                        SearchLogRecord(
+                            candidate.project_id,
+                            candidate.candidate_id,
+                            source_name,
+                            query,
+                            result.status,
+                            result.total_count,
+                            message=result.message,
+                        )
+                    )
+                    for record in result.records:
+                        if evidence_type == "PRIMARY_STUDY" and _obvious_review(record):
+                            continue
+                        self._store_record(
+                            candidate.candidate_id,
+                            evidence_type,
+                            record,
+                            query,
+                            purpose,
+                        )
 
     def _store_record(self, candidate_id: str, evidence_type: str, record: SearchRecord, query: str, purpose: str) -> None:
         existing = next((item for item in self.ledger.list_external_evidence(candidate_id, evidence_type) if str(item.get("source_record_id") or "") == str(record.record_id)), None)
@@ -268,3 +327,25 @@ def _obvious_review(record: SearchRecord) -> bool:
         publication_types = [publication_types]
     joined = " ".join(str(x).casefold() for x in publication_types)
     return "review" in joined or "meta-analysis" in joined or "meta analysis" in joined
+
+
+def _run_source_queries(
+    client: SourceClient,
+    queries: tuple[str, ...],
+    limit_per_query: int,
+) -> list[tuple[str, SearchResult]]:
+    results: list[tuple[str, SearchResult]] = []
+    for query in queries:
+        try:
+            result = client.search(query, limit=limit_per_query)
+        except Exception as exc:
+            result = SearchResult(
+                source=getattr(client, "name", "Unknown"),
+                query=query,
+                status=SourceStatus.ACCESS_FAILED,
+                records=[],
+                total_count=None,
+                message=str(exc),
+            )
+        results.append((query, result))
+    return results

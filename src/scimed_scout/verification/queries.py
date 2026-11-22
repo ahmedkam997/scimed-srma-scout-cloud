@@ -13,7 +13,7 @@ class SearchPlan:
     pipeline_queries: tuple[str, ...]
 
 
-def build_search_plan(candidate: CandidateRecord, *, max_queries: int = 8) -> SearchPlan:
+def build_search_plan(candidate: CandidateRecord, *, max_queries: int = 4) -> SearchPlan:
     base = _dedupe([
         candidate.review_question,
         candidate.title,
