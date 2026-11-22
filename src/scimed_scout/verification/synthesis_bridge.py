@@ -21,6 +21,7 @@ class SynthesisVerificationSummary:
     potentially_usable_families: int
     definitively_not_usable_families: int
     families_needing_full_text: int
+    usable_family_uncertainty_decision_changing: bool
     threshold_met: bool
     synthesis_audit_complete: bool
 
@@ -194,15 +195,24 @@ class SynthesisVerificationBridge:
             and family_id not in definitive_not_usable_ids
         )
         threshold_met = conservative_usable >= MIN_STUDIES
+        usable_family_uncertainty_decision_changing = (
+            bool(possible_links)
+            and len(verified_usable_ids) >= MIN_STUDIES
+            and conservative_usable < MIN_STUDIES
+        )
 
         # Audit is decisive either when >=4 conservative usable families are
         # established, or when every verified family has a definitive full-text
-        # usability conclusion.
+        # usability conclusion. Decision-changing family uncertainty keeps the
+        # audit open even when the raw usable-family count is >=4.
         all_families_definitive = all(
             family_id in verified_usable_ids or family_id in definitive_not_usable_ids
             for family_id in family_statuses
         )
-        synthesis_audit_complete = threshold_met or all_families_definitive
+        synthesis_audit_complete = (
+            (threshold_met or all_families_definitive)
+            and not usable_family_uncertainty_decision_changing
+        )
 
         metadata = dict(candidate.metadata or {})
         metadata.update({
@@ -214,6 +224,7 @@ class SynthesisVerificationBridge:
             "potentially_usable_families": len(potential_ids),
             "definitively_not_usable_families": len(definitive_not_usable_ids),
             "families_needing_full_text_for_synthesis": families_needing_full_text,
+            "usable_family_uncertainty_decision_changing": usable_family_uncertainty_decision_changing,
             "synthesis_extraction_is_family_based": True,
         })
         candidate.metadata = metadata
@@ -229,6 +240,7 @@ class SynthesisVerificationBridge:
             potentially_usable_families=len(potential_ids),
             definitively_not_usable_families=len(definitive_not_usable_ids),
             families_needing_full_text=families_needing_full_text,
+            usable_family_uncertainty_decision_changing=usable_family_uncertainty_decision_changing,
             threshold_met=threshold_met,
             synthesis_audit_complete=synthesis_audit_complete,
         )
