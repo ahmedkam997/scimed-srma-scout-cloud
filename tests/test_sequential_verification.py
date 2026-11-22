@@ -123,8 +123,8 @@ def test_sequential_verifier_returns_multiple_final_options_for_chatgpt(tmp_path
         assert ledger.get_project("P1").stage == "EXPORT"
         assert ledger.list_search_log("C1")
         assert ledger.list_queries("C1")
-        assert ledger.list_decisions("C1")[-1].decision == "QUALIFIED — FINAL REVIEW OPTION"
-        assert ledger.list_decisions("C2")[-1].decision == "QUALIFIED — FINAL REVIEW OPTION"
+        assert ledger.list_decisions("C1")[-1].decision == "QUALIFIED — FIRST-CHOICE ELIGIBLE"
+        assert ledger.list_decisions("C2")[-1].decision == "QUALIFIED — FIRST-CHOICE ELIGIBLE"
 
 
 def test_source_failure_yields_provisional_backup_not_false_clearance(tmp_path):
@@ -180,3 +180,29 @@ def test_positive_review_hits_require_overlap_assessment(tmp_path):
         reviews = ledger.list_external_evidence("C1", "PUBLISHED_REVIEW")
         assert reviews
         assert reviews[0]["payload"]["verification_status"] == "DISCOVERED_UNVERIFIED"
+
+
+def test_final_shortlist_never_backfills_pending_or_provisional_candidates(tmp_path):
+    with SQLiteLedger(tmp_path / "strict.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Radiology", question_type="DIAGNOSTIC_ACCURACY"))
+
+        c1 = candidate("C1", "MRI sign A")
+        c2 = candidate("C2", "CT sign B")
+        c3 = candidate("C3", "Ultrasound sign C", complete=False)
+
+        for c in (c1, c2, c3):
+            ledger.upsert_candidate(c)
+        add_four_verified(ledger, "C1")
+        add_four_verified(ledger, "C2")
+
+        result = SequentialDeepVerifier(ledger, clients()).run(
+            "P1",
+            min_verify=3,
+            max_verify=3,
+            final_options=3,
+        )
+
+        assert result.qualified_option_candidate_ids == ["C1", "C2"]
+        assert result.final_option_candidate_ids == ["C1", "C2"]
+        assert "C3" not in result.final_option_candidate_ids
+        assert ledger.get_candidate("C3").status == CandidateStatus.DEEP_VERIFYING
