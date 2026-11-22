@@ -97,6 +97,12 @@ Potentially recoverable data are kept separate from VERIFIED_USABLE data until t
 22. CLI commands for database initialization, project creation, candidate generation, status changes and project/candidate listing.
 23. Multi-option sequential verification with a configurable final shortlist, default 3 options.
 24. Automatic SCIMED_FINAL_CHATGPT_REVIEW JSON package containing side-by-side evidence, coverage, gates, unresolved issues and option status.
+25. Semantic competitor assessment for published reviews and registrations across population, intervention/exposure/index test, comparator/reference, outcomes, design scope, clinical decision, era and study-set/search-cutoff overlap.
+26. Fail-closed competitor logic: low-confidence or unsupported semantic evidence remains UNRESOLVED, and essentially identical adequate recent reviews without meaningful new information trigger fatal redundancy.
+27. Automated primary-study eligibility/design extraction from available title/abstract/metadata with field-level provenance and confidence.
+28. Exact-source provenance validation: unsupported AI evidence quotes force fields or overlap assessments back to UNRESOLVED.
+29. AUTO_EXTRACTED studies are persisted for verification but never count toward the four-study threshold until eligibility, design, independence and synthesis usability are verified.
+30. Enriched literature metadata: Europe PMC core results, Semantic Scholar abstracts, reconstructed OpenAlex abstracts, and PubMed summary metadata.
 
 ## Appraisal routing
 
@@ -156,7 +162,11 @@ This command also writes:
 
 Upload that JSON file to ChatGPT for the final comparison and selection.
 
-Recheck one candidate after manual overlap or study-family work:
+Analyze the discovered competitors and primary studies again after source updates:
+
+    scimed-scout analyze-evidence data/scout.sqlite3 CANDIDATE_ID --force
+
+Recheck one candidate after overlap or study-family verification:
 
     scimed-scout verify-candidate data/scout.sqlite3 CANDIDATE_ID
 
@@ -164,8 +174,9 @@ Deep verification writes every source query, source status, discovered review/re
 
 ## Next milestones
 
-- Semantic overlap assessment for discovered published reviews and registrations.
-- Automated study-level eligibility/design extraction from abstracts/full texts with human-verifiable provenance.
+- Verification bridge that reviews AUTO_EXTRACTED study records and promotes only supported records into verified study families.
+- Automated study-family construction and duplicate-population resolution from verified study records.
+- Automated synthesis-usability extraction from verified study evidence, including DTA 2x2 data and other design-specific quantitative structures.
 - Specialty and review-question configuration modules.
 - Automated connection between source searches, novelty firewall and the persistent ledger.
 - Background GitHub Actions research jobs with resumable checkpoints.
