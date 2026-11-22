@@ -292,6 +292,15 @@ class SQLiteLedger:
         ).fetchall()
         return [_load(row["payload_json"], {}) for row in rows]
 
+    def clear_payloads(self, table: str, candidate_id: str) -> None:
+        if table not in {"study_families", "studies", "outcomes"}:
+            raise ValueError(f"Unsupported ledger table: {table}")
+        self.connection.execute(
+            f"DELETE FROM {table} WHERE candidate_id=?",
+            (candidate_id,),
+        )
+        self.connection.commit()
+
     def upsert_external_evidence(
         self,
         candidate_id: str,
