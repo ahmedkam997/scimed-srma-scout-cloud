@@ -75,9 +75,9 @@ class TrialFamilyResolver:
                     publication_ids=sorted(m.publication_id for m in members),
                     registry_ids=registry_ids,
                     manually_verified=bool(manual_ids),
-                    independence_verified=all(m.independence_verified for m in members),
-                    randomization_verified=all(m.randomization_verified for m in members),
-                    eligibility_verified=all(m.eligibility_verified for m in members),
+                    independence_verified=any(m.independence_verified for m in members),
+                    randomization_verified=any(m.randomization_verified for m in members),
+                    eligibility_verified=any(m.eligibility_verified for m in members),
                 )
             )
 
