@@ -18,3 +18,5 @@ secrets/
 
 *.sqlite3
 *.db
+
+data/
