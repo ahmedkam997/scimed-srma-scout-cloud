@@ -119,7 +119,7 @@ def test_review_package_contains_multiple_options_and_defers_winner_to_chatgpt(t
         assert '"package_type": "SCIMED_FINAL_CHATGPT_REVIEW"' in exported.read_text(encoding="utf-8")
 
 
-def test_review_package_can_include_provisional_option_when_fewer_than_three_qualify(tmp_path):
+def test_review_package_excludes_nonqualified_option_when_fewer_than_three_qualify(tmp_path):
     with SQLiteLedger(tmp_path / "review.sqlite3") as ledger:
         ledger.upsert_project(ProjectRecord("P1", "Radiology", question_type="DIAGNOSTIC_ACCURACY"))
         add_candidate(ledger, "C1", "MRI sign A")
@@ -134,9 +134,11 @@ def test_review_package_can_include_provisional_option_when_fewer_than_three_qua
         )
         package = build_review_package(ledger, result)
 
-        assert len(package["options"]) == 3
-        statuses = [option["candidate_status"] for option in package["options"]]
-        assert statuses.count(CandidateStatus.QUALIFIED.value) == 2
-        assert CandidateStatus.DEEP_VERIFYING.value in statuses
-        provisional = [option for option in package["options"] if option["candidate_status"] != CandidateStatus.QUALIFIED.value]
-        assert provisional[0]["verification"]["pending"]
+        assert len(package["options"]) == 2
+        assert package["selection_policy"]["all_included_options_are_first_choice_eligible"] is True
+        assert package["selection_policy"]["provisional_or_pending_options_allowed"] is False
+        assert package["selection_policy"]["available_fully_qualified_options"] == 2
+        assert package["selection_policy"]["shortfall"] == 1
+        assert package["selection_policy"]["final_option_candidate_ids"] == ["C1", "C2"]
+        assert all(option["candidate_status"] == CandidateStatus.QUALIFIED.value for option in package["options"])
+        assert "C3" not in package["selection_policy"]["final_option_candidate_ids"]
