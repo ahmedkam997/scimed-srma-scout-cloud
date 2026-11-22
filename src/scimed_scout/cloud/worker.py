@@ -18,10 +18,11 @@ from scimed_scout.discovery import (
 from scimed_scout.sources import build_default_source_clients
 from scimed_scout.storage import ProjectRecord, SQLiteLedger
 
-from .supabase import DiscoveryJob, SupabaseJobStore
+from .supabase import DiscoveryJob, JobCancelled, SupabaseJobStore
 
 
 def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
+    store.ensure_active(job.id)
     provider = OpenAICompatibleProvider.from_env()
     if not provider.endpoint or not provider.model:
         raise RuntimeError("SCIMED_AI_ENDPOINT and SCIMED_AI_MODEL are required in GitHub Secrets")
@@ -53,6 +54,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 design_scope=[],
                 count=job.candidate_count,
             )
+            store.ensure_active(job.id)
             if not candidates:
                 raise RuntimeError("Candidate generation produced no new review topics")
 
@@ -67,6 +69,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
             scoring = DiscoveryScoringService(provider)
 
             def progress_callback(progress: int, stage: str, message: str) -> None:
+                store.ensure_active(job.id)
                 store.update_job(
                     job.id,
                     stage=stage,
@@ -80,6 +83,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 novelty_service=novelty,
                 scoring_service=scoring,
                 progress_callback=progress_callback,
+                cancellation_check=lambda: store.ensure_active(job.id),
             )
             result = orchestrator.run(
                 project_id,
@@ -88,6 +92,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 final_options=job.final_options,
                 limit_per_query=job.limit_per_query,
             )
+            store.ensure_active(job.id)
             package = build_discovery_review_package(ledger, result)
 
             status_counts: dict[str, int] = {}
@@ -128,9 +133,16 @@ def run_once(store: SupabaseJobStore | None = None) -> int:
         )
         print(json.dumps({"status": "COMPLETED", "job_id": job.id, "qualified_options": options}))
         return 0
+    except JobCancelled:
+        print(json.dumps({"status": "CANCELLED", "job_id": job.id}))
+        return 0
     except Exception as exc:
         detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-        store.fail(job.id, detail)
+        try:
+            store.fail(job.id, detail)
+        except JobCancelled:
+            print(json.dumps({"status": "CANCELLED", "job_id": job.id}))
+            return 0
         print(json.dumps({"status": "FAILED", "job_id": job.id, "error": str(exc)}))
         return 1
 
