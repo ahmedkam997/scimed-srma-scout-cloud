@@ -1,0 +1,26 @@
+name: sync-worker-token-hash
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sync-worker-token-hash.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hash:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate secret and print SHA-256 only
+        env:
+          SCIMED_WORKER_TOKEN: ${{ secrets.SCIMED_WORKER_TOKEN }}
+        run: |
+          if [ -z "$SCIMED_WORKER_TOKEN" ]; then
+            echo "SCIMED_WORKER_TOKEN is missing"
+            exit 1
+          fi
+          HASH=$(printf '%s' "$SCIMED_WORKER_TOKEN" | sha256sum | awk '{print $1}')
+          echo "SCIMED_WORKER_TOKEN_SHA256=$HASH"
