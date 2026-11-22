@@ -9,7 +9,10 @@ from . import __version__
 from .ai import CandidateDiscoveryService, OpenAICompatibleProvider
 from .domain import CandidateStatus, SourceStatus
 from .gates import final_decision
+from .ranking import CandidateRankingService
+from .sources import build_default_source_clients
 from .storage import ProjectRecord, SQLiteLedger
+from .verification import SequentialDeepVerifier
 
 
 def health() -> dict[str, object]:
@@ -61,6 +64,23 @@ def main() -> None:
     generate.add_argument("--design", action="append", default=[])
     generate.add_argument("--context", default="")
     generate.add_argument("--allow-rejected-revisit", action="store_true")
+
+    rank = sub.add_parser("rank-candidates")
+    rank.add_argument("db")
+    rank.add_argument("project_id")
+    rank.add_argument("--top", type=int, default=3)
+
+    verify = sub.add_parser("deep-verify")
+    verify.add_argument("db")
+    verify.add_argument("project_id")
+    verify.add_argument("--min-verify", type=int, default=2)
+    verify.add_argument("--max-verify", type=int, default=3)
+    verify.add_argument("--limit-per-query", type=int, default=20)
+
+    verify_one = sub.add_parser("verify-candidate")
+    verify_one.add_argument("db")
+    verify_one.add_argument("candidate_id")
+    verify_one.add_argument("--limit-per-query", type=int, default=20)
 
     args = parser.parse_args()
 
@@ -140,6 +160,49 @@ def main() -> None:
         print(json.dumps([_candidate_json(x) for x in records], ensure_ascii=False, indent=2))
         return
 
+    if args.command == "rank-candidates":
+        with SQLiteLedger(args.db) as ledger:
+            if ledger.get_project(args.project_id) is None:
+                raise SystemExit(f"Project not found: {args.project_id}")
+            ranked = CandidateRankingService(ledger).rank_project(args.project_id, top_n=args.top)
+            ledger.update_checkpoint(
+                args.project_id,
+                stage="RANKING",
+                progress=20,
+                message=f"Ranked {len(ranked)} candidates; top {args.top} shortlisted",
+            )
+        print(json.dumps([
+            {
+                "candidate_id": item.candidate_id,
+                "score": item.score,
+                "reasons": list(item.reasons),
+            }
+            for item in ranked
+        ], ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "deep-verify":
+        with SQLiteLedger(args.db) as ledger:
+            verifier = SequentialDeepVerifier(ledger, build_default_source_clients())
+            result = verifier.run(
+                args.project_id,
+                min_verify=args.min_verify,
+                max_verify=args.max_verify,
+                limit_per_query=args.limit_per_query,
+            )
+        print(json.dumps(_sequential_verification_json(result), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "verify-candidate":
+        with SQLiteLedger(args.db) as ledger:
+            verifier = SequentialDeepVerifier(ledger, build_default_source_clients())
+            result = verifier.verify_candidate(
+                args.candidate_id,
+                limit_per_query=args.limit_per_query,
+            )
+        print(json.dumps(_candidate_verification_json(result), ensure_ascii=False, indent=2))
+        return
+
     raise SystemExit("Unknown command")
 
 
@@ -172,3 +235,42 @@ def _candidate_json(candidate) -> dict:
 
 if __name__ == "__main__":
     main()
+
+
+def _candidate_verification_json(result) -> dict:
+    return {
+        "candidate_id": result.candidate_id,
+        "ranking_score": result.ranking_score,
+        "decision": result.decision,
+        "candidate_status": result.candidate_status.value,
+        "pending": result.pending,
+        "coverage": {
+            "source_statuses": {k: v.value for k, v in result.coverage.source_statuses.items()},
+            "blockers": list(result.coverage.blockers),
+            "warnings": list(result.coverage.warnings),
+        },
+        "evidence": {
+            "study_audit_complete": result.evidence.study_audit_complete,
+            "synthesis_audit_complete": result.evidence.synthesis_audit_complete,
+            "verified_independent_studies": result.evidence.verified_independent_studies,
+            "verified_usable_studies": result.evidence.verified_usable_studies,
+            "principal_outcome_studies": result.evidence.principal_outcome_studies,
+        },
+        "final_gate_result": result.final_gate_result,
+    }
+
+
+def _sequential_verification_json(result) -> dict:
+    return {
+        "project_id": result.project_id,
+        "first_choice_candidate_id": result.first_choice_candidate_id,
+        "ranked": [
+            {
+                "candidate_id": item.candidate_id,
+                "score": item.score,
+                "reasons": list(item.reasons),
+            }
+            for item in result.ranked
+        ],
+        "verified": [_candidate_verification_json(item) for item in result.verified],
+    }
