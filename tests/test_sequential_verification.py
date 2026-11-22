@@ -117,12 +117,13 @@ def test_sequential_verifier_checks_two_and_selects_first_ranked_qualified(tmp_p
         assert len(result.verified) == 2
         assert result.first_choice_candidate_id == "C1"
         assert ledger.get_candidate("C1").status == CandidateStatus.QUALIFIED
-        assert ledger.get_candidate("C2").status == CandidateStatus.QUALIFIED
+        assert ledger.get_candidate("C2").status == CandidateStatus.PROVISIONAL_BACKUP
         assert ledger.get_candidate("C3").status == CandidateStatus.SHORTLISTED
         assert ledger.get_project("P1").stage == "LOCKED_GATES"
         assert ledger.list_search_log("C1")
         assert ledger.list_queries("C1")
         assert ledger.list_decisions("C1")[-1].decision == "PROCEED — FIRST-CHOICE"
+        assert ledger.list_decisions("C2")[-1].decision == "PROCEED — QUALIFIED BACKUP"
 
 
 def test_source_failure_yields_provisional_backup_not_false_clearance(tmp_path):
