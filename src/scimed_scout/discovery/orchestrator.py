@@ -139,6 +139,8 @@ class ReviewDiscoveryOrchestrator:
             pending.append("TYPE-A: competing published reviews are not fully assessed")
         if registrations and not bool(meta.get("discovery_registration_assessment_complete")):
             pending.append("TYPE-A: competing review registrations are not fully assessed")
+        if bool(meta.get("discovery_semantic_scope_capped")):
+            pending.append("TYPE-A: limited competitor assessment scope; not all records were verified")
 
         material_regs = list(meta.get("discovery_material_registration_overlap_ids") or [])
         if material_regs and not bool(meta.get("discovery_material_registration_overlap_resolved")):
@@ -154,6 +156,10 @@ class ReviewDiscoveryOrchestrator:
                     published_review_hits=len(reviews),
                     registration_hits=len(registrations),
                     competitor_summary=(novelty or {}).get("summary", ""),
+                    review_records=reviews,
+                    registration_records=registrations,
+                    primary_records=self.ledger.list_external_evidence(candidate_id, "PRIMARY_STUDY"),
+                    semantically_capped=bool(meta.get("discovery_semantic_scope_capped")),
                 )
                 candidate.metadata = {**(candidate.metadata or {}), "discovery_gate_inputs": gate_inputs}
                 self.ledger.upsert_candidate(candidate)
