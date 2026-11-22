@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import hashlib
 
 from scimed_scout.trials.identifiers import normalize_doi, normalize_registry_id, normalize_text, token_jaccard
 from .models import FamilyLinkStatus, StudyFamily, StudyFamilyAudit, StudyPairLink, StudyRecord
@@ -52,7 +53,7 @@ class EvidenceFamilyResolver:
                 for r in m.registry_ids
                 if r
             })
-            family_id = next(iter(manual)) if len(manual) == 1 else (registries[0] if registries else f"STUDY-{idx:04d}")
+            family_id = next(iter(manual)) if len(manual) == 1 else (registries[0] if registries else _stable_family_id(members))
             families.append(
                 StudyFamily(
                     family_id=family_id,
@@ -107,3 +108,9 @@ class EvidenceFamilyResolver:
 
         status = FamilyLinkStatus.POSSIBLE_SAME_FAMILY if len(reasons) >= 2 else FamilyLinkStatus.NO_LINK_IDENTIFIED
         return StudyPairLink(a.study_id, b.study_id, status, tuple(reasons))
+
+
+
+def _stable_family_id(members: list[StudyRecord]) -> str:
+    basis = "|".join(sorted(str(m.study_id) for m in members))
+    return "FAM-" + hashlib.sha256(basis.encode("utf-8")).hexdigest()[:12].upper()
