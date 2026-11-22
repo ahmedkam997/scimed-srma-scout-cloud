@@ -9,7 +9,7 @@ from scimed_scout.domain import CandidateStatus, SourceStatus
 from .models import CandidateRecord, DecisionRecord, ProjectRecord, SearchLogRecord, utc_now
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class SQLiteLedger:
@@ -100,6 +100,17 @@ class SQLiteLedger:
                 PRIMARY KEY (candidate_id, outcome_id)
             );
 
+            CREATE TABLE IF NOT EXISTS external_evidence (
+                candidate_id TEXT NOT NULL REFERENCES candidates(candidate_id) ON DELETE CASCADE,
+                evidence_type TEXT NOT NULL,
+                source_record_id TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT '',
+                payload_json TEXT NOT NULL DEFAULT '{}',
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (candidate_id, evidence_type, source_record_id)
+            );
+
             CREATE TABLE IF NOT EXISTS search_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
@@ -137,6 +148,7 @@ class SQLiteLedger:
 
             CREATE INDEX IF NOT EXISTS idx_candidates_project ON candidates(project_id);
             CREATE INDEX IF NOT EXISTS idx_candidates_status ON candidates(status);
+            CREATE INDEX IF NOT EXISTS idx_external_evidence_candidate ON external_evidence(candidate_id, evidence_type);
             CREATE INDEX IF NOT EXISTS idx_search_candidate ON search_log(candidate_id);
             CREATE INDEX IF NOT EXISTS idx_decision_candidate ON decision_history(candidate_id);
             """
@@ -279,6 +291,55 @@ class SQLiteLedger:
             (candidate_id,),
         ).fetchall()
         return [_load(row["payload_json"], {}) for row in rows]
+
+    def upsert_external_evidence(
+        self,
+        candidate_id: str,
+        evidence_type: str,
+        source_record_id: str,
+        *,
+        source: str = "",
+        title: str = "",
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        allowed = {"PUBLISHED_REVIEW", "REGISTRATION", "ONGOING_STUDY", "PROTOCOL", "OTHER"}
+        evidence_type = evidence_type.strip().upper()
+        if evidence_type not in allowed:
+            raise ValueError(f"Unsupported evidence type: {evidence_type}")
+        self.connection.execute(
+            """
+            INSERT INTO external_evidence(candidate_id,evidence_type,source_record_id,source,title,payload_json,updated_at)
+            VALUES(?,?,?,?,?,?,?)
+            ON CONFLICT(candidate_id,evidence_type,source_record_id) DO UPDATE SET
+                source=excluded.source,title=excluded.title,payload_json=excluded.payload_json,updated_at=excluded.updated_at
+            """,
+            (candidate_id, evidence_type, source_record_id, source, title, _dump(payload or {}), utc_now()),
+        )
+        self.connection.commit()
+
+    def list_external_evidence(self, candidate_id: str, evidence_type: str | None = None) -> list[dict[str, Any]]:
+        if evidence_type is None:
+            rows = self.connection.execute(
+                "SELECT * FROM external_evidence WHERE candidate_id=? ORDER BY evidence_type, source_record_id",
+                (candidate_id,),
+            ).fetchall()
+        else:
+            rows = self.connection.execute(
+                "SELECT * FROM external_evidence WHERE candidate_id=? AND evidence_type=? ORDER BY source_record_id",
+                (candidate_id, evidence_type.strip().upper()),
+            ).fetchall()
+        return [
+            {
+                "candidate_id": row["candidate_id"],
+                "evidence_type": row["evidence_type"],
+                "source_record_id": row["source_record_id"],
+                "source": row["source"],
+                "title": row["title"],
+                "payload": _load(row["payload_json"], {}),
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
 
     def append_search_log(self, record: SearchLogRecord) -> int:
         cursor = self.connection.execute(
