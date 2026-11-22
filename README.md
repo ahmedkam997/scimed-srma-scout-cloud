@@ -89,6 +89,12 @@ Potentially recoverable data are kept separate from VERIFIED_USABLE data until t
 14. Threshold-aware family uncertainty, where unresolved links become Type-A only when they can change the four-study decision.
 15. Final gate evaluation that overwrites AI-supplied study counts with audited ledger counts.
 16. Mobile-first PWA prototype and GitHub Actions test workflow.
+17. Persistent SQLite evidence ledger for projects, candidates, study families, studies, outcomes, search logs, query library and decision history.
+18. Persistent external-evidence records for published reviews, registrations, protocols and ongoing studies.
+19. Pluggable AI provider interface using vendor-neutral OpenAI-compatible endpoints.
+20. Guarded AI candidate-generation schema that blocks AI from setting study counts, source status, gate results, publication score or final decisions.
+21. Stable candidate IDs with persistent REJECTED / SHORTLISTED / PROVISIONAL / QUALIFIED status, including default protection against rediscovering rejected ideas.
+22. CLI commands for database initialization, project creation, candidate generation, status changes and project/candidate listing.
 
 ## Appraisal routing
 
@@ -100,15 +106,48 @@ The design profile suggests a validated tool where a clear default exists:
 - Non-randomized intervention studies: ROBINS-I or another design-appropriate validated tool.
 - Other designs: design-appropriate validated risk-of-bias or critical-appraisal tool selected for the actual review question and design.
 
+## AI provider configuration
+
+The scientific workflow does not depend on one AI vendor. Candidate generation uses a generic OpenAI-compatible chat-completions interface configured only through environment variables:
+
+- SCIMED_AI_ENDPOINT
+- SCIMED_AI_MODEL
+- SCIMED_AI_API_KEY
+
+The repository includes .env.example and ignores real .env files. API credentials are never stored in the evidence ledger.
+
+The AI layer is limited to candidate generation and descriptive proposal fields. Deterministic code and source audits retain authority over evidence counts, study-family decisions, source status, novelty clearance, locked gates and the final PROCEED decision.
+
+## Persistent ledger
+
+SQLite is the default zero-cost persistence layer. The ledger stores projects, candidate status, study families, studies, outcomes, source searches, query history, published reviews, registrations, protocols, ongoing studies and append-only decision history. The database survives process restarts and can later be synchronized or replaced by a cloud adapter without changing scientific logic.
+
+## CLI workflow
+
+Initialize a local database:
+
+    scimed-scout init-db data/scout.sqlite3
+
+Create a project:
+
+    scimed-scout create-project data/scout.sqlite3 RAD-DTA Radiology --question-type DIAGNOSTIC_ACCURACY
+
+After configuring SCIMED_AI_ENDPOINT and SCIMED_AI_MODEL, generate candidates:
+
+    scimed-scout generate-candidates data/scout.sqlite3 RAD-DTA --count 10 --question-type DIAGNOSTIC_ACCURACY --design "diagnostic accuracy studies"
+
+Inspect candidates:
+
+    scimed-scout list-candidates data/scout.sqlite3 RAD-DTA
+
 ## Next milestones
 
-- Persistent candidate, study-family, outcome and search ledgers.
-- Pluggable free-model AI provider layer.
-- Candidate discovery and ranking orchestration.
+- Candidate ranking orchestration and sequential deep verification of the strongest 2-3 candidates.
 - Specialty and review-question configuration modules.
-- Background cloud execution.
-- Final Review Package export for ChatGPT Plus.
-- Optional Supabase state and authentication if needed.
+- Automated connection between source searches, novelty firewall and the persistent ledger.
+- Background GitHub Actions research jobs with resumable checkpoints.
+- Final Review Package export for independent ChatGPT Plus review.
+- Optional Supabase state/authentication adapter if cloud multi-device synchronization is needed.
 
 ## Local check
 
