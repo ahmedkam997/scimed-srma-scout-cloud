@@ -130,3 +130,60 @@ def test_openai_compatible_provider_is_vendor_neutral_and_uses_bearer_key():
     assert captured["url"].endswith("/v1/chat/completions")
     assert captured["auth"] == "Bearer secret"
     assert captured["model"] == "free-model"
+
+
+
+def test_free_router_retries_empty_text_and_uses_only_free_route():
+    attempts = []
+
+    def requester(req, timeout):
+        body = json.loads(req.data.decode("utf-8"))
+        attempts.append((body["model"], body["max_tokens"]))
+        if len(attempts) < 3:
+            return json.dumps({
+                "model": "example/reasoning-model:free",
+                "choices": [{"message": {"content": ""}, "finish_reason": "length"}],
+                "usage": {"completion_tokens_details": {"reasoning_tokens": body["max_tokens"]}},
+            }).encode("utf-8")
+        return json.dumps({
+            "model": "example/responding-model:free",
+            "choices": [{"message": {"content": '{"candidates":[]}'}, "finish_reason": "stop"}],
+        }).encode("utf-8")
+
+    provider = OpenAICompatibleProvider(
+        endpoint="https://example.invalid/v1/chat/completions",
+        model="openrouter/free",
+        api_key="test-key",
+        requester=requester,
+    )
+    response = provider.complete(AIRequest(system="s", prompt="p"))
+    assert response.text == '{"candidates":[]}'
+    assert response.model == "example/responding-model:free"
+    assert attempts == [("openrouter/free", 4000), ("openrouter/free", 8000), ("openrouter/free", 12000)]
+
+
+def test_free_router_reports_empty_responses_after_limited_retries():
+    def requester(req, timeout):
+        return json.dumps({
+            "choices": [{"message": {"content": None}, "finish_reason": "length"}],
+            "usage": {"completion_tokens_details": {"reasoning_tokens": 4000}},
+        }).encode("utf-8")
+
+    provider = OpenAICompatibleProvider(
+        endpoint="https://example.invalid/v1/chat/completions",
+        model="openrouter/free",
+        requester=requester,
+    )
+    with pytest.raises(RuntimeError, match="after 3 attempts"):
+        provider.complete(AIRequest(system="s", prompt="p"))
+
+
+def test_openai_provider_reads_text_part_array():
+    provider = OpenAICompatibleProvider(
+        endpoint="https://example.invalid/v1/chat/completions",
+        model="free-model",
+        requester=lambda req, timeout: json.dumps({
+            "choices": [{"message": {"content": [{"type": "text", "text": "valid text"}]}}],
+        }).encode("utf-8"),
+    )
+    assert provider.complete(AIRequest(system="s", prompt="p")).text == "valid text"
