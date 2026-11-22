@@ -111,7 +111,7 @@ def test_review_package_contains_multiple_options_and_defers_winner_to_chatgpt(t
         assert package["selection_policy"]["final_option_candidate_ids"] == ["C1", "C2", "C3"]
         assert len(package["options"]) == 3
         assert all(option["candidate_status"] == CandidateStatus.QUALIFIED.value for option in package["options"])
-        assert "select the strongest option" in package["review_instructions"].lower()
+        assert "rank all included options" in package["review_instructions"].lower()
 
         target = tmp_path / "chatgpt_review.json"
         exported = export_review_package(ledger, result, target)
@@ -138,6 +138,7 @@ def test_review_package_excludes_nonqualified_option_when_fewer_than_three_quali
         assert package["selection_policy"]["all_included_options_are_first_choice_eligible"] is True
         assert package["selection_policy"]["provisional_or_pending_options_allowed"] is False
         assert package["selection_policy"]["available_fully_qualified_options"] == 2
+        assert package["selection_policy"]["comparison_ready"] is True
         assert package["selection_policy"]["shortfall"] == 1
         assert package["selection_policy"]["final_option_candidate_ids"] == ["C1", "C2"]
         assert all(option["candidate_status"] == CandidateStatus.QUALIFIED.value for option in package["options"])
