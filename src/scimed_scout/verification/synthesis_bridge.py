@@ -287,10 +287,10 @@ class SynthesisVerificationBridge:
             return status.value, reasons, True
         if status == UsabilityStatus.POTENTIALLY_USABLE:
             return status.value, reasons, False
-        if scope == EvidenceScope.TITLE_ABSTRACT:
+        if scope != EvidenceScope.FULL_TEXT:
             return (
                 UsabilityStatus.POTENTIALLY_USABLE.value,
-                list(dict.fromkeys(reasons + ["title/abstract evidence is insufficient to conclude non-usability; full text required"])),
+                list(dict.fromkeys(reasons + ["available evidence is insufficient to conclude non-usability; full text required"])),
                 False,
             )
         return status.value, reasons, status == UsabilityStatus.NOT_USABLE
