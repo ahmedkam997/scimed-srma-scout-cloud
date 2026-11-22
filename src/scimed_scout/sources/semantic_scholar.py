@@ -23,7 +23,7 @@ class SemanticScholarSource:
                 {
                     "query": query,
                     "limit": min(max(1, limit), 100),
-                    "fields": "title,year,url,externalIds,publicationTypes,venue",
+                    "fields": "title,abstract,year,url,externalIds,publicationTypes,venue,authors",
                 },
                 headers=headers,
             )
