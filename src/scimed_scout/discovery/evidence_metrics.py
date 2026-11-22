@@ -132,6 +132,7 @@ def evidence_metrics(
             bool(item.get("unresolved"))
             or str(item.get("overall_overlap")) not in OVERLAP_SEVERITY
             or float(item.get("confidence") or 0.0) < 0.8
+            or _clinical_overlap(item) is None
             for _, item in assessed
         )
     )
