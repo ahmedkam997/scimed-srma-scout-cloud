@@ -13,7 +13,7 @@ SYSTEM_PROMPT = """Assess overlap between a candidate systematic-review question
 Use only supplied evidence text. Do not infer facts absent from the evidence.
 Assess Population, Intervention/Exposure/Index test, Comparator/Reference standard, Outcomes,
 study-design scope, clinical decision, treatment/test era, and likely study set/search cutoff.
-If evidence is insufficient, use UNRESOLVED. Return strict JSON only.
+Every non-empty dimension evidence field must be a short exact quote from the supplied evidence text. If evidence is insufficient, use UNRESOLVED. Return strict JSON only.
 ESSENTIALLY_IDENTICAL is reserved for near-equivalent clinical questions and scope.
 Do not decide the final project verdict."""
 
@@ -92,7 +92,7 @@ class SemanticCompetitorAssessor:
                 )
             )
         confidence = _confidence(raw.get("confidence"))
-        return CompetitorAssessment(
+        result = CompetitorAssessment(
             record_id=record.get("source_record_id", ""),
             source=record.get("source", ""),
             title=record.get("title", ""),
@@ -106,6 +106,7 @@ class SemanticCompetitorAssessor:
             rationale=str(raw.get("rationale") or "").strip(),
             reviewer=f"{response.provider}:{response.model}",
         )
+        return _validate_dimension_provenance(result, evidence_text)
 
 
 def _record_evidence_text(record: dict) -> str:
@@ -160,3 +161,39 @@ def _json_object(text: str) -> dict:
     if not isinstance(value, dict):
         raise ValueError("Competitor assessment root must be an object")
     return value
+
+
+
+def _validate_dimension_provenance(
+    assessment: CompetitorAssessment,
+    evidence_text: str,
+) -> CompetitorAssessment:
+    source = _norm(evidence_text)
+    invalid = False
+    validated: list[DimensionAssessment] = []
+    for item in assessment.dimensions:
+        quote = _norm(item.evidence)
+        if quote and quote not in source:
+            invalid = True
+            validated.append(
+                DimensionAssessment(
+                    name=item.name,
+                    level=OverlapLevel.UNRESOLVED,
+                    rationale=item.rationale,
+                    evidence=item.evidence,
+                )
+            )
+        else:
+            validated.append(item)
+    assessment.dimensions = validated
+    if invalid:
+        assessment.overall_overlap = OverlapLevel.UNRESOLVED
+        assessment.confidence = min(assessment.confidence, 0.79)
+        assessment.rationale = (
+            assessment.rationale + " Evidence provenance validation failed for one or more dimensions."
+        ).strip()
+    return assessment
+
+
+def _norm(text: str) -> str:
+    return " ".join(str(text or "").casefold().split())
