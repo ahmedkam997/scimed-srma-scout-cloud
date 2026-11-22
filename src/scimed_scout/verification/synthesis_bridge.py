@@ -19,6 +19,7 @@ class SynthesisVerificationSummary:
     conservative_verified_usable_families: int
     principal_outcome_usable_families: int
     potentially_usable_families: int
+    definitively_not_usable_families: int
     families_needing_full_text: int
     threshold_met: bool
     synthesis_audit_complete: bool
@@ -60,12 +61,14 @@ class SynthesisVerificationBridge:
         self.ledger.clear_payloads("outcomes", candidate_id)
 
         family_statuses: dict[str, set[str]] = {}
+        family_definitive_not_usable: dict[str, bool] = {}
         family_has_source: dict[str, bool] = {}
         outcome_count = 0
 
         for family in families:
             family_id = str(family.get("family_id") or "")
             family_statuses[family_id] = set()
+            family_definitive_not_usable[family_id] = False
             family_has_source[family_id] = False
 
             for study_id in family.get("study_ids") or []:
@@ -100,6 +103,8 @@ class SynthesisVerificationBridge:
                         scope,
                     )
                     family_statuses[family_id].add(final_status)
+                    if final_status == UsabilityStatus.NOT_USABLE.value and definitive:
+                        family_definitive_not_usable[family_id] = True
                     outcome_count += 1
 
                     payload = {
@@ -172,17 +177,32 @@ class SynthesisVerificationBridge:
             study_to_family,
         )
 
+        definitive_not_usable_ids = {
+            family_id
+            for family_id, definitive in family_definitive_not_usable.items()
+            if definitive
+            and family_id not in verified_usable_ids
+            and not (
+                UsabilityStatus.POTENTIALLY_USABLE.value in family_statuses.get(family_id, set())
+                or UsabilityStatus.UNRESOLVED.value in family_statuses.get(family_id, set())
+            )
+        }
         families_needing_full_text = sum(
             1
             for family_id in family_statuses
             if family_id not in verified_usable_ids
+            and family_id not in definitive_not_usable_ids
         )
         threshold_met = conservative_usable >= MIN_STUDIES
 
-        # For topic feasibility, four conservative verified-usable families are
-        # sufficient to close the synthesis threshold. Missing data in additional
-        # families do not reverse an already-satisfied >=4 threshold.
-        synthesis_audit_complete = threshold_met
+        # Audit is decisive either when >=4 conservative usable families are
+        # established, or when every verified family has a definitive full-text
+        # usability conclusion.
+        all_families_definitive = all(
+            family_id in verified_usable_ids or family_id in definitive_not_usable_ids
+            for family_id in family_statuses
+        )
+        synthesis_audit_complete = threshold_met or all_families_definitive
 
         metadata = dict(candidate.metadata or {})
         metadata.update({
@@ -192,6 +212,7 @@ class SynthesisVerificationBridge:
             "conservative_verified_usable_studies": conservative_usable,
             "principal_outcome_usable_families": conservative_principal,
             "potentially_usable_families": len(potential_ids),
+            "definitively_not_usable_families": len(definitive_not_usable_ids),
             "families_needing_full_text_for_synthesis": families_needing_full_text,
             "synthesis_extraction_is_family_based": True,
         })
@@ -206,6 +227,7 @@ class SynthesisVerificationBridge:
             conservative_verified_usable_families=conservative_usable,
             principal_outcome_usable_families=conservative_principal,
             potentially_usable_families=len(potential_ids),
+            definitively_not_usable_families=len(definitive_not_usable_ids),
             families_needing_full_text=families_needing_full_text,
             threshold_met=threshold_met,
             synthesis_audit_complete=synthesis_audit_complete,
