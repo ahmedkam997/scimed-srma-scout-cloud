@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "review_type": "RCT_ONLY_FIRST_CHOICE",
+  "mandatory_gates": 15,
+  "minimum_verified_independent_rcts": 7,
+  "minimum_verified_usable_rcts": 7,
+  "minimum_clinical_question_novelty": 3,
+  "minimum_overall_novelty": 3,
+  "minimum_clinical_importance": 4,
+  "minimum_publication_potential": 4,
+  "minimum_new_information_gain": 4,
+  "minimum_publication_oriented_score": 75,
+  "valid_editorial_grades": ["A", "B", "CORRECTED C"],
+  "valid_feasibility": ["HIGH", "STRONG MODERATE"]
+}
