@@ -203,6 +203,7 @@ def test_manual_distinct_override_resolves_decision_changing_possible_link(tmp_p
         assert after.possible_family_links == 0
         assert after.conservative_independent_count == 4
         assert after.study_audit_complete
+        assert ledger.list_decisions("C1")[-1].decision == "MANUAL_FAMILY_LINK_RESOLUTION"
 
 
 def test_manual_same_family_override_merges_publications(tmp_path):
@@ -247,6 +248,7 @@ def test_low_confidence_study_needs_review_until_manual_verification(tmp_path):
         assert after.needs_review == 0
         assert after.verified_eligible == 1
         assert after.study_audit_complete
+        assert ledger.list_decisions("C1")[-1].decision == "MANUAL_STUDY_VERIFICATION"
 
 
 def test_family_id_is_stable_across_reruns(tmp_path):
