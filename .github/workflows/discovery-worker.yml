@@ -20,8 +20,8 @@ jobs:
       SUPABASE_URL: https://vskqiszpjxsmcayuaclo.supabase.co
       SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZza3Fpc3pwanhzbWNheXVhY2xvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUzNzY3MzQsImV4cCI6MjExMDk1MjczNH0.ussaGLgCbu_J15GCEe3VGiLuCurV65xsyEjgxoHBfHs
       SCIMED_WORKER_TOKEN: ${{ secrets.SCIMED_WORKER_TOKEN }}
-      SCIMED_AI_ENDPOINT: ${{ secrets.SCIMED_AI_ENDPOINT }}
-      SCIMED_AI_MODEL: ${{ secrets.SCIMED_AI_MODEL }}
+      SCIMED_AI_ENDPOINT: https://openrouter.ai/api/v1/chat/completions
+      SCIMED_AI_MODEL: openrouter/free
       SCIMED_AI_API_KEY: ${{ secrets.SCIMED_AI_API_KEY }}
       SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
       PROSPERO_NETWORK_MODE: online
@@ -30,7 +30,7 @@ jobs:
       - name: Check worker configuration
         id: config
         run: |
-          if [ -z "$SCIMED_WORKER_TOKEN" ] || [ -z "$SCIMED_AI_ENDPOINT" ] || [ -z "$SCIMED_AI_MODEL" ]; then
+          if [ -z "$SCIMED_WORKER_TOKEN" ] || [ -z "$SCIMED_AI_API_KEY" ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "Worker secrets are not configured yet."
           else

@@ -162,9 +162,12 @@ The production Supabase project and queue schema are already configured. Anonymo
 Set these GitHub repository Secrets:
 
     SCIMED_WORKER_TOKEN
-    SCIMED_AI_ENDPOINT
-    SCIMED_AI_MODEL
     SCIMED_AI_API_KEY
+
+The background worker defaults to:
+
+    SCIMED_AI_ENDPOINT=https://openrouter.ai/api/v1/chat/completions
+    SCIMED_AI_MODEL=openrouter/free
 
 Optional secret:
 

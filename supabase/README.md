@@ -21,12 +21,10 @@ The GitHub Actions worker uses the public anon API key plus a separate `SCIMED_W
 Add these repository Secrets:
 
 - `SCIMED_WORKER_TOKEN`
-- `SCIMED_AI_ENDPOINT`
-- `SCIMED_AI_MODEL`
-- `SCIMED_AI_API_KEY` when the selected provider requires it
+- `SCIMED_AI_API_KEY` for OpenRouter
 - `SEMANTIC_SCHOLAR_API_KEY` optionally
 
-The Supabase URL and anon key are public configuration and are already present in the PWA and worker workflow.
+The Supabase URL and anon key are public configuration and are already present in the PWA and worker workflow. The worker defaults to the zero-price OpenRouter free-model router.
 
 ## GitHub Pages
 
