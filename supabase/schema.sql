@@ -147,12 +147,56 @@ create policy "worker_updates_discovery_jobs"
 -- set token_hash = excluded.token_hash, updated_at = now();
 
 
--- Device-scoped cancellation: public RPC, but never a broad client UPDATE policy.
--- SECURITY DEFINER is constrained to a single status transition and job owner hash.
+-- Safe device-scoped cancellation. Avoid an anonymous SECURITY DEFINER RPC.
+-- The limited UPDATE policy allows only an owned active row; the trigger
+-- restores all fields except the status change, so clients cannot forge results.
+create or replace function private.scimed_cancel_guard()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if current_user in ('postgres', 'service_role') or private.scimed_is_worker() then
+    return new;
+  end if;
+  if old.client_token_hash is distinct from private.scimed_client_hash()
+     or old.status not in ('QUEUED','RUNNING')
+     or new.status is distinct from 'CANCELLED' then
+    raise exception 'Unauthorized discovery job status transition';
+  end if;
+  new := old;
+  new.status := 'CANCELLED';
+  new.stage := 'CANCELLED';
+  new.message := 'Cancelled from this device. Worker stops at the next safe checkpoint.';
+  new.error_text := '';
+  new.completed_at := clock_timestamp();
+  new.updated_at := clock_timestamp();
+  return new;
+end;
+$$;
+
+drop trigger if exists scimed_cancel_guard on public.discovery_jobs;
+create trigger scimed_cancel_guard
+before update on public.discovery_jobs
+for each row execute function private.scimed_cancel_guard();
+
+drop policy if exists "clients_cancel_own_discovery_jobs" on public.discovery_jobs;
+create policy "clients_cancel_own_discovery_jobs"
+on public.discovery_jobs for update to anon, authenticated
+using (
+  client_token_hash = private.scimed_client_hash()
+  and status in ('QUEUED','RUNNING')
+)
+with check (
+  client_token_hash = private.scimed_client_hash()
+  and status = 'CANCELLED'
+);
+
 create or replace function public.scimed_cancel_job(p_job_id uuid)
 returns boolean
 language plpgsql
-security definer
+security invoker
 set search_path = ''
 as $$
 declare
@@ -163,20 +207,12 @@ begin
   if v_client_hash is null or length(v_client_hash) <> 64 then
     return false;
   end if;
-
-  update public.discovery_jobs
-    set status = 'CANCELLED',
-        stage = 'CANCELLED',
-        message = 'Cancelled from this device. Worker stops at the next safe checkpoint.',
-        error_text = '',
-        completed_at = clock_timestamp(),
-        updated_at = clock_timestamp()
-  where id = p_job_id
-    and client_token_hash = v_client_hash
-    and status in ('QUEUED', 'RUNNING');
-
+  update public.discovery_jobs set status='CANCELLED'
+  where id=p_job_id
+    and client_token_hash=v_client_hash
+    and status in ('QUEUED','RUNNING');
   get diagnostics v_updated = row_count;
-  return v_updated = 1;
+  return v_updated=1;
 end;
 $$;
 
