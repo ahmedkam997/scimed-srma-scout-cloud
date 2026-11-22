@@ -229,7 +229,7 @@ def _validate_node(node: Any, source_text: str, *, prefix: str) -> tuple[Any, bo
         supported = bool(evidence) and _norm(evidence) in _norm(source_text)
         if supported and isinstance(value, (int, float)) and not isinstance(value, bool):
             supported = _numeric_supported(float(value), evidence)
-        if not supported:
+        if not supported or confidence < 0.85:
             return {"value": None, "evidence": evidence, "confidence": 0.0}, True
         return {"value": value, "evidence": evidence, "confidence": confidence}, False
 
@@ -243,16 +243,30 @@ def _validate_node(node: Any, source_text: str, *, prefix: str) -> tuple[Any, bo
 
 
 def _numeric_supported(value: float, evidence: str) -> bool:
+    cleaned = evidence.replace(",", "")
     numbers = []
-    for token in re.findall(r"[-+]?\d+(?:\.\d+)?", evidence.replace(",", "")):
+    for token in re.findall(r"[-+]?\d+(?:\.\d+)?", cleaned):
         try:
             numbers.append(float(token))
         except ValueError:
             pass
     if any(math.isclose(value, number, rel_tol=1e-6, abs_tol=1e-9) for number in numbers):
         return True
-    if 0 <= value <= 1 and "%" in evidence:
-        return any(math.isclose(value * 100.0, number, rel_tol=1e-4, abs_tol=1e-4) for number in numbers)
+
+    if 0 <= value <= 1 and "%" in cleaned:
+        valid_percentages: list[float] = []
+        for match in re.finditer(r"(\d+(?:\.\d+)?)\s*%", cleaned):
+            tail = cleaned[match.end():match.end() + 20].casefold()
+            if re.match(r"\s*(?:ci|confidence\s+interval)", tail):
+                continue
+            try:
+                valid_percentages.append(float(match.group(1)))
+            except ValueError:
+                pass
+        return any(
+            math.isclose(value * 100.0, number, rel_tol=1e-4, abs_tol=1e-4)
+            for number in valid_percentages
+        )
     return False
 
 
