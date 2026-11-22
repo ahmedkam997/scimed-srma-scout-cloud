@@ -59,6 +59,7 @@ class StudyVerificationBridge:
             raise ValueError(f"Candidate not found: {candidate_id}")
 
         stored = self.ledger.list_payloads("studies", candidate_id)
+        stored_by_id = {str(x.get("study_id") or ""): dict(x) for x in stored}
         promotions: list[StudyPromotion] = []
         eligible_records: list[StudyRecord] = []
 
@@ -76,7 +77,9 @@ class StudyVerificationBridge:
             payload["eligible_for_review"] = promotion.status == PromotionStatus.VERIFIED_ELIGIBLE
             payload["design_verified"] = bool(record and record.design.design_verified)
             payload["independence_verified"] = False
-            self.ledger.upsert_payload("studies", candidate_id, str(payload.get("study_id") or ""), payload)
+            study_id = str(payload.get("study_id") or "")
+            stored_by_id[study_id] = dict(payload)
+            self.ledger.upsert_payload("studies", candidate_id, study_id, payload)
             if record is not None and promotion.status == PromotionStatus.VERIFIED_ELIGIBLE:
                 eligible_records.append(record)
 
@@ -126,7 +129,7 @@ class StudyVerificationBridge:
             self.ledger.upsert_payload("study_families", candidate_id, family.family_id, family_payload)
 
             for study_id in family.study_ids:
-                study_payload = next((x for x in stored if str(x.get("study_id") or "") == study_id), None)
+                study_payload = stored_by_id.get(study_id)
                 if study_payload is None:
                     continue
                 updated = dict(study_payload)
@@ -228,6 +231,12 @@ class StudyVerificationBridge:
         candidate = self.ledger.get_candidate(candidate_id)
         if candidate is None:
             raise ValueError(f"Candidate not found: {candidate_id}")
+        if study_a == study_b:
+            raise ValueError("study_a and study_b must be different")
+        known_ids = {str(x.get("study_id") or "") for x in self.ledger.list_payloads("studies", candidate_id)}
+        missing = [study_id for study_id in (study_a, study_b) if study_id not in known_ids]
+        if missing:
+            raise ValueError("Study not found: " + ", ".join(missing))
         metadata = dict(candidate.metadata or {})
         overrides = dict(metadata.get("family_link_overrides") or {})
         overrides[_pair_key(study_a, study_b)] = {
@@ -296,7 +305,16 @@ class StudyVerificationBridge:
                     None,
                 )
             if manual_eligibility == "ELIGIBLE":
-                design_label = str(manual.get("design_label") or _field_value(fields, "design_label") or "")
+                design_label = str(manual.get("design_label") or _field_value(fields, "design_label") or "").strip()
+                if not design_label:
+                    return (
+                        StudyPromotion(
+                            str(payload.get("study_id") or ""),
+                            PromotionStatus.NEEDS_REVIEW,
+                            ("manual eligibility supplied but study design is still missing",),
+                        ),
+                        None,
+                    )
                 profile = classify_design(candidate.question_type, design_label)
                 profile.design_verified = True
                 record = self._record_from_fields(payload, fields, profile, notes="Manually verified eligibility/design")
