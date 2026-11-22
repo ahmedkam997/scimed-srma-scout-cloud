@@ -75,7 +75,7 @@ def main() -> None:
     verify.add_argument("db")
     verify.add_argument("project_id")
     verify.add_argument("--min-verify", type=int, default=3)
-    verify.add_argument("--max-verify", type=int, default=5)
+    verify.add_argument("--max-verify", type=int, default=10)
     verify.add_argument("--final-options", type=int, default=3)
     verify.add_argument("--limit-per-query", type=int, default=20)
     verify.add_argument("--review-package", default="")
