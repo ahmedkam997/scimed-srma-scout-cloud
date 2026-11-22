@@ -15,7 +15,7 @@ from .ranking import CandidateRankingService
 from .review_package import export_review_package
 from .sources import build_default_source_clients
 from .storage import ProjectRecord, SQLiteLedger
-from .verification import CandidateEvidenceAnalysisService, SequentialDeepVerifier
+from .verification import CandidateEvidenceAnalysisService, SequentialDeepVerifier, StudyVerificationBridge
 
 
 def health() -> dict[str, object]:
@@ -91,6 +91,26 @@ def main() -> None:
     analyze.add_argument("db")
     analyze.add_argument("candidate_id")
     analyze.add_argument("--force", action="store_true")
+
+    verify_studies = sub.add_parser("verify-studies")
+    verify_studies.add_argument("db")
+    verify_studies.add_argument("candidate_id")
+
+    manual_study = sub.add_parser("manual-verify-study")
+    manual_study.add_argument("db")
+    manual_study.add_argument("candidate_id")
+    manual_study.add_argument("study_id")
+    manual_study.add_argument("status", choices=["ELIGIBLE", "INELIGIBLE"])
+    manual_study.add_argument("--design", default="")
+    manual_study.add_argument("--reason", default="")
+
+    family_link = sub.add_parser("resolve-family-link")
+    family_link.add_argument("db")
+    family_link.add_argument("candidate_id")
+    family_link.add_argument("study_a")
+    family_link.add_argument("study_b")
+    family_link.add_argument("resolution", choices=["SAME_FAMILY", "DISTINCT_FAMILIES"])
+    family_link.add_argument("--reason", default="")
 
     args = parser.parse_args()
 
@@ -197,6 +217,7 @@ def main() -> None:
                 ledger,
                 build_default_source_clients(),
                 evidence_analysis_service=_optional_evidence_analysis_service(ledger),
+                study_verification_bridge=StudyVerificationBridge(ledger),
             )
             result = verifier.run(
                 args.project_id,
@@ -242,8 +263,38 @@ def main() -> None:
             "auto_eligible_studies": summary.auto_eligible_studies,
             "auto_ineligible_studies": summary.auto_ineligible_studies,
             "auto_uncertain_studies": summary.auto_uncertain_studies,
-            "warning": "AUTO_EXTRACTED studies do not count as verified evidence until study-family and synthesis audits are completed.",
+            "warning": "AUTO_EXTRACTED studies do not count as verified evidence until the verification bridge promotes them.",
         }, ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "verify-studies":
+        with SQLiteLedger(args.db) as ledger:
+            summary = StudyVerificationBridge(ledger).run(args.candidate_id)
+        print(json.dumps(_study_verification_json(summary), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "manual-verify-study":
+        with SQLiteLedger(args.db) as ledger:
+            summary = StudyVerificationBridge(ledger).set_manual_study_verification(
+                args.candidate_id,
+                args.study_id,
+                eligible=args.status == "ELIGIBLE",
+                design_label=args.design,
+                reason=args.reason,
+            )
+        print(json.dumps(_study_verification_json(summary), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "resolve-family-link":
+        with SQLiteLedger(args.db) as ledger:
+            summary = StudyVerificationBridge(ledger).set_family_link_override(
+                args.candidate_id,
+                args.study_a,
+                args.study_b,
+                resolution=args.resolution,
+                reason=args.reason,
+            )
+        print(json.dumps(_study_verification_json(summary), ensure_ascii=False, indent=2))
         return
 
     raise SystemExit("Unknown command")
@@ -300,6 +351,21 @@ def _candidate_verification_json(result) -> dict:
     }
 
 
+def _study_verification_json(summary) -> dict:
+    return {
+        "candidate_id": summary.candidate_id,
+        "records_seen": summary.records_seen,
+        "verified_eligible": summary.verified_eligible,
+        "verified_ineligible": summary.verified_ineligible,
+        "needs_review": summary.needs_review,
+        "deterministic_families": summary.deterministic_families,
+        "conservative_independent_count": summary.conservative_independent_count,
+        "possible_family_links": summary.possible_family_links,
+        "decision_changing_family_uncertainty": summary.decision_changing_family_uncertainty,
+        "study_audit_complete": summary.study_audit_complete,
+    }
+
+
 def _sequential_verification_json(result) -> dict:
     return {
         "project_id": result.project_id,
@@ -318,8 +384,6 @@ def _sequential_verification_json(result) -> dict:
     }
 
 
-if __name__ == "__main__":
-    main()
 
 
 
