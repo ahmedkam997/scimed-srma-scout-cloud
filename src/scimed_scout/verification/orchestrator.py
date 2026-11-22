@@ -50,7 +50,9 @@ class SequentialVerificationResult:
     project_id: str
     ranked: list[RankingResult]
     verified: list[CandidateVerificationResult]
-    first_choice_candidate_id: str | None = None
+    final_option_candidate_ids: list[str] = field(default_factory=list)
+    qualified_option_candidate_ids: list[str] = field(default_factory=list)
+    desired_options: int = 3
 
 
 class SequentialDeepVerifier:
@@ -62,12 +64,15 @@ class SequentialDeepVerifier:
         self,
         project_id: str,
         *,
-        min_verify: int = 2,
-        max_verify: int = 3,
+        min_verify: int = 3,
+        max_verify: int = 5,
+        final_options: int = 3,
         limit_per_query: int = 20,
     ) -> SequentialVerificationResult:
         if min_verify < 1 or max_verify < min_verify:
             raise ValueError("Require 1 <= min_verify <= max_verify")
+        if final_options < 2 or final_options > max_verify:
+            raise ValueError("Require 2 <= final_options <= max_verify")
 
         project = self.ledger.get_project(project_id)
         if project is None:
@@ -84,7 +89,7 @@ class SequentialDeepVerifier:
 
         selected = ranked[:max_verify]
         results: list[CandidateVerificationResult] = []
-        first_choice: str | None = None
+        qualified_ids: list[str] = []
 
         for index, ranked_item in enumerate(selected, start=1):
             candidate = self.ledger.get_candidate(ranked_item.candidate_id)
@@ -107,37 +112,43 @@ class SequentialDeepVerifier:
             results.append(result)
 
             if result.candidate_status == CandidateStatus.QUALIFIED:
-                if first_choice is None:
-                    first_choice = result.candidate_id
-                else:
-                    result.decision = "PROCEED — QUALIFIED BACKUP"
-                    result.candidate_status = CandidateStatus.PROVISIONAL_BACKUP
-                    self.ledger.set_candidate_status(result.candidate_id, CandidateStatus.PROVISIONAL_BACKUP)
-                    self._append_decision(
-                        candidate,
-                        decision="PROCEED — QUALIFIED BACKUP",
-                        stage="SEQUENTIAL_SELECTION",
-                        reason=f"Higher-ranked qualified candidate {first_choice} retained as FIRST-CHOICE",
-                        payload={"first_choice_candidate_id": first_choice},
-                    )
+                qualified_ids.append(result.candidate_id)
 
-            # Verify at least two candidates. If one has fully qualified after that,
-            # there is no need to spend a third deep-verification slot by default.
-            if index >= min_verify and first_choice is not None:
+            # Verify at least the requested minimum. Stop early only after enough
+            # independently qualified final-review options have been assembled.
+            if index >= min_verify and len(qualified_ids) >= final_options:
                 break
+
+        final_ids = list(qualified_ids[:final_options])
+        if len(final_ids) < final_options:
+            for result in results:
+                if result.candidate_id in final_ids:
+                    continue
+                if result.candidate_status in {CandidateStatus.REJECTED}:
+                    continue
+                final_ids.append(result.candidate_id)
+                if len(final_ids) >= final_options:
+                    break
 
         self.ledger.update_checkpoint(
             project_id,
-            stage="LOCKED_GATES" if first_choice else "DEEP_VERIFY",
-            progress=90 if first_choice else 75,
+            stage="EXPORT" if len(final_ids) >= 2 else "DEEP_VERIFY",
+            progress=92 if len(final_ids) >= 2 else 75,
             message=(
-                f"First-choice candidate qualified: {first_choice}"
-                if first_choice
-                else "Sequential verification completed without a fully qualified first-choice candidate"
+                f"Prepared {len(final_ids)} final review options for ChatGPT comparison"
+                if final_ids
+                else "Sequential verification completed without reviewable final options"
             ),
         )
 
-        return SequentialVerificationResult(project_id, ranked, results, first_choice)
+        return SequentialVerificationResult(
+            project_id=project_id,
+            ranked=ranked,
+            verified=results,
+            final_option_candidate_ids=final_ids,
+            qualified_option_candidate_ids=qualified_ids,
+            desired_options=final_options,
+        )
 
     def verify_candidate(
         self,
@@ -249,7 +260,7 @@ class SequentialDeepVerifier:
                 decision = final_gate_result["decision"]
                 status = (
                     CandidateStatus.QUALIFIED
-                    if decision == "PROCEED — FIRST-CHOICE"
+                    if decision == "QUALIFIED — FINAL REVIEW OPTION"
                     else CandidateStatus.REJECTED
                 )
 
