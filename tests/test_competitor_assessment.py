@@ -81,3 +81,33 @@ def test_missing_evidence_text_fails_closed_without_semantic_clearance():
     assert result.overall_overlap == OverlapLevel.UNRESOLVED
     assert result.unresolved
     assert not result.evidence_text_available
+
+
+def test_hallucinated_dimension_quote_forces_unresolved_overlap():
+    response = {
+        "overall_overlap": "ESSENTIALLY_IDENTICAL",
+        "dimensions": [
+            {
+                "name": "population",
+                "level": "HIGH",
+                "rationale": "claimed same population",
+                "evidence": "children with confirmed disease X",
+            }
+        ],
+        "adequate_review": True,
+        "recent_review": True,
+        "meaningful_new_information": False,
+        "confidence": 0.95,
+        "rationale": "Near-identical",
+    }
+    assessor = SemanticCompetitorAssessor(StaticAIProvider(json.dumps(response)))
+    record = {
+        "source_record_id": "R2",
+        "source": "PubMed",
+        "title": "Systematic review of Test A in disease X",
+        "payload": {"metadata": {"abstract": "Adults with suspected disease X were evaluated using Test A."}},
+    }
+    result = assessor.assess(candidate(), record)
+    assert result.overall_overlap == OverlapLevel.UNRESOLVED
+    assert result.unresolved
+    assert not result.fatal_redundancy
