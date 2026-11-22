@@ -256,6 +256,10 @@ class SequentialDeepVerifier:
             )
         if not evidence.study_audit_complete:
             pending.append("TYPE-A: study-family eligibility/independence audit is incomplete")
+        if bool(meta.get("usable_family_uncertainty_decision_changing")):
+            pending.append(
+                "TYPE-A: unresolved family overlap can reduce the conservative synthesis-usable count below 4"
+            )
         if not evidence.synthesis_audit_complete:
             pending.append("TYPE-A: synthesis-usability audit is incomplete")
 
