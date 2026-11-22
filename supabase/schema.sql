@@ -67,7 +67,7 @@ create table if not exists public.discovery_jobs (
   specialty text not null default 'ALL',
   question_type text not null default 'ALL',
   status text not null default 'QUEUED'
-    check (status in ('QUEUED','RUNNING','COMPLETED','FAILED')),
+    check (status in ('QUEUED','RUNNING','COMPLETED','FAILED','CANCELLED')),
   stage text not null default 'QUEUED',
   progress integer not null default 0 check (progress between 0 and 100),
   message text not null default 'Waiting for background worker',
@@ -99,6 +99,11 @@ where client_token_hash is null;
 
 alter table public.discovery_jobs
   alter column client_token_hash set not null;
+
+alter table public.discovery_jobs drop constraint if exists discovery_jobs_status_check;
+alter table public.discovery_jobs
+  add constraint discovery_jobs_status_check
+  check (status in ('QUEUED','RUNNING','COMPLETED','FAILED','CANCELLED'));
 
 create index if not exists discovery_jobs_client_created_idx
   on public.discovery_jobs(client_token_hash, created_at desc);
@@ -140,3 +145,40 @@ create policy "worker_updates_discovery_jobs"
 -- insert into private.scimed_worker_config(singleton, token_hash)
 -- values (true, '<sha256>') on conflict (singleton) do update
 -- set token_hash = excluded.token_hash, updated_at = now();
+
+
+-- Device-scoped cancellation: public RPC, but never a broad client UPDATE policy.
+-- SECURITY DEFINER is constrained to a single status transition and job owner hash.
+create or replace function public.scimed_cancel_job(p_job_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_client_hash text;
+  v_updated integer;
+begin
+  v_client_hash := private.scimed_client_hash();
+  if v_client_hash is null or length(v_client_hash) <> 64 then
+    return false;
+  end if;
+
+  update public.discovery_jobs
+    set status = 'CANCELLED',
+        stage = 'CANCELLED',
+        message = 'Cancelled from this device. Worker stops at the next safe checkpoint.',
+        error_text = '',
+        completed_at = clock_timestamp(),
+        updated_at = clock_timestamp()
+  where id = p_job_id
+    and client_token_hash = v_client_hash
+    and status in ('QUEUED', 'RUNNING');
+
+  get diagnostics v_updated = row_count;
+  return v_updated = 1;
+end;
+$$;
+
+revoke all on function public.scimed_cancel_job(uuid) from public;
+grant execute on function public.scimed_cancel_job(uuid) to anon, authenticated;
