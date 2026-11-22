@@ -65,7 +65,7 @@ class SequentialDeepVerifier:
         project_id: str,
         *,
         min_verify: int = 3,
-        max_verify: int = 5,
+        max_verify: int = 10,
         final_options: int = 3,
         limit_per_query: int = 20,
     ) -> SequentialVerificationResult:
@@ -119,25 +119,20 @@ class SequentialDeepVerifier:
             if index >= min_verify and len(qualified_ids) >= final_options:
                 break
 
+        # Strict final shortlist: only fully qualified, first-choice-eligible
+        # candidates are allowed. Pending/provisional candidates are never
+        # backfilled into the final list.
         final_ids = list(qualified_ids[:final_options])
-        if len(final_ids) < final_options:
-            for result in results:
-                if result.candidate_id in final_ids:
-                    continue
-                if result.candidate_status in {CandidateStatus.REJECTED}:
-                    continue
-                final_ids.append(result.candidate_id)
-                if len(final_ids) >= final_options:
-                    break
 
         self.ledger.update_checkpoint(
             project_id,
-            stage="EXPORT" if len(final_ids) >= 2 else "DEEP_VERIFY",
-            progress=92 if len(final_ids) >= 2 else 75,
+            stage="EXPORT" if final_ids else "DEEP_VERIFY",
+            progress=92 if final_ids else 75,
             message=(
-                f"Prepared {len(final_ids)} final review options for ChatGPT comparison"
+                f"Prepared {len(final_ids)} fully qualified first-choice-eligible options "
+                f"for ChatGPT comparison; requested {final_options}"
                 if final_ids
-                else "Sequential verification completed without reviewable final options"
+                else "No fully qualified first-choice-eligible option is available for final review"
             ),
         )
 
@@ -260,7 +255,7 @@ class SequentialDeepVerifier:
                 decision = final_gate_result["decision"]
                 status = (
                     CandidateStatus.QUALIFIED
-                    if decision == "QUALIFIED — FINAL REVIEW OPTION"
+                    if decision == "QUALIFIED — FIRST-CHOICE ELIGIBLE"
                     else CandidateStatus.REJECTED
                 )
 
