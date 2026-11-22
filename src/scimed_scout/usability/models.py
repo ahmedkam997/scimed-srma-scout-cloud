@@ -81,6 +81,7 @@ class OutcomeUsability:
 class TrialUsabilityAudit:
     family_id: str
     outcomes: list[OutcomeUsability] = field(default_factory=list)
+    principal_outcome_ids: set[str] = field(default_factory=set)
 
     @property
     def verified_usable(self) -> bool:
@@ -88,4 +89,8 @@ class TrialUsabilityAudit:
 
     @property
     def principal_outcome_verified_usable(self) -> bool:
-        return False
+        return any(
+            x.outcome_id in self.principal_outcome_ids
+            and x.status == UsabilityStatus.VERIFIED_USABLE
+            for x in self.outcomes
+        )
