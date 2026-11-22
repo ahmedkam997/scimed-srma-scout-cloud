@@ -115,7 +115,8 @@ def test_sequential_verifier_returns_multiple_final_options_for_chatgpt(tmp_path
         result = SequentialDeepVerifier(ledger, clients()).run("P1", min_verify=3, max_verify=3, final_options=3)
 
         assert len(result.verified) == 3
-        assert result.final_option_candidate_ids == ["C1", "C2", "C3"]\n        assert result.qualified_option_candidate_ids == ["C1", "C2", "C3"]
+        assert result.final_option_candidate_ids == ["C1", "C2", "C3"]
+        assert result.qualified_option_candidate_ids == ["C1", "C2", "C3"]
         assert ledger.get_candidate("C1").status == CandidateStatus.QUALIFIED
         assert ledger.get_candidate("C2").status == CandidateStatus.QUALIFIED
         assert ledger.get_candidate("C3").status == CandidateStatus.QUALIFIED
