@@ -110,6 +110,16 @@ Potentially recoverable data are kept separate from VERIFIED_USABLE data until t
 35. Conservative independent-study counting across unresolved possible publication/population overlaps. A possible link can reduce the count used by the four-study gate even when raw family count is higher.
 36. Threshold-aware family uncertainty: unresolved overlap blocks the candidate when it could reduce the conservative independent count below four.
 37. Auditable manual overrides for study eligibility/design and SAME_FAMILY versus DISTINCT_FAMILIES decisions, stored in decision history.
+38. Automated synthesis-data extraction from verified eligible studies with field-level exact-quote provenance and independent numeric validation.
+39. Family-level synthesis-usability verification, so multiple publications from one population contribute at most one usable study family.
+40. Automatic extraction pathways for binary events/denominators, continuous n/mean/SD, time-to-event HR/CI and related structures, ordinal effects, DTA 2x2 data, proportions, rates/person-time, correlations, generic effect estimates and prediction-model performance.
+41. Diagnostic-accuracy reconstruction from sensitivity, specificity, diseased N and non-diseased N only when the reconstructed 2x2 counts are numerically exact within the deterministic tolerance.
+42. Numeric hallucination protection: a populated number is discarded unless the supporting source quote contains the same numeric value or a valid corresponding percentage, and low-confidence fields are not used.
+43. Abstract-level missing quantitative data are treated as POTENTIALLY_USABLE / needs-full-text rather than definitive non-usability.
+44. Definitive NOT_USABLE status requires full-text evidence when no valid synthesis pathway exists.
+45. Conservative usable-family counting across unresolved family links. Raw usable count of four does not pass if possible population overlap reduces the conservative count below four.
+46. Decision-changing usable-family uncertainty is a Type-A blocker.
+47. Repeated literature searches preserve previously attached full text, supplements and completed evidence assessments instead of overwriting enriched records.
 
 ## Appraisal routing
 
@@ -191,19 +201,26 @@ Resolve an ambiguous publication/population link:
 
 Use SAME_FAMILY instead when the two publications come from the same underlying population.
 
+Extract and verify synthesis usability for a candidate:
+
+    scimed-scout verify-synthesis data/scout.sqlite3 CANDIDATE_ID
+
+Force re-extraction after updating source text or full text:
+
+    scimed-scout verify-synthesis data/scout.sqlite3 CANDIDATE_ID --force
+
 Recheck one candidate after overlap, study-family or synthesis verification:
 
     scimed-scout verify-candidate data/scout.sqlite3 CANDIDATE_ID
 
-Deep verification writes every source query, source status, discovered review/registration/study record, checkpoint and decision back to the SQLite ledger. Raw search hits remain DISCOVERED_UNVERIFIED. AUTO_EXTRACTED records also do not count until the verification bridge promotes them. The four-study gate uses the conservative independent-family count after duplicate merging and possible-overlap analysis, not the number of publications or search hits. If only one or two candidates meet the full standard, the final package contains only those qualified candidates and reports the shortfall. No weaker candidate is added to fill the requested number.
+Deep verification writes every source query, source status, discovered review/registration/study record, checkpoint and decision back to the SQLite ledger. Raw search hits remain DISCOVERED_UNVERIFIED. AUTO_EXTRACTED records also do not count until the verification bridge promotes them. The independent-study gate uses the conservative family count after duplicate merging and possible-overlap analysis. The synthesis gate separately requires at least four conservative VERIFIED_USABLE study families. Missing quantitative data in title/abstract evidence triggers a full-text requirement rather than automatic rejection. If full text has been reviewed and no valid synthesis pathway exists, the family can be marked definitively NOT_USABLE. If only one or two candidates meet the full standard, the final package contains only those qualified candidates and reports the shortfall. No weaker candidate is added to fill the requested number.
 
 ## Next milestones
 
-- Automated synthesis-usability extraction from verified study evidence, including DTA 2x2 data and other design-specific quantitative structures.
-- Automated extraction of effect estimates, denominators, means/SDs, hazard ratios, proportions, person-time and prediction-model performance with field-level provenance.
-- Full-text acquisition/attachment workflow for records whose abstract metadata is insufficient for eligibility or quantitative verification.
+- Full-text acquisition/attachment workflow with chunked extraction for papers whose abstracts do not contain enough eligibility or quantitative evidence.
+- Manual and assisted reconstruction workflows for graph-only data, Kaplan-Meier curves and justified median/IQR conversion.
+- Outcome harmonization across study families, including synonym mapping, follow-up windows and clinically defensible pooling groups.
 - Specialty and review-question configuration modules.
-- Automated connection between source searches, novelty firewall and the persistent ledger.
 - Background GitHub Actions research jobs with resumable checkpoints.
 - Optional Supabase state/authentication adapter if cloud multi-device synchronization is needed.
 
