@@ -35,7 +35,7 @@ jobs:
 
       - name: Process next queued discovery job
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SCIMED_AI_ENDPOINT: ${{ secrets.SCIMED_AI_ENDPOINT }}
           SCIMED_AI_MODEL: ${{ secrets.SCIMED_AI_MODEL }}

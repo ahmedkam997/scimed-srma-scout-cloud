@@ -7,7 +7,6 @@
    - `SUPABASE_URL`
    - `SUPABASE_ANON_KEY`
 5. In GitHub repository Secrets, add:
-   - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `SCIMED_AI_ENDPOINT`
    - `SCIMED_AI_MODEL`

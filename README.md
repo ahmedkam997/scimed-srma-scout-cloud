@@ -166,7 +166,6 @@ Set these GitHub repository Variables:
 
 Set these GitHub repository Secrets:
 
-    SUPABASE_URL
     SUPABASE_SERVICE_ROLE_KEY
     SCIMED_AI_ENDPOINT
     SCIMED_AI_MODEL
