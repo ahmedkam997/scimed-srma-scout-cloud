@@ -151,12 +151,16 @@ function renderJobs() {
         `).join('')}</div>`
       : '';
 
-    const actions = job.status === 'COMPLETED'
+    const actions = ['QUEUED', 'RUNNING'].includes(job.status)
       ? `<div class="job-actions">
-          <button class="secondary small" data-copy-job="${job.id}">Copy for ChatGPT</button>
-          <button class="secondary small" data-download-job="${job.id}">Download JSON</button>
+          <button class="secondary small cancel-button" data-cancel-job="${escapeHtml(job.id)}">Cancel job</button>
         </div>`
-      : '';
+      : job.status === 'COMPLETED'
+        ? `<div class="job-actions">
+            <button class="secondary small" data-copy-job="${escapeHtml(job.id)}">Copy for ChatGPT</button>
+            <button class="secondary small" data-download-job="${escapeHtml(job.id)}">Download JSON</button>
+          </div>`
+        : '';
 
     const error = job.error_text
       ? `<details class="error-details"><summary>Error details</summary><pre>${escapeHtml(job.error_text)}</pre></details>`
@@ -201,6 +205,31 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
 }
 
+async function cancelJob(jobId) {
+  const job = jobs.find(item => item.id === jobId);
+  if (!job || !['QUEUED', 'RUNNING'].includes(job.status)) return;
+  if (!window.confirm('Cancel this discovery job? Its progress and unfinished results will not be saved.')) return;
+
+  const cancelButton = Array.from(els.jobs.querySelectorAll('[data-cancel-job]'))
+    .find(button => button.dataset.cancelJob === jobId);
+  if (cancelButton) cancelButton.disabled = true;
+  try {
+    const { data, error } = await supabase.rpc('scimed_cancel_job', { p_job_id: jobId });
+    if (error) throw error;
+    await loadJobs();
+    backendState(
+      'ok',
+      data ? 'Discovery cancelled' : 'Job already stopped',
+      data
+        ? 'The worker will stop at its next safe checkpoint.'
+        : 'The job was already completed, cancelled, or is no longer accessible.'
+    );
+  } catch (error) {
+    backendState('error', 'Could not cancel discovery', error.message || String(error));
+    if (cancelButton) cancelButton.disabled = false;
+  }
+}
+
 async function copyJob(jobId) {
   const job = jobs.find(item => item.id === jobId);
   const pkg = job?.result_json?.package;
@@ -242,6 +271,11 @@ els.refresh.addEventListener('click', async () => {
   }
 });
 els.jobs.addEventListener('click', event => {
+  const cancel = event.target.closest('[data-cancel-job]');
+  if (cancel) {
+    cancelJob(cancel.dataset.cancelJob);
+    return;
+  }
   const copy = event.target.closest('[data-copy-job]');
   if (copy) copyJob(copy.dataset.copyJob);
   const download = event.target.closest('[data-download-job]');
