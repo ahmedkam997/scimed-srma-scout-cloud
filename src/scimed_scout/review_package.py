@@ -11,11 +11,12 @@ from scimed_scout.verification.orchestrator import SequentialVerificationResult
 
 
 CHATGPT_REVIEW_INSTRUCTIONS = """You are the independent final reviewer.
-Compare the supplied systematic-review/meta-analysis options and select the strongest option.
-Do not trust preliminary ranking alone. Prioritize verified evidence, novelty, methodological defensibility,
-clinical importance, publication potential, source coverage, and absence of unresolved Type-A issues.
-You may select one best option, rank all options, or conclude that none is ready.
-Explain the decision and identify any final checks needed before protocol registration or full review work."""
+Every option included in this package has already met the engine's full FIRST-CHOICE eligibility standard:
+all 15 locked gates passed, at least four verified independent eligible studies, at least four verified
+synthesis-usable study families, conclusive required source coverage, and no unresolved Type-A issue.
+Compare only these fully qualified options and select the strongest one. Do not trust preliminary ranking alone.
+Prioritize verified evidence, novelty, methodological defensibility, clinical importance, publication potential,
+and expected new information gain. Rank all included options and explain why the top option is strongest."""
 
 
 def build_review_package(
@@ -30,18 +31,32 @@ def build_review_package(
     ranking_by_id = {item.candidate_id: item for item in result.ranked}
 
     options: list[dict[str, Any]] = []
-    for position, candidate_id in enumerate(result.final_option_candidate_ids, start=1):
+    for candidate_id in result.final_option_candidate_ids:
         candidate = ledger.get_candidate(candidate_id)
-        if candidate is None:
-            continue
         verification = verification_by_id.get(candidate_id)
-        ranking = ranking_by_id.get(candidate_id)
+        if candidate is None or verification is None:
+            continue
 
+        gate_result = verification.final_gate_result or {}
+        strictly_eligible = (
+            candidate.status.value == "QUALIFIED"
+            and verification.candidate_status.value == "QUALIFIED"
+            and verification.decision == "QUALIFIED — FIRST-CHOICE ELIGIBLE"
+            and not verification.pending
+            and verification.evidence.minimum_passes
+            and gate_result.get("all_15_gates_passed") is True
+            and not gate_result.get("unresolved_type_a")
+        )
+        if not strictly_eligible:
+            continue
+
+        ranking = ranking_by_id.get(candidate_id)
         published_reviews = ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
         registrations = ledger.list_external_evidence(candidate_id, "REGISTRATION")
         ongoing = ledger.list_external_evidence(candidate_id, "ONGOING_STUDY")
         primary_hits = ledger.list_external_evidence(candidate_id, "PRIMARY_STUDY")
         decisions = ledger.list_decisions(candidate_id)
+        position = len(options) + 1
 
         options.append({
             "option_number": position,
@@ -93,9 +108,13 @@ def build_review_package(
         "review_instructions": CHATGPT_REVIEW_INSTRUCTIONS,
         "selection_policy": {
             "system_does_not_select_winner": True,
+            "all_included_options_are_first_choice_eligible": True,
+            "provisional_or_pending_options_allowed": False,
             "desired_options": result.desired_options,
-            "qualified_option_candidate_ids": result.qualified_option_candidate_ids,
-            "final_option_candidate_ids": result.final_option_candidate_ids,
+            "available_fully_qualified_options": len(options),
+            "shortfall": max(0, result.desired_options - len(options)),
+            "qualified_option_candidate_ids": [option["candidate_id"] for option in options],
+            "final_option_candidate_ids": [option["candidate_id"] for option in options],
             "minimum_verified_independent_studies": 4,
             "minimum_verified_synthesis_usable_studies": 4,
             "chatgpt_is_final_comparator": True,
