@@ -56,9 +56,10 @@ class SequentialVerificationResult:
 
 
 class SequentialDeepVerifier:
-    def __init__(self, ledger: SQLiteLedger, clients: list[SourceClient]):
+    def __init__(self, ledger: SQLiteLedger, clients: list[SourceClient], evidence_analysis_service=None):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
+        self.evidence_analysis_service = evidence_analysis_service
 
     def run(
         self,
@@ -192,6 +193,11 @@ class SequentialDeepVerifier:
             limit_per_query=limit_per_query,
         )
 
+        analysis_summary = None
+        if self.evidence_analysis_service is not None:
+            analysis_summary = self.evidence_analysis_service.analyze_candidate(candidate_id)
+            candidate = self.ledger.get_candidate(candidate_id) or candidate
+
         logs = self.ledger.list_search_log(candidate_id)
         coverage = evaluate_coverage(logs, policy)
         evidence = snapshot_from_ledger(self.ledger, candidate_id)
@@ -209,6 +215,12 @@ class SequentialDeepVerifier:
         if registrations and not bool(meta.get("registration_assessment_complete")):
             pending.append(
                 "TYPE-A: registry hits require overlap assessment before novelty clearance"
+            )
+        material_registration_overlap_ids = list(meta.get("material_registration_overlap_ids") or [])
+        if material_registration_overlap_ids and not bool(meta.get("material_registration_overlap_resolved")):
+            pending.append(
+                "TYPE-A: materially overlapping review registration(s) require resolution: "
+                + ", ".join(material_registration_overlap_ids)
             )
         if policy.require_pipeline_source and ongoing and not bool(meta.get("pipeline_assessment_complete")):
             pending.append(
@@ -239,6 +251,8 @@ class SequentialDeepVerifier:
             if missing_gate_inputs:
                 pending.append("Pending locked-gate inputs: " + ", ".join(missing_gate_inputs))
             elif not pending:
+                if bool(meta.get("competitor_assessment_complete")) and "semantic_fatal_redundancy" in meta:
+                    gate_inputs["fatal_redundancy"] = bool(meta.get("semantic_fatal_redundancy"))
                 gate_inputs["verified_independent_studies"] = evidence.verified_independent_studies
                 gate_inputs["verified_usable_studies"] = evidence.verified_usable_studies
                 gate_inputs["principal_outcome_studies"] = evidence.principal_outcome_studies
@@ -279,6 +293,14 @@ class SequentialDeepVerifier:
                 "published_review_hits": len(published_reviews),
                 "registration_hits": len(registrations),
                 "ongoing_study_hits": len(ongoing),
+                "evidence_analysis_summary": asdict(analysis_summary) if analysis_summary is not None else None,
+                "auto_study_extraction": {
+                    "complete": bool(meta.get("study_auto_extraction_complete")),
+                    "eligible": int(meta.get("auto_eligible_studies") or 0),
+                    "ineligible": int(meta.get("auto_ineligible_studies") or 0),
+                    "uncertain": int(meta.get("auto_uncertain_studies") or 0),
+                    "counts_as_verified_evidence": False,
+                },
                 "final_gate_result": final_gate_result,
             },
         )
