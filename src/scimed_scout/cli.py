@@ -391,6 +391,7 @@ def _synthesis_verification_json(summary) -> dict:
         "potentially_usable_families": summary.potentially_usable_families,
         "definitively_not_usable_families": summary.definitively_not_usable_families,
         "families_needing_full_text": summary.families_needing_full_text,
+        "usable_family_uncertainty_decision_changing": summary.usable_family_uncertainty_decision_changing,
         "threshold_met": summary.threshold_met,
         "synthesis_audit_complete": summary.synthesis_audit_complete,
     }
