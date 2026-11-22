@@ -13,6 +13,11 @@ from typing import Any, Callable
 Requester = Callable[[urllib.request.Request, float], bytes]
 
 
+class JobCancelled(RuntimeError):
+    """A client cancelled a job before the next worker checkpoint."""
+
+
+
 @dataclass(frozen=True, slots=True)
 class DiscoveryJob:
     id: str
@@ -87,16 +92,19 @@ class SupabaseJobStore:
             job_id = str(row.get("id") or "")
             if not job_id:
                 continue
-            self.update_job(
-                job_id,
-                status="QUEUED",
-                stage="RECOVERED",
-                progress=0,
-                message="Recovered after an interrupted worker run",
-                error_text="",
-                started_at=None,
-            )
-            recovered += 1
+            try:
+                self.update_job(
+                    job_id,
+                    status="QUEUED",
+                    stage="RECOVERED",
+                    progress=0,
+                    message="Recovered after an interrupted worker run",
+                    error_text="",
+                    started_at=None,
+                )
+                recovered += 1
+            except JobCancelled:
+                continue
         return recovered
 
     def claim_next(self) -> DiscoveryJob | None:
@@ -127,8 +135,9 @@ class SupabaseJobStore:
                 "completed_at": None,
                 "updated_at": now,
             },
+            allowed_statuses=("QUEUED",),
         )
-        return DiscoveryJob.from_row(updated[0] if updated else row)
+        return DiscoveryJob.from_row(updated[0]) if updated else None
 
     def update_job(
         self,
@@ -160,7 +169,21 @@ class SupabaseJobStore:
             payload["started_at"] = started_at
         if completed_at is not ...:
             payload["completed_at"] = completed_at
-        self._patch(job_id, payload)
+        updated = self._patch(job_id, payload, allowed_statuses=("QUEUED", "RUNNING"))
+        if not updated:
+            self.ensure_active(job_id)
+            raise RuntimeError(f"Discovery job {job_id} was not writable")
+
+    def job_status(self, job_id: str) -> str | None:
+        rows = self._select({"select": "status", "id": f"eq.{job_id}", "limit": "1"})
+        return str(rows[0].get("status")) if rows else None
+
+    def ensure_active(self, job_id: str) -> None:
+        status = self.job_status(job_id)
+        if status == "CANCELLED":
+            raise JobCancelled(f"Discovery job {job_id} was cancelled by its owner")
+        if status != "RUNNING":
+            raise RuntimeError(f"Discovery job {job_id} is no longer active: {status}")
 
     def complete(self, job_id: str, result_json: dict[str, Any], message: str) -> None:
         self.update_job(
@@ -188,8 +211,17 @@ class SupabaseJobStore:
         query = urllib.parse.urlencode(params)
         return self._request("GET", f"/rest/v1/discovery_jobs?{query}")
 
-    def _patch(self, job_id: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        query = urllib.parse.urlencode({"id": f"eq.{job_id}"})
+    def _patch(
+        self,
+        job_id: str,
+        payload: dict[str, Any],
+        *,
+        allowed_statuses: tuple[str, ...] = (),
+    ) -> list[dict[str, Any]]:
+        params = {"id": f"eq.{job_id}"}
+        if allowed_statuses:
+            params["status"] = "in.(" + ",".join(allowed_statuses) + ")"
+        query = urllib.parse.urlencode(params)
         return self._request(
             "PATCH",
             f"/rest/v1/discovery_jobs?{query}",
