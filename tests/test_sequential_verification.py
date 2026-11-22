@@ -123,8 +123,8 @@ def test_sequential_verifier_returns_multiple_final_options_for_chatgpt(tmp_path
         assert ledger.get_project("P1").stage == "EXPORT"
         assert ledger.list_search_log("C1")
         assert ledger.list_queries("C1")
-        assert ledger.list_decisions("C1")[-1].decision == "PROCEED — FIRST-CHOICE"
-        assert ledger.list_decisions("C2")[-1].decision == "PROCEED — QUALIFIED BACKUP"
+        assert ledger.list_decisions("C1")[-1].decision == "QUALIFIED — FINAL REVIEW OPTION"
+        assert ledger.list_decisions("C2")[-1].decision == "QUALIFIED — FINAL REVIEW OPTION"
 
 
 def test_source_failure_yields_provisional_backup_not_false_clearance(tmp_path):
