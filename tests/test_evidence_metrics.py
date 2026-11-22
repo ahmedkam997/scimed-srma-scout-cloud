@@ -130,3 +130,11 @@ def test_ai_made_up_novelty_and_information_gain_do_not_set_final_scores():
     assert result["new_information_gain"] == 0.0
     assert result["publication_oriented_score"] != 100
     assert result["scoring_trace"]["score_role"].startswith("UNVALIDATED")
+
+
+def test_missing_source_quotes_block_novelty_instead_of_guessing():
+    record = reviewed()
+    record["payload"]["discovery_semantic_assessment"]["dimensions"] = []
+    metrics = evidence_metrics([record], [], [study(f"s{i}", 2024) for i in range(4)])
+    assert metrics["overall_novelty"] == 0.0
+    assert metrics["novelty_status"] == "NOT_ESTIMABLE"
