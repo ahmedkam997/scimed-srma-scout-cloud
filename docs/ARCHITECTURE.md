@@ -27,4 +27,4 @@ A source failure must never be converted into a negative search result. Supporte
 
 ## Locked final-review option requirements
 
-Each fully qualified final-review option must pass all locked gates, including at least four verified independent eligible studies, at least four verified synthesis-usable studies, no unresolved Type-A issue, adequate novelty, clinical importance, publication potential and editorial stress-test performance. The engine exports several qualified or clearly labeled provisional options. It does not select the overall winner. ChatGPT performs the independent final comparison.
+Every candidate admitted to the final-review list must be FIRST-CHOICE eligible: all locked gates passed, at least four verified independent eligible studies, at least four verified synthesis-usable studies, conclusive required source coverage, and no unresolved Type-A issue. Pending, provisional, incomplete, or gate-failing candidates are excluded even when this leaves fewer than the requested number of final options. The engine does not select the overall winner. ChatGPT compares only the fully qualified options.
