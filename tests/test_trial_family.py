@@ -25,12 +25,7 @@ def test_identifier_normalization_and_extraction():
 
 
 def test_shared_registry_id_merges_primary_and_followup():
-    primary = verified_pub(
-        "P1",
-        "Primary randomized trial",
-        registry_ids=["NCT12345678"],
-        randomized_n=200,
-    )
+    primary = verified_pub("P1", "Primary randomized trial", registry_ids=["NCT12345678"], randomized_n=200)
     followup = TrialPublication(
         publication_id="P2",
         title="Long-term follow-up of the randomized trial",
@@ -61,10 +56,10 @@ def test_title_similarity_alone_does_not_merge():
     assert audit.pair_links[0].status != FamilyLinkStatus.VERIFIED_SAME_FAMILY
 
 
-def test_possible_link_is_type_a_only_when_it_can_drop_below_seven():
+def test_possible_link_is_type_a_only_when_it_can_drop_below_four():
     pubs = [
         verified_pub(f"P{i}", f"Independent randomized trial {i}", manually_verified_family_id=f"F{i}")
-        for i in range(1, 8)
+        for i in range(1, 5)
     ]
     pubs[0].acronym = "ALPHA"
     pubs[0].randomized_n = 100
@@ -72,12 +67,12 @@ def test_possible_link_is_type_a_only_when_it_can_drop_below_seven():
     pubs[1].randomized_n = 100
 
     audit = TrialFamilyResolver().audit(pubs)
-    assert audit.verified_independent_population_count == 7
-    assert audit.minimum_possible_verified_independent_count() == 6
+    assert audit.verified_independent_population_count == 4
+    assert audit.minimum_possible_verified_independent_count() == 3
     assert audit.family_uncertainty_is_decision_changing()
 
-    extra = verified_pub("P8", "Independent randomized trial 8", manually_verified_family_id="F8")
-    audit8 = TrialFamilyResolver().audit(pubs + [extra])
-    assert audit8.verified_independent_population_count == 8
-    assert audit8.minimum_possible_verified_independent_count() == 7
-    assert not audit8.family_uncertainty_is_decision_changing()
+    extra = verified_pub("P5", "Independent randomized trial 5", manually_verified_family_id="F5")
+    audit5 = TrialFamilyResolver().audit(pubs + [extra])
+    assert audit5.verified_independent_population_count == 5
+    assert audit5.minimum_possible_verified_independent_count() == 4
+    assert not audit5.family_uncertainty_is_decision_changing()
