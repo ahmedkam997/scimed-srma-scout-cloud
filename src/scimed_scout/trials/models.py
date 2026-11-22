@@ -118,7 +118,7 @@ class TrialFamilyAudit:
 
         return len({find(family_id) for family_id in verified_ids})
 
-    def family_uncertainty_is_decision_changing(self, threshold: int = 7) -> bool:
+    def family_uncertainty_is_decision_changing(self, threshold: int = 4) -> bool:
         return (
             bool(self.possible_links)
             and self.verified_independent_population_count >= threshold
