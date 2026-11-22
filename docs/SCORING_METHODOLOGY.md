@@ -39,8 +39,9 @@ Missing dimensions are never silently set to zero.
 
 `Clinical question novelty = 5 × (1 - max(S_clinical across assessed competitors))`
 
-If dimensions are too sparse, use the source-assessed overall overlap severity
-as a **provisional proxy**. Overall novelty:
+If fewer than four clinical dimensions have source-verified quotations,
+the overlap score is **NOT_ESTIMABLE** and cannot pass the qualification gates.
+Overall novelty (with adequate provenance):
 
 `Overall novelty = 5 × (1 - max(overall overlap severity))`
 
