@@ -69,3 +69,31 @@ def final_decision(data: dict[str, Any]) -> dict[str, Any]:
         "unresolved_type_a": unresolved,
         "gates": [asdict(g) for g in gates],
     }
+
+
+def final_decision_from_audits(
+    data: dict[str, Any],
+    family_audit: "TrialFamilyAudit",
+    usability_ledgers: list["TrialOutcomeLedger"],
+) -> dict[str, Any]:
+    """Run locked gates using deterministic evidence counts from audited ledgers.
+
+    Any AI- or user-supplied RCT counts in `data` are overwritten. Existing
+    Type-A issues are preserved and deterministic Type-A issues are appended.
+    """
+    from dataclasses import asdict as _asdict
+
+    from .evidence import derive_evidence_counts
+
+    counts = derive_evidence_counts(family_audit, usability_ledgers)
+    payload = dict(data)
+    payload["verified_independent_rcts"] = counts.verified_independent_rcts
+    payload["verified_usable_rcts"] = counts.verified_usable_rcts
+    payload["principal_outcome_rcts"] = counts.principal_outcome_rcts
+
+    existing = list(payload.get("unresolved_type_a") or [])
+    payload["unresolved_type_a"] = list(dict.fromkeys(existing + counts.unresolved_type_a))
+
+    decision = final_decision(payload)
+    decision["deterministic_evidence"] = _asdict(counts)
+    return decision
