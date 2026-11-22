@@ -39,6 +39,18 @@ The Scout is design-agnostic and supports review ideas involving randomized tria
 
 Diagnostic accuracy is supported as a review-question type, but the Scout only discovers the topic and candidate evidence. It does not perform DTA extraction or pooling.
 
+## App scope selectors
+
+The app supports an open scope at both levels:
+
+- Specialty = All specialties means candidate generation is not restricted to one medical specialty.
+- Question type = All question types means candidate generation is not restricted to one review-question type.
+- A specific specialty can be combined with All question types.
+- All specialties can be combined with a specific question type, such as Diagnostic Accuracy or Effectiveness.
+- All + All performs broad review-topic discovery across medicine.
+
+The backend treats ALL as an open scope. It is never passed to the AI as a literal specialty or question type.
+
 ## Discovery workflow
 
 1. Generate candidate review topics.
@@ -130,9 +142,13 @@ Initialize:
 
     scimed-scout init-db data/scout.sqlite3
 
-Create a discovery project:
+Create a focused discovery project:
 
     scimed-scout create-project data/scout.sqlite3 RAD-DTA Radiology --question-type DIAGNOSTIC_ACCURACY
+
+Create a broad All + All discovery project:
+
+    scimed-scout create-project data/scout.sqlite3 MED-ALL ALL --question-type ALL
 
 Generate topic candidates:
 

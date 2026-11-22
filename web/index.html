@@ -20,16 +20,55 @@
 
   <section class="card">
     <h2>New review discovery</h2>
+
     <label>Specialty
       <select id="specialty">
+        <option value="ALL" selected>All specialties</option>
         <option>Anesthesiology</option>
-        <option>Radiology</option>
-        <option>Neurology</option>
-        <option>Gastroenterology</option>
-        <option>Endocrinology</option>
+        <option>Cardiology</option>
+        <option>Dermatology</option>
         <option>Emergency Medicine</option>
+        <option>Endocrinology</option>
+        <option>Gastroenterology</option>
+        <option>General Surgery</option>
+        <option>Hematology</option>
+        <option>Infectious Diseases</option>
+        <option>Nephrology</option>
+        <option>Neurology</option>
+        <option>Neurosurgery</option>
+        <option>Obstetrics and Gynecology</option>
+        <option>Oncology</option>
+        <option>Ophthalmology</option>
+        <option>Orthopedics</option>
+        <option>Otolaryngology</option>
+        <option>Pediatrics</option>
+        <option>Psychiatry</option>
+        <option>Pulmonology</option>
+        <option>Radiology</option>
+        <option>Rheumatology</option>
+        <option>Urology</option>
       </select>
     </label>
+
+    <label>Question type
+      <select id="questionType">
+        <option value="ALL" selected>All question types</option>
+        <option value="EFFECTIVENESS">Effectiveness</option>
+        <option value="SAFETY_HARMS">Safety / Harms</option>
+        <option value="DIAGNOSTIC_ACCURACY">Diagnostic Accuracy</option>
+        <option value="PROGNOSIS">Prognosis</option>
+        <option value="ETIOLOGY_RISK">Etiology / Risk</option>
+        <option value="PREVALENCE_INCIDENCE">Prevalence / Incidence</option>
+        <option value="ASSOCIATION">Association</option>
+        <option value="PREDICTION_MODEL">Prediction Model</option>
+        <option value="ECONOMIC">Economic</option>
+        <option value="IMPLEMENTATION">Implementation</option>
+        <option value="QUALITATIVE">Qualitative</option>
+        <option value="MIXED_METHODS">Mixed Methods</option>
+        <option value="OTHER">Other</option>
+      </select>
+    </label>
+
     <button id="start">Start discovery</button>
   </section>
 

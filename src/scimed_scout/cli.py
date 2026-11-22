@@ -152,8 +152,8 @@ def main() -> None:
             records = service.generate_and_store(
                 project_id=project.project_id,
                 specialty=project.specialty,
-                question_types=args.question_type or ([project.question_type] if project.question_type else []),
-                design_scope=args.design,
+                question_types=_question_type_scope(args.question_type, project.question_type),
+                design_scope=_open_scope(args.design),
                 count=args.count,
                 additional_context=args.context,
                 allow_rejected_revisit=args.allow_rejected_revisit,
@@ -212,6 +212,24 @@ def main() -> None:
         return
 
     raise SystemExit("Unknown command")
+
+
+def _open_scope(values) -> list[str]:
+    return [
+        str(value).strip()
+        for value in (values or [])
+        if str(value).strip() and str(value).strip().upper() != "ALL"
+    ]
+
+
+def _question_type_scope(requested, project_question_type: str) -> list[str]:
+    explicit = _open_scope(requested)
+    if explicit:
+        return explicit
+    project_value = str(project_question_type or "").strip()
+    if not project_value or project_value.upper() == "ALL":
+        return []
+    return [project_value]
 
 
 def _required_provider() -> OpenAICompatibleProvider:

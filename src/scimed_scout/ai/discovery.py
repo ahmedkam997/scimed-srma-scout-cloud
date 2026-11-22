@@ -27,11 +27,26 @@ def build_discovery_prompt(
     count: int = 10,
     additional_context: str = "",
 ) -> str:
-    qtypes = ", ".join(question_types) or "any appropriate review-question type"
-    designs = ", ".join(design_scope) or "any appropriate eligible study design"
+    normalized_qtypes = [
+        str(value).strip()
+        for value in question_types
+        if str(value).strip() and str(value).strip().upper() != "ALL"
+    ]
+    normalized_designs = [
+        str(value).strip()
+        for value in design_scope
+        if str(value).strip() and str(value).strip().upper() != "ALL"
+    ]
+    specialty_scope = (
+        "all medical specialties"
+        if str(specialty).strip().upper() == "ALL"
+        else str(specialty).strip()
+    )
+    qtypes = ", ".join(normalized_qtypes) or "all appropriate review-question types"
+    designs = ", ".join(normalized_designs) or "all appropriate eligible study designs"
     return f"""Generate {int(count)} candidate systematic-review/meta-analysis research questions.
 
-Specialty: {specialty}
+Specialty scope: {specialty_scope}
 Question-type scope: {qtypes}
 Study-design scope: {designs}
 Additional context: {additional_context.strip() or 'None'}
