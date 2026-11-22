@@ -5,14 +5,14 @@ from scimed_scout.usability import ArmBinary, OutcomeDatum, OutcomeType, TrialOu
 
 def base_payload():
     return {
-        "design": "RCT_ONLY",
-        "verified_independent_rcts": 999,
-        "verified_usable_rcts": 999,
-        "meaningful_pooling": True,
+        "design_framework_verified": True,
+        "verified_independent_studies": 999,
+        "verified_usable_studies": 999,
+        "meaningful_synthesis": True,
         "clinical_question_novelty": 3,
         "overall_novelty": 3,
         "fatal_redundancy": False,
-        "pico_coherent": True,
+        "question_framework_coherent": True,
         "feasibility": "HIGH",
         "fatal_methodological_flaw": False,
         "clinical_importance": 4,
@@ -52,8 +52,8 @@ def ledger(i):
 
 
 def test_ai_supplied_counts_are_overwritten_by_deterministic_audits():
-    audit = TrialFamilyResolver().audit([pub(i) for i in range(1, 7)])
-    result = final_decision_from_audits(base_payload(), audit, [ledger(i) for i in range(1, 7)])
+    audit = TrialFamilyResolver().audit([pub(i) for i in range(1, 4)])
+    result = final_decision_from_audits(base_payload(), audit, [ledger(i) for i in range(1, 4)])
     assert result["decision"] == "DO NOT PROCEED"
-    assert result["deterministic_evidence"]["verified_independent_rcts"] == 6
-    assert result["deterministic_evidence"]["verified_usable_rcts"] == 6
+    assert result["deterministic_evidence"]["verified_independent_studies"] == 3
+    assert result["deterministic_evidence"]["verified_usable_studies"] == 3
