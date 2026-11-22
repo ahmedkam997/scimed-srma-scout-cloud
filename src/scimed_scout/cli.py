@@ -233,9 +233,6 @@ def _candidate_json(candidate) -> dict:
     }
 
 
-if __name__ == "__main__":
-    main()
-
 
 def _candidate_verification_json(result) -> dict:
     return {
@@ -274,3 +271,7 @@ def _sequential_verification_json(result) -> dict:
         ],
         "verified": [_candidate_verification_json(item) for item in result.verified],
     }
+
+
+if __name__ == "__main__":
+    main()
