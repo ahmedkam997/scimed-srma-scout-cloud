@@ -57,6 +57,58 @@ Return:
 }}"""
 
 
+def build_batch_overlap_prompt(candidate: CandidateRecord, records: list[dict]) -> str:
+    rows = []
+    for record in records:
+        evidence_text = _record_evidence_text(record)
+        rows.append(
+            {
+                "record_id": str(record.get("source_record_id") or ""),
+                "source": str(record.get("source") or ""),
+                "title": str(record.get("title") or ""),
+                "evidence_text": evidence_text[:4000],
+            }
+        )
+
+    return f"""Candidate:
+Title: {candidate.title}
+Question type: {candidate.question_type}
+Review question: {candidate.review_question}
+Population: {candidate.population}
+Intervention/Exposure/Index test: {candidate.intervention_exposure_index_test}
+Comparator/Reference: {candidate.comparator_reference}
+Outcomes: {candidate.outcomes}
+Eligible designs: {candidate.eligible_designs}
+
+Existing records:
+{json.dumps(rows, ensure_ascii=False)}
+
+Return:
+{{
+  "assessments": [
+    {{
+      "record_id": "exact supplied record_id",
+      "overall_overlap": "NONE|LOW|MODERATE|HIGH|ESSENTIALLY_IDENTICAL|UNRESOLVED",
+      "dimensions": [
+        {{"name":"population","level":"...","rationale":"...","evidence":"..."}},
+        {{"name":"intervention_exposure_index_test","level":"...","rationale":"...","evidence":"..."}},
+        {{"name":"comparator_reference","level":"...","rationale":"...","evidence":"..."}},
+        {{"name":"outcomes","level":"...","rationale":"...","evidence":"..."}},
+        {{"name":"design_scope","level":"...","rationale":"...","evidence":"..."}},
+        {{"name":"clinical_decision","level":"...","rationale":"...","evidence":"..."}},
+        {{"name":"era","level":"...","rationale":"...","evidence":"..."}},
+        {{"name":"study_set_search_cutoff","level":"...","rationale":"...","evidence":"..."}}
+      ],
+      "adequate_review": true|false|null,
+      "recent_review": true|false|null,
+      "meaningful_new_information": true|false|null,
+      "confidence": 0.0,
+      "rationale": "..."
+    }}
+  ]
+}}"""
+
+
 class SemanticCompetitorAssessor:
     def __init__(self, provider: AIProvider):
         self.provider = provider
@@ -64,49 +116,131 @@ class SemanticCompetitorAssessor:
     def assess(self, candidate: CandidateRecord, record: dict) -> CompetitorAssessment:
         evidence_text = _record_evidence_text(record)
         if not evidence_text:
-            return CompetitorAssessment(
-                record_id=record.get("source_record_id", ""),
-                source=record.get("source", ""),
-                title=record.get("title", ""),
-                overall_overlap=OverlapLevel.UNRESOLVED,
-                confidence=0.0,
-                evidence_text_available=False,
-                rationale="No abstract/summary/record evidence text available for semantic assessment",
-            )
+            return _unresolved_record(record, "No abstract/summary/record evidence text available for semantic assessment")
 
         response = self.provider.complete(
             AIRequest(system=SYSTEM_PROMPT, prompt=build_overlap_prompt(candidate, record), temperature=0.0)
         )
         raw = _json_object(response.text)
-        level = _level(raw.get("overall_overlap"))
-        dimensions = []
-        for item in raw.get("dimensions") or []:
-            if not isinstance(item, dict):
-                continue
-            dimensions.append(
-                DimensionAssessment(
-                    name=str(item.get("name") or "").strip(),
-                    level=_level(item.get("level")),
-                    rationale=str(item.get("rationale") or "").strip(),
-                    evidence=str(item.get("evidence") or "").strip(),
+        return _assessment_from_raw(raw, record, evidence_text, response.provider, response.model)
+
+    def assess_many(
+        self,
+        candidate: CandidateRecord,
+        records: list[dict],
+    ) -> list[CompetitorAssessment]:
+        if not records:
+            return []
+
+        usable: list[dict] = []
+        unresolved_by_id: dict[str, CompetitorAssessment] = {}
+        for record in records:
+            rid = str(record.get("source_record_id") or "")
+            if not _record_evidence_text(record):
+                unresolved_by_id[rid] = _unresolved_record(
+                    record,
+                    "No abstract/summary/record evidence text available for semantic assessment",
+                )
+            else:
+                usable.append(record)
+
+        parsed_by_id: dict[str, dict] = {}
+        provider_name = "AI_PROVISIONAL"
+        model_name = ""
+        if usable:
+            response = self.provider.complete(
+                AIRequest(
+                    system=SYSTEM_PROMPT + "\nAssess every supplied record independently and return one item for each record_id.",
+                    prompt=build_batch_overlap_prompt(candidate, usable),
+                    temperature=0.0,
+                    max_tokens=5000,
                 )
             )
-        confidence = _confidence(raw.get("confidence"))
-        result = CompetitorAssessment(
-            record_id=record.get("source_record_id", ""),
-            source=record.get("source", ""),
-            title=record.get("title", ""),
-            overall_overlap=level,
-            dimensions=dimensions,
-            adequate_review=_optional_bool(raw.get("adequate_review")),
-            recent_review=_optional_bool(raw.get("recent_review")),
-            meaningful_new_information=_optional_bool(raw.get("meaningful_new_information")),
-            confidence=confidence,
-            evidence_text_available=True,
-            rationale=str(raw.get("rationale") or "").strip(),
-            reviewer=f"{response.provider}:{response.model}",
+            provider_name = response.provider
+            model_name = response.model
+            root = _json_object(response.text)
+            for item in root.get("assessments") or []:
+                if not isinstance(item, dict):
+                    continue
+                rid = str(item.get("record_id") or "")
+                if rid:
+                    parsed_by_id[rid] = item
+
+        results: list[CompetitorAssessment] = []
+        for record in records:
+            rid = str(record.get("source_record_id") or "")
+            if rid in unresolved_by_id:
+                results.append(unresolved_by_id[rid])
+                continue
+            raw = parsed_by_id.get(rid)
+            if raw is None:
+                results.append(
+                    _unresolved_record(
+                        record,
+                        "Batch semantic assessment omitted this record",
+                    )
+                )
+                continue
+            results.append(
+                _assessment_from_raw(
+                    raw,
+                    record,
+                    _record_evidence_text(record),
+                    provider_name,
+                    model_name,
+                )
+            )
+        return results
+
+
+def _unresolved_record(record: dict, rationale: str) -> CompetitorAssessment:
+    return CompetitorAssessment(
+        record_id=str(record.get("source_record_id") or ""),
+        source=str(record.get("source") or ""),
+        title=str(record.get("title") or ""),
+        overall_overlap=OverlapLevel.UNRESOLVED,
+        confidence=0.0,
+        evidence_text_available=False,
+        rationale=rationale,
+    )
+
+
+def _assessment_from_raw(
+    raw: dict,
+    record: dict,
+    evidence_text: str,
+    provider_name: str,
+    model_name: str,
+) -> CompetitorAssessment:
+    dimensions = []
+    for item in raw.get("dimensions") or []:
+        if not isinstance(item, dict):
+            continue
+        dimensions.append(
+            DimensionAssessment(
+                name=str(item.get("name") or "").strip(),
+                level=_level(item.get("level")),
+                rationale=str(item.get("rationale") or "").strip(),
+                evidence=str(item.get("evidence") or "").strip(),
+            )
         )
-        return _validate_dimension_provenance(result, evidence_text)
+
+    result = CompetitorAssessment(
+        record_id=str(record.get("source_record_id") or ""),
+        source=str(record.get("source") or ""),
+        title=str(record.get("title") or ""),
+        overall_overlap=_level(raw.get("overall_overlap")),
+        dimensions=dimensions,
+        adequate_review=_optional_bool(raw.get("adequate_review")),
+        recent_review=_optional_bool(raw.get("recent_review")),
+        meaningful_new_information=_optional_bool(raw.get("meaningful_new_information")),
+        confidence=_confidence(raw.get("confidence")),
+        evidence_text_available=True,
+        rationale=str(raw.get("rationale") or "").strip(),
+        reviewer=f"{provider_name}:{model_name}".rstrip(":"),
+    )
+    return _validate_dimension_provenance(result, evidence_text)
+
 
 
 def _record_evidence_text(record: dict) -> str:
