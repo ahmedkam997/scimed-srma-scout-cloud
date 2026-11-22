@@ -14,7 +14,7 @@ class EuropePMCSource:
 
     def search(self, query: str, *, limit: int = 20) -> SearchResult:
         try:
-            data = self.http.get_json(self.endpoint, {"query": query, "format": "json", "pageSize": max(1, limit)})
+            data = self.http.get_json(self.endpoint, {"query": query, "format": "json", "pageSize": max(1, limit), "resultType": "core"})
             hit_count = data.get("hitCount")
             if hit_count is None:
                 return SearchResult(self.name, query, SourceStatus.PARTIAL, message="Europe PMC response missing hitCount")
