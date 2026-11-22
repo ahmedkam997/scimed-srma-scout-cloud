@@ -3,6 +3,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from .domain import SourceAudit, SourceStatus
+from .evidence import MIN_STUDIES
 
 VALID_FEASIBILITY = {"HIGH", "STRONG MODERATE"}
 VALID_EDITORIAL_GRADES = {"A", "B", "CORRECTED C"}
@@ -20,7 +21,6 @@ def _truth(value: Any) -> bool:
         return value
     return str(value).strip().upper() in {"YES", "TRUE", "1", "PASS"}
 
-
 def _explicit_false(value: Any) -> bool:
     return str(value).strip().upper() in {"NO", "FALSE", "0", "FAIL"}
 
@@ -37,18 +37,38 @@ def _sources_support_negative_inference(sources: Any) -> bool:
         for audit in sources
     )
 
+def _count(data: dict[str, Any], new_key: str, legacy_key: str) -> int:
+    value = data.get(new_key, data.get(legacy_key, 0))
+    return int(value or 0)
+
+def _design_framework_verified(data: dict[str, Any]) -> bool:
+    if "design_framework_verified" in data:
+        return _truth(data.get("design_framework_verified"))
+    if "study_designs_eligible" in data:
+        return _truth(data.get("study_designs_eligible"))
+    # Backward compatibility for old RCT-only payloads.
+    return str(data.get("design", "")).strip().upper() == "RCT_ONLY"
+
+def _question_framework_coherent(data: dict[str, Any]) -> bool:
+    if "question_framework_coherent" in data:
+        return _truth(data.get("question_framework_coherent"))
+    return _truth(data.get("pico_coherent"))
+
 def evaluate_locked_gates(data: dict[str, Any]) -> list[GateResult]:
     feasibility = str(data.get("feasibility", "")).strip().upper()
     editorial = str(data.get("editorial_grade", "")).strip().upper()
+    independent = _count(data, "verified_independent_studies", "verified_independent_rcts")
+    usable = _count(data, "verified_usable_studies", "verified_usable_rcts")
+    meaningful_synthesis = data.get("meaningful_synthesis", data.get("meaningful_pooling"))
     checks = [
-        ("RCT-only", str(data.get("design", "")).strip().upper() == "RCT_ONLY", data.get("design"), "RCT_ONLY"),
-        ("Verified independent randomized populations", int(data.get("verified_independent_rcts", 0) or 0) >= 7, data.get("verified_independent_rcts", 0), ">= 7"),
-        ("Verified quantitatively usable RCTs", int(data.get("verified_usable_rcts", 0) or 0) >= 7, data.get("verified_usable_rcts", 0), ">= 7"),
-        ("Meaningful defensible pooled analysis", _truth(data.get("meaningful_pooling")), data.get("meaningful_pooling"), "PASS"),
+        ("Eligible study-design framework verified", _design_framework_verified(data), data.get("design_framework_verified", data.get("design")), "PASS"),
+        ("Verified independent eligible studies", independent >= MIN_STUDIES, independent, f">= {MIN_STUDIES}"),
+        ("Verified synthesis-usable studies", usable >= MIN_STUDIES, usable, f">= {MIN_STUDIES}"),
+        ("Meaningful defensible synthesis", _truth(meaningful_synthesis), meaningful_synthesis, "PASS"),
         ("Clinical-question novelty", float(data.get("clinical_question_novelty", 0) or 0) >= 3, data.get("clinical_question_novelty", 0), ">= 3/5"),
         ("Overall novelty", float(data.get("overall_novelty", 0) or 0) >= 3, data.get("overall_novelty", 0), ">= 3/5"),
-        ("No fatal recent identical SRMA redundancy", _explicit_false(data.get("fatal_redundancy")) and _sources_support_negative_inference(data.get("sources", [])), data.get("fatal_redundancy"), "FALSE with conclusive supplied source audits"),
-        ("Coherent PICO", _truth(data.get("pico_coherent")), data.get("pico_coherent"), "PASS"),
+        ("No fatal recent identical evidence-synthesis redundancy", _explicit_false(data.get("fatal_redundancy")) and _sources_support_negative_inference(data.get("sources", [])), data.get("fatal_redundancy"), "FALSE with conclusive supplied source audits"),
+        ("Coherent review-question framework", _question_framework_coherent(data), data.get("question_framework_coherent", data.get("pico_coherent")), "PASS"),
         ("Feasibility", feasibility in VALID_FEASIBILITY, feasibility, "HIGH or STRONG MODERATE"),
         ("No fatal methodological flaw", _explicit_false(data.get("fatal_methodological_flaw")), data.get("fatal_methodological_flaw"), "FALSE"),
         ("Clinical importance", float(data.get("clinical_importance", 0) or 0) >= 4, data.get("clinical_importance", 0), ">= 4/5"),
@@ -70,26 +90,25 @@ def final_decision(data: dict[str, Any]) -> dict[str, Any]:
         "gates": [asdict(g) for g in gates],
     }
 
-
 def final_decision_from_audits(
     data: dict[str, Any],
-    family_audit: "TrialFamilyAudit",
-    usability_ledgers: list["TrialOutcomeLedger"],
+    family_audit,
+    usability_ledgers,
 ) -> dict[str, Any]:
-    """Run locked gates using deterministic evidence counts from audited ledgers.
-
-    Any AI- or user-supplied RCT counts in `data` are overwritten. Existing
-    Type-A issues are preserved and deterministic Type-A issues are appended.
-    """
+    """Run locked gates using deterministic study-family and synthesis-usability counts."""
     from dataclasses import asdict as _asdict
-
     from .evidence import derive_evidence_counts
 
     counts = derive_evidence_counts(family_audit, usability_ledgers)
     payload = dict(data)
-    payload["verified_independent_rcts"] = counts.verified_independent_rcts
-    payload["verified_usable_rcts"] = counts.verified_usable_rcts
-    payload["principal_outcome_rcts"] = counts.principal_outcome_rcts
+    payload["verified_independent_studies"] = counts.verified_independent_studies
+    payload["verified_usable_studies"] = counts.verified_usable_studies
+    payload["principal_outcome_studies"] = counts.principal_outcome_studies
+
+    # Legacy keys are overwritten too, preventing old callers or AI payloads from inflating counts.
+    payload["verified_independent_rcts"] = counts.verified_independent_studies
+    payload["verified_usable_rcts"] = counts.verified_usable_studies
+    payload["principal_outcome_rcts"] = counts.principal_outcome_studies
 
     existing = list(payload.get("unresolved_type_a") or [])
     payload["unresolved_type_a"] = list(dict.fromkeys(existing + counts.unresolved_type_a))
