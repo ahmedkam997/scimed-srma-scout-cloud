@@ -51,6 +51,7 @@ class StudyEligibilityExtractor:
             first_author=_field(fields.get("first_author")),
             year=_field(fields.get("year")),
             exclusion_reason=str(raw.get("exclusion_reason") or "").strip(),
+            exclusion_evidence=str(raw.get("exclusion_evidence") or "").strip(),
             overall_confidence=_confidence(raw.get("overall_confidence")),
             unresolved_fields=[str(x) for x in (raw.get("unresolved_fields") or []) if str(x).strip()],
             raw=raw,
@@ -78,6 +79,7 @@ Return:
 {{
   "eligibility":"ELIGIBLE|INELIGIBLE|UNCERTAIN",
   "exclusion_reason":"",
+  "exclusion_evidence":"exact quote supporting exclusion, or empty",
   "overall_confidence":0.0,
   "unresolved_fields":[],
   "fields":{{
@@ -159,6 +161,7 @@ def _unresolved(record: dict, reason: str) -> StudyEligibilityExtraction:
         registry_ids=empty,
         first_author=empty,
         year=empty,
+        exclusion_evidence="",
         overall_confidence=0.0,
         unresolved_fields=["all"],
         raw={"reason": reason},
@@ -198,6 +201,15 @@ def _validate_provenance(extraction: StudyEligibilityExtraction, evidence_text: 
             )
             if name not in unresolved:
                 unresolved.append(name)
+    extraction.unresolved_fields = unresolved
+    exclusion_quote = _norm(extraction.exclusion_evidence)
+    if extraction.eligibility == EligibilityStatus.INELIGIBLE:
+        if not exclusion_quote or exclusion_quote not in normalized_source:
+            if "exclusion_evidence" not in unresolved:
+                unresolved.append("exclusion_evidence")
+            extraction.overall_confidence = min(extraction.overall_confidence, 0.79)
+            extraction.eligibility = EligibilityStatus.UNCERTAIN
+
     extraction.unresolved_fields = unresolved
     if unresolved:
         extraction.overall_confidence = min(extraction.overall_confidence, 0.79)
