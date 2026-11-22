@@ -138,3 +138,10 @@ def test_missing_source_quotes_block_novelty_instead_of_guessing():
     metrics = evidence_metrics([record], [], [study(f"s{i}", 2024) for i in range(4)])
     assert metrics["overall_novelty"] == 0.0
     assert metrics["novelty_status"] == "NOT_ESTIMABLE"
+
+
+def test_duplicate_primary_records_with_and_without_doi_are_counted_once():
+    a = study("same trial", 2023)
+    b = {**a, "source": "OpenAlex", "payload": {"year": 2023, "doi": ""}}
+    evidence = evidence_metrics([], [], [a, b, study("distinct trial", 2024), study("third trial", 2024), study("fourth trial", 2024)])
+    assert evidence["study_count_discovered_not_eligible"] == 4
