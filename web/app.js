@@ -187,9 +187,15 @@ function renderJobs() {
               <details><summary>Methods and score weights</summary>
                 <pre>${escapeHtml(JSON.stringify({
                   version: trace.method_version || '',
+                  novelty_status: trace.novelty_status || '',
+                  information_gain_status: trace.information_gain_status || '',
                   weights: trace.criteria_weights || {},
                   study_date_completeness: trace.primary_date_completeness,
+                  latest_matching_review_publication_year: trace.latest_related_review_publication_year,
+                  newer_primary_study_candidates: trace.primary_records_newer_than_publication,
                   score_sensitivity_range: trace.sensitivity_score_range || [],
+                  source_competitors: trace.overlap_evidence || [],
+                  model_only_judgments: trace.model_only_judgments || [],
                   limitations: trace.limitations || []
                 }, null, 2))}</pre>
               </details>
