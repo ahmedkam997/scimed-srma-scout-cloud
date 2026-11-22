@@ -99,7 +99,7 @@ def add_four_verified(ledger, cid):
         )
 
 
-def test_sequential_verifier_checks_two_and_selects_first_ranked_qualified(tmp_path):
+def test_sequential_verifier_returns_multiple_final_options_for_chatgpt(tmp_path):
     with SQLiteLedger(tmp_path / "seq.sqlite3") as ledger:
         ledger.upsert_project(ProjectRecord("P1", "Radiology", question_type="DIAGNOSTIC_ACCURACY"))
         c1 = candidate("C1", "MRI sign A")
@@ -112,14 +112,14 @@ def test_sequential_verifier_checks_two_and_selects_first_ranked_qualified(tmp_p
             ledger.upsert_candidate(c)
             add_four_verified(ledger, c.candidate_id)
 
-        result = SequentialDeepVerifier(ledger, clients()).run("P1", min_verify=2, max_verify=3)
+        result = SequentialDeepVerifier(ledger, clients()).run("P1", min_verify=3, max_verify=3, final_options=3)
 
-        assert len(result.verified) == 2
-        assert result.first_choice_candidate_id == "C1"
+        assert len(result.verified) == 3
+        assert result.final_option_candidate_ids == ["C1", "C2", "C3"]\n        assert result.qualified_option_candidate_ids == ["C1", "C2", "C3"]
         assert ledger.get_candidate("C1").status == CandidateStatus.QUALIFIED
-        assert ledger.get_candidate("C2").status == CandidateStatus.PROVISIONAL_BACKUP
-        assert ledger.get_candidate("C3").status == CandidateStatus.SHORTLISTED
-        assert ledger.get_project("P1").stage == "LOCKED_GATES"
+        assert ledger.get_candidate("C2").status == CandidateStatus.QUALIFIED
+        assert ledger.get_candidate("C3").status == CandidateStatus.QUALIFIED
+        assert ledger.get_project("P1").stage == "EXPORT"
         assert ledger.list_search_log("C1")
         assert ledger.list_queries("C1")
         assert ledger.list_decisions("C1")[-1].decision == "PROCEED — FIRST-CHOICE"
