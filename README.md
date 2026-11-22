@@ -103,6 +103,13 @@ Potentially recoverable data are kept separate from VERIFIED_USABLE data until t
 28. Exact-source provenance validation: unsupported AI evidence quotes force fields or overlap assessments back to UNRESOLVED.
 29. AUTO_EXTRACTED studies are persisted for verification but never count toward the four-study threshold until eligibility, design, independence and synthesis usability are verified.
 30. Enriched literature metadata: Europe PMC core results, Semantic Scholar abstracts, reconstructed OpenAlex abstracts, and PubMed summary metadata.
+31. Deterministic Verification Bridge that promotes only source-supported, high-confidence AUTO_EXTRACTED records to VERIFIED_ELIGIBLE or VERIFIED_INELIGIBLE.
+32. Design classifier covering diagnostic accuracy, randomized, nonrandomized, quasi-experimental, cohort, case-control, cross-sectional, prediction, prognosis, prevalence/incidence, ecological, registry/database, qualitative, mixed-methods, economic, implementation, genetic and other designs.
+33. Automated study-family construction with strong-identifier merging by DOI, registry ID or explicit manual same-family verification.
+34. Stable study-family IDs across reruns and deterministic family-ledger rebuilds after verification changes.
+35. Conservative independent-study counting across unresolved possible publication/population overlaps. A possible link can reduce the count used by the four-study gate even when raw family count is higher.
+36. Threshold-aware family uncertainty: unresolved overlap blocks the candidate when it could reduce the conservative independent count below four.
+37. Auditable manual overrides for study eligibility/design and SAME_FAMILY versus DISTINCT_FAMILIES decisions, stored in decision history.
 
 ## Appraisal routing
 
@@ -166,17 +173,35 @@ Analyze the discovered competitors and primary studies again after source update
 
     scimed-scout analyze-evidence data/scout.sqlite3 CANDIDATE_ID --force
 
-Recheck one candidate after overlap or study-family verification:
+Promote source-supported extracted studies and rebuild study families:
+
+    scimed-scout verify-studies data/scout.sqlite3 CANDIDATE_ID
+
+When a study still needs human verification:
+
+    scimed-scout manual-verify-study data/scout.sqlite3 CANDIDATE_ID STUDY_ID ELIGIBLE --design "prospective diagnostic accuracy study" --reason "verified against full text"
+
+Or mark a study ineligible:
+
+    scimed-scout manual-verify-study data/scout.sqlite3 CANDIDATE_ID STUDY_ID INELIGIBLE --reason "population outside protocol"
+
+Resolve an ambiguous publication/population link:
+
+    scimed-scout resolve-family-link data/scout.sqlite3 CANDIDATE_ID STUDY_A STUDY_B DISTINCT_FAMILIES --reason "different sites and recruitment periods"
+
+Use SAME_FAMILY instead when the two publications come from the same underlying population.
+
+Recheck one candidate after overlap, study-family or synthesis verification:
 
     scimed-scout verify-candidate data/scout.sqlite3 CANDIDATE_ID
 
-Deep verification writes every source query, source status, discovered review/registration/study record, checkpoint and decision back to the SQLite ledger. Raw search hits remain DISCOVERED_UNVERIFIED and do not count toward the four-study threshold. If only one or two candidates meet the full standard, the final package contains only those qualified candidates and reports the shortfall. No weaker candidate is added to fill the requested number.
+Deep verification writes every source query, source status, discovered review/registration/study record, checkpoint and decision back to the SQLite ledger. Raw search hits remain DISCOVERED_UNVERIFIED. AUTO_EXTRACTED records also do not count until the verification bridge promotes them. The four-study gate uses the conservative independent-family count after duplicate merging and possible-overlap analysis, not the number of publications or search hits. If only one or two candidates meet the full standard, the final package contains only those qualified candidates and reports the shortfall. No weaker candidate is added to fill the requested number.
 
 ## Next milestones
 
-- Verification bridge that reviews AUTO_EXTRACTED study records and promotes only supported records into verified study families.
-- Automated study-family construction and duplicate-population resolution from verified study records.
 - Automated synthesis-usability extraction from verified study evidence, including DTA 2x2 data and other design-specific quantitative structures.
+- Automated extraction of effect estimates, denominators, means/SDs, hazard ratios, proportions, person-time and prediction-model performance with field-level provenance.
+- Full-text acquisition/attachment workflow for records whose abstract metadata is insufficient for eligibility or quantitative verification.
 - Specialty and review-question configuration modules.
 - Automated connection between source searches, novelty firewall and the persistent ledger.
 - Background GitHub Actions research jobs with resumable checkpoints.
