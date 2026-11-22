@@ -106,8 +106,20 @@ class SequentialDeepVerifier:
             )
             results.append(result)
 
-            if result.candidate_status == CandidateStatus.QUALIFIED and first_choice is None:
-                first_choice = result.candidate_id
+            if result.candidate_status == CandidateStatus.QUALIFIED:
+                if first_choice is None:
+                    first_choice = result.candidate_id
+                else:
+                    result.decision = "PROCEED — QUALIFIED BACKUP"
+                    result.candidate_status = CandidateStatus.PROVISIONAL_BACKUP
+                    self.ledger.set_candidate_status(result.candidate_id, CandidateStatus.PROVISIONAL_BACKUP)
+                    self._append_decision(
+                        candidate,
+                        decision="PROCEED — QUALIFIED BACKUP",
+                        stage="SEQUENTIAL_SELECTION",
+                        reason=f"Higher-ranked qualified candidate {first_choice} retained as FIRST-CHOICE",
+                        payload={"first_choice_candidate_id": first_choice},
+                    )
 
             # Verify at least two candidates. If one has fully qualified after that,
             # there is no need to spend a third deep-verification slot by default.
