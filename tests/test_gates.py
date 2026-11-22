@@ -25,7 +25,7 @@ def valid_payload():
 def test_all_gates_pass():
     p = valid_payload()
     p["sources"] = [{"source": "Registry", "status": "SEARCHED_NEGATIVE"}]
-    assert final_decision(p)["decision"] == "PROCEED — FIRST-CHOICE"
+    assert final_decision(p)["decision"] == "QUALIFIED — FINAL REVIEW OPTION"
 
 def test_access_uncertainty_blocks_proceed():
     p = valid_payload()
@@ -58,7 +58,7 @@ def test_inconclusive_source_audits_block_proceed(status):
 def test_conclusive_source_audit_allows_proceed():
     payload = valid_payload()
     payload["sources"] = [{"source": "Registry", "status": "SEARCHED_NEGATIVE"}]
-    assert final_decision(payload)["decision"] == "PROCEED — FIRST-CHOICE"
+    assert final_decision(payload)["decision"] == "QUALIFIED — FINAL REVIEW OPTION"
 
 @pytest.mark.parametrize("field", ["fatal_redundancy", "fatal_methodological_flaw"])
 def test_missing_fatal_risk_assessment_blocks_proceed(field):
@@ -82,4 +82,4 @@ def test_legacy_rct_payload_still_works_but_uses_four_study_threshold():
         "pico_coherent": True,
         "sources": [{"source": "Registry", "status": "SEARCHED_NEGATIVE"}],
     })
-    assert final_decision(payload)["decision"] == "PROCEED — FIRST-CHOICE"
+    assert final_decision(payload)["decision"] == "QUALIFIED — FINAL REVIEW OPTION"
