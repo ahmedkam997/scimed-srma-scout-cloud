@@ -7,7 +7,7 @@ from .models import OutcomeDatum, OutcomeUsability, UsabilityStatus
 
 
 @dataclass(slots=True)
-class TrialOutcomeLedger:
+class StudyOutcomeLedger:
     family_id: str
     outcomes: list[OutcomeDatum] = field(default_factory=list)
 
@@ -32,6 +32,9 @@ class TrialOutcomeLedger:
         return any(x.status == UsabilityStatus.POTENTIALLY_USABLE for x in self.assessments())
 
 
+TrialOutcomeLedger = StudyOutcomeLedger
+
+
 @dataclass(frozen=True, slots=True)
 class UsabilityCountSummary:
     verified_usable_families: int
@@ -39,7 +42,7 @@ class UsabilityCountSummary:
     potentially_usable_families: int
 
 
-def summarize_ledgers(ledgers: list[TrialOutcomeLedger]) -> UsabilityCountSummary:
+def summarize_ledgers(ledgers: list[StudyOutcomeLedger]) -> UsabilityCountSummary:
     return UsabilityCountSummary(
         verified_usable_families=sum(ledger.verified_usable for ledger in ledgers),
         principal_outcome_verified_usable_families=sum(ledger.principal_verified_usable for ledger in ledgers),
