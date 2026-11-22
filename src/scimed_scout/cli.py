@@ -9,13 +9,14 @@ from . import __version__
 from .ai import CandidateDiscoveryService, OpenAICompatibleProvider
 from .competitors import SemanticCompetitorAssessor
 from .extraction import StudyEligibilityExtractor
+from .synthesis import SynthesisDataExtractor
 from .domain import CandidateStatus, SourceStatus
 from .gates import final_decision
 from .ranking import CandidateRankingService
 from .review_package import export_review_package
 from .sources import build_default_source_clients
 from .storage import ProjectRecord, SQLiteLedger
-from .verification import CandidateEvidenceAnalysisService, SequentialDeepVerifier, StudyVerificationBridge
+from .verification import CandidateEvidenceAnalysisService, SequentialDeepVerifier, StudyVerificationBridge, SynthesisVerificationBridge
 
 
 def health() -> dict[str, object]:
@@ -111,6 +112,11 @@ def main() -> None:
     family_link.add_argument("study_b")
     family_link.add_argument("resolution", choices=["SAME_FAMILY", "DISTINCT_FAMILIES"])
     family_link.add_argument("--reason", default="")
+
+    synth = sub.add_parser("verify-synthesis")
+    synth.add_argument("db")
+    synth.add_argument("candidate_id")
+    synth.add_argument("--force", action="store_true")
 
     args = parser.parse_args()
 
@@ -218,6 +224,7 @@ def main() -> None:
                 build_default_source_clients(),
                 evidence_analysis_service=_optional_evidence_analysis_service(ledger),
                 study_verification_bridge=StudyVerificationBridge(ledger),
+                synthesis_verification_bridge=_optional_synthesis_bridge(ledger),
             )
             result = verifier.run(
                 args.project_id,
@@ -297,6 +304,13 @@ def main() -> None:
         print(json.dumps(_study_verification_json(summary), ensure_ascii=False, indent=2))
         return
 
+    if args.command == "verify-synthesis":
+        with SQLiteLedger(args.db) as ledger:
+            bridge = _required_synthesis_bridge(ledger)
+            summary = bridge.run(args.candidate_id, force=args.force)
+        print(json.dumps(_synthesis_verification_json(summary), ensure_ascii=False, indent=2))
+        return
+
     raise SystemExit("Unknown command")
 
 
@@ -366,6 +380,21 @@ def _study_verification_json(summary) -> dict:
     }
 
 
+def _synthesis_verification_json(summary) -> dict:
+    return {
+        "candidate_id": summary.candidate_id,
+        "verified_families_seen": summary.verified_families_seen,
+        "outcomes_extracted": summary.outcomes_extracted,
+        "verified_usable_families": summary.verified_usable_families,
+        "conservative_verified_usable_families": summary.conservative_verified_usable_families,
+        "principal_outcome_usable_families": summary.principal_outcome_usable_families,
+        "potentially_usable_families": summary.potentially_usable_families,
+        "families_needing_full_text": summary.families_needing_full_text,
+        "threshold_met": summary.threshold_met,
+        "synthesis_audit_complete": summary.synthesis_audit_complete,
+    }
+
+
 def _sequential_verification_json(result) -> dict:
     return {
         "project_id": result.project_id,
@@ -407,6 +436,19 @@ def _required_evidence_analysis_service(ledger):
         SemanticCompetitorAssessor(provider),
         StudyEligibilityExtractor(provider),
     )
+
+
+def _optional_synthesis_bridge(ledger):
+    provider = OpenAICompatibleProvider.from_env()
+    extractor = SynthesisDataExtractor(provider) if provider.endpoint and provider.model else None
+    return SynthesisVerificationBridge(ledger, extractor)
+
+
+def _required_synthesis_bridge(ledger):
+    provider = OpenAICompatibleProvider.from_env()
+    if not provider.endpoint or not provider.model:
+        raise SystemExit("SCIMED_AI_ENDPOINT and SCIMED_AI_MODEL are required for synthesis extraction")
+    return SynthesisVerificationBridge(ledger, SynthesisDataExtractor(provider))
 
 
 if __name__ == "__main__":
