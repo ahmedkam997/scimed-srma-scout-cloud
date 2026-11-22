@@ -31,12 +31,14 @@ class ReviewDiscoveryOrchestrator:
         novelty_service: DiscoveryNoveltyService | None = None,
         scoring_service: DiscoveryScoringService | None = None,
         progress_callback: Callable[[int, str, str], None] | None = None,
+        cancellation_check: Callable[[], None] | None = None,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
         self.novelty_service = novelty_service
         self.scoring_service = scoring_service
         self.progress_callback = progress_callback
+        self.cancellation_check = cancellation_check
 
     def run(
         self,
@@ -54,6 +56,7 @@ class ReviewDiscoveryOrchestrator:
         if self.ledger.get_project(project_id) is None:
             raise ValueError(f"Project not found: {project_id}")
 
+        self._check_cancellation()
         ranked = CandidateRankingService(self.ledger).rank_project(project_id, top_n=max_verify)
         ranking_message = f"Ranked {len(ranked)} review-topic candidates"
         self.ledger.update_checkpoint(project_id, stage="DISCOVERY_RANKING", progress=20, message=ranking_message)
@@ -62,6 +65,7 @@ class ReviewDiscoveryOrchestrator:
         results: list[DiscoveryCandidateResult] = []
         qualified: list[str] = []
         for index, ranked_item in enumerate(ranked[:max_verify], 1):
+            self._check_cancellation()
             candidate = self.ledger.get_candidate(ranked_item.candidate_id)
             if candidate is None:
                 continue
@@ -104,6 +108,7 @@ class ReviewDiscoveryOrchestrator:
         if candidate is None:
             raise ValueError(f"Candidate not found: {candidate_id}")
 
+        self._check_cancellation()
         policy = policy_for_question_type(candidate.question_type)
         plan = build_search_plan(candidate)
         self._search_sources(candidate, policy.literature_sources, plan.review_queries, evidence_type="PUBLISHED_REVIEW", purpose="published-review novelty", limit_per_query=limit_per_query)
@@ -112,6 +117,7 @@ class ReviewDiscoveryOrchestrator:
         if policy.require_pipeline_source:
             self._search_sources(candidate, policy.pipeline_sources, plan.pipeline_queries, evidence_type="ONGOING_STUDY", purpose="future evidence pipeline", limit_per_query=limit_per_query)
 
+        self._check_cancellation()
         logs = self.ledger.list_search_log(candidate_id)
         coverage = evaluate_coverage(logs, policy)
         evidence = discovery_evidence_snapshot(self.ledger, candidate_id)
@@ -244,6 +250,7 @@ class ReviewDiscoveryOrchestrator:
         if not configured:
             return
 
+        self._check_cancellation()
         with ThreadPoolExecutor(
             max_workers=min(5, len(configured)),
             thread_name_prefix="scout-source",
@@ -261,7 +268,9 @@ class ReviewDiscoveryOrchestrator:
             # Remote sources run concurrently, but SQLite writes stay on the main
             # thread so the discovery ledger remains deterministic and thread-safe.
             for source_name, _ in configured:
+                self._check_cancellation()
                 for query, result in futures[source_name].result():
+                    self._check_cancellation()
                     self.ledger.append_search_log(
                         SearchLogRecord(
                             candidate.project_id,
@@ -300,7 +309,12 @@ class ReviewDiscoveryOrchestrator:
         }
         self.ledger.upsert_external_evidence(candidate_id, evidence_type, record.record_id, source=record.source or str((existing or {}).get("source") or ""), title=record.title or str((existing or {}).get("title") or ""), payload=payload)
 
+    def _check_cancellation(self) -> None:
+        if self.cancellation_check is not None:
+            self.cancellation_check()
+
     def _progress(self, progress: int, stage: str, message: str) -> None:
+        self._check_cancellation()
         if self.progress_callback is not None:
             self.progress_callback(progress, stage, message)
 
