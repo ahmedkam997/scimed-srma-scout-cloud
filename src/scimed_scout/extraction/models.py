@@ -39,6 +39,7 @@ class StudyEligibilityExtraction:
     first_author: ProvenanceField
     year: ProvenanceField
     exclusion_reason: str = ""
+    exclusion_evidence: str = ""
     overall_confidence: float = 0.0
     unresolved_fields: list[str] = field(default_factory=list)
     verification: ExtractionVerification = ExtractionVerification.AUTO_EXTRACTED
