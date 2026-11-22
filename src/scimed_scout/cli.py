@@ -9,6 +9,7 @@ from . import __version__
 from .ai import CandidateDiscoveryService, OpenAICompatibleProvider
 from .competitors import SemanticCompetitorAssessor
 from .extraction import StudyEligibilityExtractor
+from .fulltext import FullTextAcquisitionService
 from .synthesis import SynthesisDataExtractor
 from .domain import CandidateStatus, SourceStatus
 from .gates import final_decision
@@ -118,6 +119,19 @@ def main() -> None:
     synth.add_argument("candidate_id")
     synth.add_argument("--force", action="store_true")
 
+    fulltext = sub.add_parser("acquire-full-text")
+    fulltext.add_argument("db")
+    fulltext.add_argument("candidate_id")
+    fulltext.add_argument("--purpose", choices=["ELIGIBILITY", "SYNTHESIS", "ALL"], default="ALL")
+    fulltext.add_argument("--force", action="store_true")
+
+    attach_fulltext = sub.add_parser("attach-full-text")
+    attach_fulltext.add_argument("db")
+    attach_fulltext.add_argument("candidate_id")
+    attach_fulltext.add_argument("study_id")
+    attach_fulltext.add_argument("text_file")
+    attach_fulltext.add_argument("--source-label", default="MANUAL")
+
     args = parser.parse_args()
 
     if args.command == "health":
@@ -225,6 +239,7 @@ def main() -> None:
                 evidence_analysis_service=_optional_evidence_analysis_service(ledger),
                 study_verification_bridge=StudyVerificationBridge(ledger),
                 synthesis_verification_bridge=_optional_synthesis_bridge(ledger),
+                full_text_acquisition_service=FullTextAcquisitionService(ledger),
             )
             result = verifier.run(
                 args.project_id,
@@ -246,6 +261,9 @@ def main() -> None:
                 ledger,
                 build_default_source_clients(),
                 evidence_analysis_service=_optional_evidence_analysis_service(ledger),
+                study_verification_bridge=StudyVerificationBridge(ledger),
+                synthesis_verification_bridge=_optional_synthesis_bridge(ledger),
+                full_text_acquisition_service=FullTextAcquisitionService(ledger),
             )
             result = verifier.verify_candidate(
                 args.candidate_id,
@@ -309,6 +327,29 @@ def main() -> None:
             bridge = _required_synthesis_bridge(ledger)
             summary = bridge.run(args.candidate_id, force=args.force)
         print(json.dumps(_synthesis_verification_json(summary), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "acquire-full-text":
+        with SQLiteLedger(args.db) as ledger:
+            summary = FullTextAcquisitionService(ledger).run(
+                args.candidate_id,
+                purpose=args.purpose,
+                force=args.force,
+            )
+        print(json.dumps(_full_text_summary_json(summary), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "attach-full-text":
+        with open(args.text_file, encoding="utf-8") as handle:
+            supplied_text = handle.read()
+        with SQLiteLedger(args.db) as ledger:
+            result = FullTextAcquisitionService(ledger).attach_text(
+                args.candidate_id,
+                args.study_id,
+                supplied_text,
+                source_label=args.source_label,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
     raise SystemExit("Unknown command")
@@ -377,6 +418,20 @@ def _study_verification_json(summary) -> dict:
         "possible_family_links": summary.possible_family_links,
         "decision_changing_family_uncertainty": summary.decision_changing_family_uncertainty,
         "study_audit_complete": summary.study_audit_complete,
+    }
+
+
+def _full_text_summary_json(summary) -> dict:
+    return {
+        "candidate_id": summary.candidate_id,
+        "purpose": summary.purpose,
+        "records_considered": summary.records_considered,
+        "acquired": summary.acquired,
+        "already_present": summary.already_present,
+        "not_available": summary.not_available,
+        "no_pmcid": summary.no_pmcid,
+        "access_failed": summary.access_failed,
+        "invalid_content": summary.invalid_content,
     }
 
 

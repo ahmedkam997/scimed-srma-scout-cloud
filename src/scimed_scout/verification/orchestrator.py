@@ -63,12 +63,14 @@ class SequentialDeepVerifier:
         evidence_analysis_service=None,
         study_verification_bridge=None,
         synthesis_verification_bridge=None,
+        full_text_acquisition_service=None,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
         self.evidence_analysis_service = evidence_analysis_service
         self.study_verification_bridge = study_verification_bridge
         self.synthesis_verification_bridge = synthesis_verification_bridge
+        self.full_text_acquisition_service = full_text_acquisition_service
 
     def run(
         self,
@@ -207,9 +209,36 @@ class SequentialDeepVerifier:
             analysis_summary = self.evidence_analysis_service.analyze_candidate(candidate_id)
             candidate = self.ledger.get_candidate(candidate_id) or candidate
 
+        full_text_eligibility_summary = None
+        if (
+            self.full_text_acquisition_service is not None
+            and self.evidence_analysis_service is not None
+        ):
+            full_text_eligibility_summary = self.full_text_acquisition_service.run(
+                candidate_id,
+                purpose="ELIGIBILITY",
+            )
+            if full_text_eligibility_summary.acquired > 0:
+                analysis_summary = self.evidence_analysis_service.analyze_candidate(
+                    candidate_id,
+                    force=True,
+                )
+                candidate = self.ledger.get_candidate(candidate_id) or candidate
+
         study_verification_summary = None
         if self.study_verification_bridge is not None:
             study_verification_summary = self.study_verification_bridge.run(candidate_id)
+            candidate = self.ledger.get_candidate(candidate_id) or candidate
+
+        full_text_synthesis_summary = None
+        if (
+            self.full_text_acquisition_service is not None
+            and self.study_verification_bridge is not None
+        ):
+            full_text_synthesis_summary = self.full_text_acquisition_service.run(
+                candidate_id,
+                purpose="SYNTHESIS",
+            )
             candidate = self.ledger.get_candidate(candidate_id) or candidate
 
         synthesis_verification_summary = None
@@ -333,6 +362,8 @@ class SequentialDeepVerifier:
                     "counts_as_verified_evidence": False,
                 },
                 "study_verification_summary": asdict(study_verification_summary) if study_verification_summary is not None else None,
+                "full_text_eligibility_summary": asdict(full_text_eligibility_summary) if full_text_eligibility_summary is not None else None,
+                "full_text_synthesis_summary": asdict(full_text_synthesis_summary) if full_text_synthesis_summary is not None else None,
                 "synthesis_verification_summary": asdict(synthesis_verification_summary) if synthesis_verification_summary is not None else None,
                 "final_gate_result": final_gate_result,
             },

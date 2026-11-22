@@ -222,12 +222,17 @@ class CandidateEvidenceAnalysisService:
 def _record_hash(record: dict) -> str:
     payload = record.get("payload") or {}
     metadata = payload.get("metadata") or {}
+    full_text = str(payload.get("full_text") or "")
+    full_text_hash = hashlib.sha256(full_text.encode("utf-8")).hexdigest() if full_text else ""
+    chunks = payload.get("full_text_chunks") if isinstance(payload.get("full_text_chunks"), list) else []
     basis = repr((
         record.get("title"),
         record.get("source"),
         payload.get("year"),
         payload.get("doi"),
         metadata,
+        full_text_hash,
+        chunks,
     ))
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 

@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from scimed_scout.ai import AIProvider, AIRequest
+from scimed_scout.fulltext import evidence_text_for_record
 from scimed_scout.storage import CandidateRecord
 
 from .models import EvidenceScope, ExtractedOutcome, StudySynthesisExtraction
@@ -31,7 +32,7 @@ class SynthesisDataExtractor:
         *,
         evidence_scope: EvidenceScope = EvidenceScope.TITLE_ABSTRACT,
     ) -> StudySynthesisExtraction:
-        text = _evidence_text(source_record)
+        text = evidence_text_for_record(\n            source_record, candidate, purpose="SYNTHESIS", max_chars=48000, max_chunks=8\n        )
         study_id = str(study.get("study_id") or "")
         source_record_id = str(source_record.get("source_record_id") or study_id)
         if not text:

@@ -120,6 +120,14 @@ Potentially recoverable data are kept separate from VERIFIED_USABLE data until t
 45. Conservative usable-family counting across unresolved family links. Raw usable count of four does not pass if possible population overlap reduces the conservative count below four.
 46. Decision-changing usable-family uncertainty is a Type-A blocker.
 47. Repeated literature searches preserve previously attached full text, supplements and completed evidence assessments instead of overwriting enriched records.
+48. Official Europe PMC open-access full-text acquisition through PMCID and the fullTextXML endpoint, with separate ACQUIRED, NOT_AVAILABLE, NO_PMCID, ACCESS_FAILED and INVALID_CONTENT states.
+49. JATS XML parsing that preserves Methods, Results, tables, figure text and section provenance before chunking.
+50. Deterministic full-text chunk selection tailored separately to eligibility review and synthesis-data extraction.
+51. Eligibility extraction automatically upgrades from abstract evidence to selected full-text chunks when open full text is acquired.
+52. Synthesis extraction automatically uses high-value Results/outcome chunks instead of truncating an entire long article.
+53. Deep verification performs an eligibility full-text pass for uncertain studies, re-runs extraction when new evidence arrives, then performs a synthesis full-text pass for VERIFIED_ELIGIBLE studies.
+54. Manual full-text attachment supports plain text and JATS XML for records unavailable through the open-access route.
+55. Full-text changes invalidate cached eligibility extraction automatically, while repeated search still preserves enriched evidence.
 
 ## Appraisal routing
 
@@ -209,6 +217,22 @@ Force re-extraction after updating source text or full text:
 
     scimed-scout verify-synthesis data/scout.sqlite3 CANDIDATE_ID --force
 
+Acquire official open-access full text for records that need eligibility clarification:
+
+    scimed-scout acquire-full-text data/scout.sqlite3 CANDIDATE_ID --purpose ELIGIBILITY
+
+Acquire full text for verified eligible studies before synthesis-usability verification:
+
+    scimed-scout acquire-full-text data/scout.sqlite3 CANDIDATE_ID --purpose SYNTHESIS
+
+Attempt acquisition for all discovered primary-study records:
+
+    scimed-scout acquire-full-text data/scout.sqlite3 CANDIDATE_ID --purpose ALL
+
+Attach a locally supplied UTF-8 text or JATS XML file when automated open-access retrieval is unavailable:
+
+    scimed-scout attach-full-text data/scout.sqlite3 CANDIDATE_ID STUDY_ID article.xml --source-label USER_JATS
+
 Recheck one candidate after overlap, study-family or synthesis verification:
 
     scimed-scout verify-candidate data/scout.sqlite3 CANDIDATE_ID
@@ -217,7 +241,7 @@ Deep verification writes every source query, source status, discovered review/re
 
 ## Next milestones
 
-- Full-text acquisition/attachment workflow with chunked extraction for papers whose abstracts do not contain enough eligibility or quantitative evidence.
+- PDF full-text ingestion for legally supplied local PDFs, including page-aware provenance and table extraction.
 - Manual and assisted reconstruction workflows for graph-only data, Kaplan-Meier curves and justified median/IQR conversion.
 - Outcome harmonization across study families, including synonym mapping, follow-up windows and clinically defensible pooling groups.
 - Specialty and review-question configuration modules.

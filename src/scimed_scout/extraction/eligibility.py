@@ -4,13 +4,14 @@ import json
 import re
 
 from scimed_scout.ai import AIProvider, AIRequest
+from scimed_scout.fulltext import evidence_text_for_record
 from scimed_scout.storage import CandidateRecord
 
 from .models import EligibilityStatus, ProvenanceField, StudyEligibilityExtraction
 
 
 SYSTEM_PROMPT = """Extract study-design and eligibility information for a systematic review.
-Use only the supplied title/abstract/metadata. Never invent missing fields.
+Use only the supplied evidence, which may include title, abstract, metadata, or selected full-text chunks. Never invent missing fields.
 Every non-empty extracted field must include a short exact supporting quote copied from the supplied text.
 If eligibility cannot be established from supplied evidence, return UNCERTAIN.
 Do not mark any field as manually verified. Return strict JSON only."""
@@ -21,9 +22,7 @@ class StudyEligibilityExtractor:
         self.provider = provider
 
     def extract(self, candidate: CandidateRecord, record: dict) -> StudyEligibilityExtraction:
-        evidence_text = _record_evidence_text(record)
-        if not evidence_text:
-            return _unresolved(record, "No title/abstract/metadata text sufficient for eligibility extraction")
+        evidence_text = evidence_text_for_record(\n            record, candidate, purpose="ELIGIBILITY", max_chars=36000, max_chunks=7\n        )\n        if not evidence_text:\n            return _unresolved(record, "No supplied evidence text sufficient for eligibility extraction")
 
         response = self.provider.complete(
             AIRequest(
@@ -83,7 +82,7 @@ Return:
   "overall_confidence":0.0,
   "unresolved_fields":[],
   "fields":{{
-    "design_label":{{"value":"","evidence":"","source_section":"title/abstract/metadata","confidence":0.0}},
+    "design_label":{{"value":"","evidence":"","source_section":"title/abstract/full-text/metadata","confidence":0.0}},
     "population":{{"value":"","evidence":"","source_section":"","confidence":0.0}},
     "intervention_exposure_index_test":{{"value":"","evidence":"","source_section":"","confidence":0.0}},
     "comparator_reference":{{"value":"","evidence":"","source_section":"","confidence":0.0}},
