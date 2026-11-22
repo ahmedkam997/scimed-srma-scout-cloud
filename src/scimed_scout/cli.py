@@ -10,6 +10,7 @@ from .ai import CandidateDiscoveryService, OpenAICompatibleProvider
 from .domain import CandidateStatus, SourceStatus
 from .gates import final_decision
 from .ranking import CandidateRankingService
+from .review_package import export_review_package
 from .sources import build_default_source_clients
 from .storage import ProjectRecord, SQLiteLedger
 from .verification import SequentialDeepVerifier
@@ -73,9 +74,11 @@ def main() -> None:
     verify = sub.add_parser("deep-verify")
     verify.add_argument("db")
     verify.add_argument("project_id")
-    verify.add_argument("--min-verify", type=int, default=2)
-    verify.add_argument("--max-verify", type=int, default=3)
+    verify.add_argument("--min-verify", type=int, default=3)
+    verify.add_argument("--max-verify", type=int, default=5)
+    verify.add_argument("--final-options", type=int, default=3)
     verify.add_argument("--limit-per-query", type=int, default=20)
+    verify.add_argument("--review-package", default="")
 
     verify_one = sub.add_parser("verify-candidate")
     verify_one.add_argument("db")
@@ -188,9 +191,14 @@ def main() -> None:
                 args.project_id,
                 min_verify=args.min_verify,
                 max_verify=args.max_verify,
+                final_options=args.final_options,
                 limit_per_query=args.limit_per_query,
             )
-        print(json.dumps(_sequential_verification_json(result), ensure_ascii=False, indent=2))
+            review_path = args.review_package or f"data/{args.project_id}_chatgpt_review.json"
+            export_review_package(ledger, result, review_path)
+        payload = _sequential_verification_json(result)
+        payload["review_package_path"] = review_path
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
     if args.command == "verify-candidate":
@@ -260,7 +268,9 @@ def _candidate_verification_json(result) -> dict:
 def _sequential_verification_json(result) -> dict:
     return {
         "project_id": result.project_id,
-        "first_choice_candidate_id": result.first_choice_candidate_id,
+        "final_option_candidate_ids": result.final_option_candidate_ids,
+        "qualified_option_candidate_ids": result.qualified_option_candidate_ids,
+        "desired_options": result.desired_options,
         "ranked": [
             {
                 "candidate_id": item.candidate_id,
