@@ -16,7 +16,6 @@ const els = {
 };
 
 let supabase = null;
-let session = null;
 let jobs = [];
 let pollTimer = null;
 
@@ -25,34 +24,46 @@ function backendState(kind, title, detail) {
   els.backend.innerHTML = `<b>${escapeHtml(title)}</b><span>${escapeHtml(detail)}</span>`;
 }
 
+function deviceToken() {
+  const key = 'scimed-review-scout-device-token-v1';
+  const existing = localStorage.getItem(key);
+  if (existing) return existing;
+
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const token = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+  localStorage.setItem(key, token);
+  return token;
+}
+
 async function init() {
   if (!config.supabaseUrl || !config.supabaseAnonKey) {
-    backendState(
-      'error',
-      'Backend setup required',
-      'Add SUPABASE_URL and SUPABASE_ANON_KEY as GitHub repository variables, then redeploy Pages.'
-    );
+    backendState('error', 'Backend setup required', 'The Supabase project configuration is missing.');
     return;
   }
 
   supabase = createClient(config.supabaseUrl, config.supabaseAnonKey, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+    global: {
+      headers: {
+        'x-scimed-client-token': deviceToken(),
+      },
+    },
   });
 
   try {
-    const current = await supabase.auth.getSession();
-    session = current.data.session;
-    if (!session) {
-      const signed = await supabase.auth.signInAnonymously();
-      if (signed.error) throw signed.error;
-      session = signed.data.session;
-    }
-    if (!session) throw new Error('Supabase session was not created.');
-
-    backendState('ok', 'Cloud queue connected', 'Jobs continue in the background after you close this browser.');
+    await loadJobs();
+    backendState(
+      'ok',
+      'Cloud queue connected',
+      'Jobs continue in the background after you close this browser. Job history belongs to this browser profile.'
+    );
     els.start.disabled = false;
     els.refresh.disabled = false;
-    await loadJobs();
     pollTimer = setInterval(loadJobs, 5000);
   } catch (error) {
     backendState('error', 'Backend connection failed', error.message || String(error));
@@ -60,7 +71,7 @@ async function init() {
 }
 
 async function startDiscovery() {
-  if (!supabase || !session) return;
+  if (!supabase) return;
   els.start.disabled = true;
   const specialty = els.specialty.value;
   const questionType = els.questionType.value;
@@ -93,17 +104,14 @@ async function startDiscovery() {
 }
 
 async function loadJobs() {
-  if (!supabase || !session) return;
+  if (!supabase) return;
   const { data, error } = await supabase
     .from('discovery_jobs')
     .select('*')
     .order('created_at', { ascending: false })
     .limit(20);
 
-  if (error) {
-    backendState('error', 'Could not refresh jobs', error.message || String(error));
-    return;
-  }
+  if (error) throw error;
   jobs = data || [];
   renderJobs();
 }
@@ -226,7 +234,13 @@ function escapeHtml(value) {
 }
 
 els.start.addEventListener('click', startDiscovery);
-els.refresh.addEventListener('click', loadJobs);
+els.refresh.addEventListener('click', async () => {
+  try {
+    await loadJobs();
+  } catch (error) {
+    backendState('error', 'Could not refresh jobs', error.message || String(error));
+  }
+});
 els.jobs.addEventListener('click', event => {
   const copy = event.target.closest('[data-copy-job]');
   if (copy) copyJob(copy.dataset.copyJob);
@@ -234,7 +248,9 @@ els.jobs.addEventListener('click', event => {
   if (download) downloadJob(download.dataset.downloadJob);
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') loadJobs();
+  if (document.visibilityState === 'visible') {
+    loadJobs().catch(error => backendState('error', 'Could not refresh jobs', error.message || String(error)));
+  }
 });
 window.addEventListener('beforeunload', () => {
   if (pollTimer) clearInterval(pollTimer);

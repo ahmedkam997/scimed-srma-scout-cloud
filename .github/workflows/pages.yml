@@ -1,11 +1,6 @@
 name: pages
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'web/**'
-      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
@@ -19,38 +14,15 @@ concurrency:
 
 jobs:
   deploy:
-    if: ${{ vars.SUPABASE_URL != '' && vars.SUPABASE_ANON_KEY != '' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Build static PWA
-        env:
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
-        run: |
-          mkdir -p public
-          cp -R web/. public/
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-          config = {
-              "supabaseUrl": os.getenv("SUPABASE_URL", ""),
-              "supabaseAnonKey": os.getenv("SUPABASE_ANON_KEY", ""),
-          }
-          Path("public/config.js").write_text(
-              "window.SCIMED_CONFIG = " + json.dumps(config) + ";\n",
-              encoding="utf-8",
-          )
-          PY
-
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: public
+          path: web
       - id: deployment
         uses: actions/deploy-pages@v4

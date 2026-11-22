@@ -1,21 +1,37 @@
 # Supabase setup for SciMed Review Scout Cloud
 
-1. Create one Supabase Free project.
-2. Open SQL Editor and run `supabase/schema.sql`.
-3. In Authentication settings, enable Anonymous Sign-Ins.
-4. In GitHub repository Variables, add:
-   - `SUPABASE_URL`
-   - `SUPABASE_ANON_KEY`
-5. In GitHub repository Secrets, add:
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `SCIMED_AI_ENDPOINT`
-   - `SCIMED_AI_MODEL`
-   - `SCIMED_AI_API_KEY` when your provider needs one
-   - `SEMANTIC_SCHOLAR_API_KEY` optionally
-6. In GitHub Settings > Pages, choose GitHub Actions as the deployment source.
-7. Run the `pages` workflow once, or push a commit.
-8. Run `discovery-worker` manually once to validate the queue. The scheduled worker also polls every five minutes.
+The current production project is:
 
-The browser only receives the public Supabase URL and anon key. The Supabase service-role key and AI credentials stay in GitHub Secrets.
+- Project ref: `vskqiszpjxsmcayuaclo`
+- Region: `eu-central-1`
+- Plan: Free
 
-Anonymous sign-in persists in the same browser profile. A later account-login phase can add cross-device identity without changing the job schema.
+The database queue and RLS are already configured on that project.
+
+## Security model
+
+The browser does not create a Supabase Auth account.
+
+Each browser profile generates a random 256-bit device token and sends it as `x-scimed-client-token`. The database stores only its SHA-256 hash. RLS allows a browser to insert and read only jobs associated with that device token.
+
+The GitHub Actions worker uses the public anon API key plus a separate `SCIMED_WORKER_TOKEN`. The database stores only the SHA-256 hash of the worker token. The worker has queue read/update access through RLS and does not receive the Supabase service-role key.
+
+## GitHub Secrets still required
+
+Add these repository Secrets:
+
+- `SCIMED_WORKER_TOKEN`
+- `SCIMED_AI_ENDPOINT`
+- `SCIMED_AI_MODEL`
+- `SCIMED_AI_API_KEY` when the selected provider requires it
+- `SEMANTIC_SCHOLAR_API_KEY` optionally
+
+The Supabase URL and anon key are public configuration and are already present in the PWA and worker workflow.
+
+## GitHub Pages
+
+In GitHub Settings > Pages, select GitHub Actions as the deployment source. Then manually run the `pages` workflow once.
+
+## Worker
+
+The `discovery-worker` workflow polls every five minutes. It performs a lightweight queue request first. If no job exists, it exits without installing the Python package or PROSPERO CLI.

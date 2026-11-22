@@ -1,4 +1,4 @@
-window.SCIMED_CONFIG = window.SCIMED_CONFIG || {
-  supabaseUrl: "",
-  supabaseAnonKey: ""
+window.SCIMED_CONFIG = {
+  supabaseUrl: "https://vskqiszpjxsmcayuaclo.supabase.co",
+  supabaseAnonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZza3Fpc3pwanhzbWNheXVhY2xvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUzNzY3MzQsImV4cCI6MjExMDk1MjczNH0.ussaGLgCbu_J15GCEe3VGiLuCurV65xsyEjgxoHBfHs"
 };

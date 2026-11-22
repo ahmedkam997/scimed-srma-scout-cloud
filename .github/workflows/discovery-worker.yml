@@ -16,30 +16,60 @@ jobs:
   run-one-job:
     runs-on: ubuntu-latest
     timeout-minutes: 55
+    env:
+      SUPABASE_URL: https://vskqiszpjxsmcayuaclo.supabase.co
+      SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZza3Fpc3pwanhzbWNheXVhY2xvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUzNzY3MzQsImV4cCI6MjExMDk1MjczNH0.ussaGLgCbu_J15GCEe3VGiLuCurV65xsyEjgxoHBfHs
+      SCIMED_WORKER_TOKEN: ${{ secrets.SCIMED_WORKER_TOKEN }}
+      SCIMED_AI_ENDPOINT: ${{ secrets.SCIMED_AI_ENDPOINT }}
+      SCIMED_AI_MODEL: ${{ secrets.SCIMED_AI_MODEL }}
+      SCIMED_AI_API_KEY: ${{ secrets.SCIMED_AI_API_KEY }}
+      SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
+      PROSPERO_NETWORK_MODE: online
+
     steps:
+      - name: Check worker configuration
+        id: config
+        run: |
+          if [ -z "$SCIMED_WORKER_TOKEN" ] || [ -z "$SCIMED_AI_ENDPOINT" ] || [ -z "$SCIMED_AI_MODEL" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Worker secrets are not configured yet."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check queue
+        if: steps.config.outputs.ready == 'true'
+        id: queue
+        run: |
+          RESULT=$(curl --fail --silent --show-error             -H "apikey: $SUPABASE_ANON_KEY"             -H "Authorization: Bearer $SUPABASE_ANON_KEY"             -H "x-scimed-worker-token: $SCIMED_WORKER_TOKEN"             "$SUPABASE_URL/rest/v1/discovery_jobs?select=id&status=eq.QUEUED&order=created_at.asc&limit=1")
+          if [ "$RESULT" = "[]" ]; then
+            echo "has_job=false" >> "$GITHUB_OUTPUT"
+            echo "No queued discovery job."
+          else
+            echo "has_job=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.config.outputs.ready == 'true' && steps.queue.outputs.has_job == 'true'
 
       - uses: actions/setup-python@v5
+        if: steps.config.outputs.ready == 'true' && steps.queue.outputs.has_job == 'true'
         with:
           python-version: '3.12'
 
       - uses: actions/setup-node@v4
+        if: steps.config.outputs.ready == 'true' && steps.queue.outputs.has_job == 'true'
         with:
           node-version: '22'
 
       - name: Install SciMed Review Scout
+        if: steps.config.outputs.ready == 'true' && steps.queue.outputs.has_job == 'true'
         run: python -m pip install -e .
 
       - name: Install read-only PROSPERO CLI
+        if: steps.config.outputs.ready == 'true' && steps.queue.outputs.has_job == 'true'
         run: npm install -g github:erichuang777777/PROSPERO-MCP#v0.2.2
 
       - name: Process next queued discovery job
-        env:
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SCIMED_AI_ENDPOINT: ${{ secrets.SCIMED_AI_ENDPOINT }}
-          SCIMED_AI_MODEL: ${{ secrets.SCIMED_AI_MODEL }}
-          SCIMED_AI_API_KEY: ${{ secrets.SCIMED_AI_API_KEY }}
-          SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
-          PROSPERO_NETWORK_MODE: online
+        if: steps.config.outputs.ready == 'true' && steps.queue.outputs.has_job == 'true'
         run: python -m scimed_scout.cloud.worker

@@ -143,7 +143,7 @@ The mobile-first PWA now uses Supabase as a persistent job queue and GitHub Acti
 The browser workflow is:
 
 1. Open the PWA.
-2. The app creates or restores an anonymous Supabase session.
+2. The app creates or restores a private random device token stored only in that browser profile.
 3. Choose Specialty and Question type, including All + All.
 4. Press Start discovery.
 5. A QUEUED job is stored in Supabase.
@@ -153,20 +153,15 @@ The browser workflow is:
 9. Closing Chrome does not stop the background job.
 10. When complete, the PWA shows only qualified FIRST-CHOICE topics and provides Copy for ChatGPT and Download JSON.
 
-The browser never receives the Supabase service-role key or AI credentials.
+The browser never receives the Supabase service-role key, worker token, or AI credentials. The production worker does not use the service-role key at all.
 
 ### One-time cloud setup
 
-Run `supabase/schema.sql` in a Supabase project and enable Anonymous Sign-Ins.
-
-Set these GitHub repository Variables:
-
-    SUPABASE_URL
-    SUPABASE_ANON_KEY
+The production Supabase project and queue schema are already configured. Anonymous Auth is not required.
 
 Set these GitHub repository Secrets:
 
-    SUPABASE_SERVICE_ROLE_KEY
+    SCIMED_WORKER_TOKEN
     SCIMED_AI_ENDPOINT
     SCIMED_AI_MODEL
     SCIMED_AI_API_KEY
@@ -175,7 +170,7 @@ Optional secret:
 
     SEMANTIC_SCHOLAR_API_KEY
 
-Then set GitHub Pages deployment source to GitHub Actions. The `pages` workflow injects the public Supabase URL and anon key into the static PWA. The `discovery-worker` workflow is both manually runnable and scheduled.
+Then set GitHub Pages deployment source to GitHub Actions and run the `pages` workflow once. The public Supabase URL and anon key are already configured in the PWA. The `discovery-worker` workflow is both manually runnable and scheduled.
 
 The worker installs the pinned read-only PROSPERO CLI and keeps PROSPERO failures fail-closed.
 

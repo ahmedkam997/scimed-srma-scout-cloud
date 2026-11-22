@@ -39,26 +39,36 @@ class DiscoveryJob:
 
 
 class SupabaseJobStore:
+    """Limited worker client.
+
+    The worker uses the public anon API key plus a separate worker token.
+    RLS grants that token only queue read/update access. The service-role key
+    is deliberately not used by GitHub Actions.
+    """
+
     def __init__(
         self,
         url: str,
-        service_role_key: str,
+        anon_key: str,
+        worker_token: str,
         *,
         timeout: float = 30.0,
         requester: Requester | None = None,
     ):
         self.url = url.rstrip("/")
-        self.service_role_key = service_role_key.strip()
+        self.anon_key = anon_key.strip()
+        self.worker_token = worker_token.strip()
         self.timeout = timeout
         self.requester = requester
-        if not self.url or not self.service_role_key:
-            raise ValueError("Supabase URL and service-role key are required")
+        if not self.url or not self.anon_key or not self.worker_token:
+            raise ValueError("Supabase URL, anon key, and SCIMED_WORKER_TOKEN are required")
 
     @classmethod
     def from_env(cls) -> "SupabaseJobStore":
         return cls(
             os.getenv("SUPABASE_URL", ""),
-            os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
+            os.getenv("SUPABASE_ANON_KEY", ""),
+            os.getenv("SCIMED_WORKER_TOKEN", ""),
         )
 
     def recover_stale_jobs(self, *, max_age_minutes: int = 90) -> int:
@@ -153,7 +163,6 @@ class SupabaseJobStore:
         self._patch(job_id, payload)
 
     def complete(self, job_id: str, result_json: dict[str, Any], message: str) -> None:
-        now = _utc_now()
         self.update_job(
             job_id,
             status="COMPLETED",
@@ -162,7 +171,7 @@ class SupabaseJobStore:
             message=message,
             error_text="",
             result_json=result_json,
-            completed_at=now,
+            completed_at=_utc_now(),
         )
 
     def fail(self, job_id: str, error_text: str) -> None:
@@ -198,8 +207,9 @@ class SupabaseJobStore:
     ) -> list[dict[str, Any]]:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
         headers = {
-            "apikey": self.service_role_key,
-            "Authorization": f"Bearer {self.service_role_key}",
+            "apikey": self.anon_key,
+            "Authorization": f"Bearer {self.anon_key}",
+            "x-scimed-worker-token": self.worker_token,
             "Accept": "application/json",
         }
         if payload is not None:

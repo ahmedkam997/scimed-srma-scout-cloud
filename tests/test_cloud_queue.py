@@ -24,7 +24,7 @@ def test_discovery_job_defaults_and_bounds():
     assert job.limit_per_query == 5
 
 
-def test_supabase_job_store_claims_oldest_queued_job_with_service_role():
+def test_supabase_job_store_claims_oldest_queued_job_with_limited_worker_token():
     requests = []
 
     def requester(req, timeout):
@@ -56,7 +56,8 @@ def test_supabase_job_store_claims_oldest_queued_job_with_service_role():
 
     store = SupabaseJobStore(
         "https://example.supabase.co",
-        "service-secret",
+        "public-anon-jwt",
+        "worker-secret",
         requester=requester,
     )
     job = store.claim_next()
@@ -67,14 +68,16 @@ def test_supabase_job_store_claims_oldest_queued_job_with_service_role():
     assert requests[0].method == "GET"
     assert "status=eq.QUEUED" in requests[0].full_url
     assert requests[1].method == "PATCH"
-    assert requests[1].headers["Authorization"] == "Bearer service-secret"
-    assert requests[1].headers["Apikey"] == "service-secret"
+    assert requests[1].headers["Authorization"] == "Bearer public-anon-jwt"
+    assert requests[1].headers["Apikey"] == "public-anon-jwt"
+    assert requests[1].headers["X-scimed-worker-token"] == "worker-secret"
 
 
 def test_supabase_job_store_returns_idle_when_queue_empty():
     store = SupabaseJobStore(
         "https://example.supabase.co",
-        "service-secret",
+        "public-anon-jwt",
+        "worker-secret",
         requester=lambda req, timeout: b"[]",
     )
     assert store.claim_next() is None
