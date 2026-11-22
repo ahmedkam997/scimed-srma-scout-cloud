@@ -11,7 +11,7 @@ Mobile-first, AI-assisted discovery and verification of publication-oriented sys
 - Multiple publications from the same underlying population are counted as one study family.
 - Weak study-family similarities never trigger automatic merging.
 - The default locked minimum is 4 verified independent eligible studies and 4 verified synthesis-usable study families.
-- Each final review option must satisfy the locked publication gates or be clearly labeled as provisional.
+- Every option in the final review list must be fully FIRST-CHOICE eligible. Pending, provisional, partially verified, or gate-failing candidates are never allowed into the final list.
 - The engine does not choose the final winner. It exports several options for independent ChatGPT comparison.
 
 ## Study-design scope
@@ -146,9 +146,9 @@ Rank candidates and shortlist the strongest three for verification priority:
 
     scimed-scout rank-candidates data/scout.sqlite3 RAD-DTA --top 3
 
-Run sequential deep verification and prepare 3 final review options, checking up to 5 candidates if needed:
+Run sequential deep verification and seek 3 fully qualified final review options, checking up to 10 candidates if needed:
 
-    scimed-scout deep-verify data/scout.sqlite3 RAD-DTA --min-verify 3 --max-verify 5 --final-options 3
+    scimed-scout deep-verify data/scout.sqlite3 RAD-DTA --min-verify 3 --max-verify 10 --final-options 3
 
 This command also writes:
 
@@ -160,7 +160,7 @@ Recheck one candidate after manual overlap or study-family work:
 
     scimed-scout verify-candidate data/scout.sqlite3 CANDIDATE_ID
 
-Deep verification writes every source query, source status, discovered review/registration/study record, checkpoint and decision back to the SQLite ledger. Raw search hits remain DISCOVERED_UNVERIFIED and do not count toward the four-study threshold. The engine may include a strong provisional candidate in the final review package when fewer than the desired number fully qualify, but its unresolved items remain explicit for ChatGPT.
+Deep verification writes every source query, source status, discovered review/registration/study record, checkpoint and decision back to the SQLite ledger. Raw search hits remain DISCOVERED_UNVERIFIED and do not count toward the four-study threshold. If only one or two candidates meet the full standard, the final package contains only those qualified candidates and reports the shortfall. No weaker candidate is added to fill the requested number.
 
 ## Next milestones
 
