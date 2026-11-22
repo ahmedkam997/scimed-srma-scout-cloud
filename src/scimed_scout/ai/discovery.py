@@ -5,6 +5,7 @@ import json
 import re
 from typing import Iterable
 
+from scimed_scout.domain import CandidateStatus
 from scimed_scout.storage import CandidateRecord, SQLiteLedger
 from .models import AIRequest, CandidateProposal
 from .providers import AIProvider
@@ -59,6 +60,9 @@ Do not include verified study counts, source-search results, gate scores, public
 
 def parse_candidate_proposals(text: str) -> list[CandidateProposal]:
     payload = _parse_json_object(text)
+    forbidden_root = {"decision", "final_decision", "proceed", "verified_independent_studies", "verified_usable_studies"} & {str(k) for k in payload}
+    if forbidden_root:
+        raise ValueError(f"AI response root attempted to set protected methodological fields: {sorted(forbidden_root)}")
     candidates = payload.get("candidates")
     if not isinstance(candidates, list):
         raise ValueError("AI response must contain a candidates array")
@@ -82,6 +86,7 @@ class CandidateDiscoveryService:
         design_scope: Iterable[str] = (),
         count: int = 10,
         additional_context: str = "",
+        allow_rejected_revisit: bool = False,
     ) -> list[CandidateRecord]:
         prompt = build_discovery_prompt(
             specialty=specialty,
@@ -96,6 +101,10 @@ class CandidateDiscoveryService:
         records: list[CandidateRecord] = []
         for proposal in proposals:
             candidate_id = stable_candidate_id(project_id, proposal)
+            existing = self.ledger.get_candidate(candidate_id)
+            if existing is not None and existing.status == CandidateStatus.REJECTED and not allow_rejected_revisit:
+                continue
+
             record = CandidateRecord(
                 candidate_id=candidate_id,
                 project_id=project_id,
@@ -111,11 +120,14 @@ class CandidateDiscoveryService:
                 rationale=proposal.rationale,
                 novelty_hypothesis=proposal.novelty_hypothesis,
                 search_terms=proposal.search_terms,
+                status=existing.status if existing is not None else CandidateStatus.DISCOVERED,
                 metadata={
+                    **(existing.metadata if existing is not None else {}),
                     "ai_provider": response.provider,
                     "ai_model": response.model,
                     "ai_role": "candidate_generation_only",
                 },
+                created_at=existing.created_at if existing is not None else CandidateRecord.__dataclass_fields__["created_at"].default_factory(),
             )
             self.ledger.upsert_candidate(record)
             records.append(record)
