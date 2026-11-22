@@ -11,8 +11,8 @@ Mobile-first, AI-assisted discovery and verification of publication-oriented sys
 - Multiple publications from the same underlying population are counted as one study family.
 - Weak study-family similarities never trigger automatic merging.
 - The default locked minimum is 4 verified independent eligible studies and 4 verified synthesis-usable study families.
-- Final first-choice candidates require all 15 locked publication gates and no unresolved decision-changing Type-A issue.
-- ChatGPT Plus is planned as the independent final-review layer after export.
+- Each final review option must satisfy the locked publication gates or be clearly labeled as provisional.
+- The engine does not choose the final winner. It exports several options for independent ChatGPT comparison.
 
 ## Study-design scope
 
@@ -95,6 +95,8 @@ Potentially recoverable data are kept separate from VERIFIED_USABLE data until t
 20. Guarded AI candidate-generation schema that blocks AI from setting study counts, source status, gate results, publication score or final decisions.
 21. Stable candidate IDs with persistent REJECTED / SHORTLISTED / PROVISIONAL / QUALIFIED status, including default protection against rediscovering rejected ideas.
 22. CLI commands for database initialization, project creation, candidate generation, status changes and project/candidate listing.
+23. Multi-option sequential verification with a configurable final shortlist, default 3 options.
+24. Automatic SCIMED_FINAL_CHATGPT_REVIEW JSON package containing side-by-side evidence, coverage, gates, unresolved issues and option status.
 
 ## Appraisal routing
 
@@ -116,7 +118,7 @@ The scientific workflow does not depend on one AI vendor. Candidate generation u
 
 The repository includes .env.example and ignores real .env files. API credentials are never stored in the evidence ledger.
 
-The AI layer is limited to candidate generation and descriptive proposal fields. Deterministic code and source audits retain authority over evidence counts, study-family decisions, source status, novelty clearance, locked gates and the final PROCEED decision.
+The AI layer is limited to candidate generation and descriptive proposal fields. Deterministic code and source audits retain authority over evidence counts, study-family decisions, source status, novelty clearance and locked-gate qualification. ChatGPT performs the final comparison among exported options.
 
 ## Persistent ledger
 
@@ -144,15 +146,21 @@ Rank candidates and shortlist the strongest three for verification priority:
 
     scimed-scout rank-candidates data/scout.sqlite3 RAD-DTA --top 3
 
-Run sequential deep verification of the strongest 2 to 3 candidates:
+Run sequential deep verification and prepare 3 final review options, checking up to 5 candidates if needed:
 
-    scimed-scout deep-verify data/scout.sqlite3 RAD-DTA --min-verify 2 --max-verify 3
+    scimed-scout deep-verify data/scout.sqlite3 RAD-DTA --min-verify 3 --max-verify 5 --final-options 3
+
+This command also writes:
+
+    data/RAD-DTA_chatgpt_review.json
+
+Upload that JSON file to ChatGPT for the final comparison and selection.
 
 Recheck one candidate after manual overlap or study-family work:
 
     scimed-scout verify-candidate data/scout.sqlite3 CANDIDATE_ID
 
-Deep verification writes every source query, source status, discovered review/registration/study record, checkpoint and decision back to the SQLite ledger. Raw search hits remain DISCOVERED_UNVERIFIED and do not count toward the four-study threshold.
+Deep verification writes every source query, source status, discovered review/registration/study record, checkpoint and decision back to the SQLite ledger. Raw search hits remain DISCOVERED_UNVERIFIED and do not count toward the four-study threshold. The engine may include a strong provisional candidate in the final review package when fewer than the desired number fully qualify, but its unresolved items remain explicit for ChatGPT.
 
 ## Next milestones
 
@@ -161,7 +169,6 @@ Deep verification writes every source query, source status, discovered review/re
 - Specialty and review-question configuration modules.
 - Automated connection between source searches, novelty firewall and the persistent ledger.
 - Background GitHub Actions research jobs with resumable checkpoints.
-- Final Review Package export for independent ChatGPT Plus review.
 - Optional Supabase state/authentication adapter if cloud multi-device synchronization is needed.
 
 ## Local check
