@@ -1,6 +1,10 @@
 name: discovery-worker
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/discovery-worker.yml'
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
