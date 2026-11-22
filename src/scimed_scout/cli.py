@@ -7,13 +7,15 @@ import sys
 
 from . import __version__
 from .ai import CandidateDiscoveryService, OpenAICompatibleProvider
+from .competitors import SemanticCompetitorAssessor
+from .extraction import StudyEligibilityExtractor
 from .domain import CandidateStatus, SourceStatus
 from .gates import final_decision
 from .ranking import CandidateRankingService
 from .review_package import export_review_package
 from .sources import build_default_source_clients
 from .storage import ProjectRecord, SQLiteLedger
-from .verification import SequentialDeepVerifier
+from .verification import CandidateEvidenceAnalysisService, SequentialDeepVerifier
 
 
 def health() -> dict[str, object]:
@@ -84,6 +86,11 @@ def main() -> None:
     verify_one.add_argument("db")
     verify_one.add_argument("candidate_id")
     verify_one.add_argument("--limit-per-query", type=int, default=20)
+
+    analyze = sub.add_parser("analyze-evidence")
+    analyze.add_argument("db")
+    analyze.add_argument("candidate_id")
+    analyze.add_argument("--force", action="store_true")
 
     args = parser.parse_args()
 
@@ -186,7 +193,11 @@ def main() -> None:
 
     if args.command == "deep-verify":
         with SQLiteLedger(args.db) as ledger:
-            verifier = SequentialDeepVerifier(ledger, build_default_source_clients())
+            verifier = SequentialDeepVerifier(
+                ledger,
+                build_default_source_clients(),
+                evidence_analysis_service=_optional_evidence_analysis_service(ledger),
+            )
             result = verifier.run(
                 args.project_id,
                 min_verify=args.min_verify,
@@ -203,12 +214,36 @@ def main() -> None:
 
     if args.command == "verify-candidate":
         with SQLiteLedger(args.db) as ledger:
-            verifier = SequentialDeepVerifier(ledger, build_default_source_clients())
+            verifier = SequentialDeepVerifier(
+                ledger,
+                build_default_source_clients(),
+                evidence_analysis_service=_optional_evidence_analysis_service(ledger),
+            )
             result = verifier.verify_candidate(
                 args.candidate_id,
                 limit_per_query=args.limit_per_query,
             )
         print(json.dumps(_candidate_verification_json(result), ensure_ascii=False, indent=2))
+        return
+
+    if args.command == "analyze-evidence":
+        with SQLiteLedger(args.db) as ledger:
+            service = _required_evidence_analysis_service(ledger)
+            summary = service.analyze_candidate(args.candidate_id, force=args.force)
+        print(json.dumps({
+            "candidate_id": summary.candidate_id,
+            "published_reviews_assessed": summary.published_reviews_assessed,
+            "published_reviews_unresolved": summary.published_reviews_unresolved,
+            "fatal_redundancy": summary.fatal_redundancy,
+            "registrations_assessed": summary.registrations_assessed,
+            "registrations_unresolved": summary.registrations_unresolved,
+            "material_registration_overlaps": list(summary.material_registration_overlaps),
+            "primary_studies_extracted": summary.primary_studies_extracted,
+            "auto_eligible_studies": summary.auto_eligible_studies,
+            "auto_ineligible_studies": summary.auto_ineligible_studies,
+            "auto_uncertain_studies": summary.auto_uncertain_studies,
+            "warning": "AUTO_EXTRACTED studies do not count as verified evidence until study-family and synthesis audits are completed.",
+        }, ensure_ascii=False, indent=2))
         return
 
     raise SystemExit("Unknown command")
@@ -281,6 +316,33 @@ def _sequential_verification_json(result) -> dict:
         ],
         "verified": [_candidate_verification_json(item) for item in result.verified],
     }
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+def _optional_evidence_analysis_service(ledger):
+    provider = OpenAICompatibleProvider.from_env()
+    if not provider.endpoint or not provider.model:
+        return None
+    return CandidateEvidenceAnalysisService(
+        ledger,
+        SemanticCompetitorAssessor(provider),
+        StudyEligibilityExtractor(provider),
+    )
+
+
+def _required_evidence_analysis_service(ledger):
+    provider = OpenAICompatibleProvider.from_env()
+    if not provider.endpoint or not provider.model:
+        raise SystemExit("SCIMED_AI_ENDPOINT and SCIMED_AI_MODEL are required for evidence analysis")
+    return CandidateEvidenceAnalysisService(
+        ledger,
+        SemanticCompetitorAssessor(provider),
+        StudyEligibilityExtractor(provider),
+    )
 
 
 if __name__ == "__main__":
