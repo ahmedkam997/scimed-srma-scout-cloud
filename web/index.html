@@ -18,6 +18,11 @@
     <span class="badge">Discovery only</span>
   </header>
 
+  <section id="backendStatus" class="status-card status-waiting">
+    <b>Connecting backend</b>
+    <span>Checking cloud queue and session.</span>
+  </section>
+
   <section class="card">
     <h2>New review discovery</h2>
 
@@ -69,13 +74,24 @@
       </select>
     </label>
 
-    <button id="start">Start discovery</button>
+    <button id="start" disabled>Start discovery</button>
+    <p class="help">The job is saved in the cloud. You may close the browser after it enters the queue.</p>
   </section>
 
   <section class="grid">
-    <article class="metric"><b>0</b><span>Active projects</span></article>
-    <article class="metric"><b>0</b><span>Qualified topics</span></article>
-    <article class="metric"><b>0</b><span>Needs review</span></article>
+    <article class="metric"><b id="activeCount">0</b><span>Active jobs</span></article>
+    <article class="metric"><b id="qualifiedCount">0</b><span>Qualified topics</span></article>
+    <article class="metric"><b id="reviewCount">0</b><span>Needs review</span></article>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Discovery jobs</h2>
+      <button id="refresh" class="secondary small" disabled>Refresh</button>
+    </div>
+    <div id="jobs" class="jobs">
+      <p class="empty">No discovery jobs yet.</p>
+    </div>
   </section>
 
   <section class="card">
@@ -94,13 +110,9 @@
     </ol>
   </section>
 
-  <section class="card">
-    <h2>Not performed</h2>
-    <p>Screening, PDF analysis, data extraction, risk of bias, study-family resolution, meta-analysis and manuscript writing are outside this product.</p>
-  </section>
-
   <p class="foot">A failed source is never interpreted as a negative search.</p>
 </main>
-<script src="app.js"></script>
+<script src="config.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>

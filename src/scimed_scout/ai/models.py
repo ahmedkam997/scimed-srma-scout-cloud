@@ -41,6 +41,7 @@ class CandidateProposal:
     title: str
     question_type: str
     review_question: str
+    specialty: str = ""
     population: str = ""
     intervention_exposure_index_test: str = ""
     comparator_reference: str = ""
@@ -64,6 +65,7 @@ class CandidateProposal:
             title=title,
             question_type=question_type,
             review_question=review_question,
+            specialty=str(raw.get("specialty") or "").strip(),
             population=str(raw.get("population") or "").strip(),
             intervention_exposure_index_test=str(raw.get("intervention_exposure_index_test") or "").strip(),
             comparator_reference=str(raw.get("comparator_reference") or "").strip(),

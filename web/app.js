@@ -1,11 +1,243 @@
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
-document.getElementById('start').addEventListener('click',()=>{
-  const specialty=document.getElementById('specialty').value;
-  const questionType=document.getElementById('questionType').value;
+const config = window.SCIMED_CONFIG || {};
+const els = {
+  backend: document.getElementById('backendStatus'),
+  start: document.getElementById('start'),
+  refresh: document.getElementById('refresh'),
+  specialty: document.getElementById('specialty'),
+  questionType: document.getElementById('questionType'),
+  jobs: document.getElementById('jobs'),
+  active: document.getElementById('activeCount'),
+  qualified: document.getElementById('qualifiedCount'),
+  review: document.getElementById('reviewCount'),
+};
 
-  const specialtyLabel = specialty === 'ALL' ? 'all medical specialties' : specialty;
-  const questionLabel = questionType === 'ALL' ? 'all review-question types' : questionType.replaceAll('_', ' ').toLowerCase();
+let supabase = null;
+let session = null;
+let jobs = [];
+let pollTimer = null;
 
-  alert(`Review-topic discovery is ready for ${specialtyLabel} across ${questionLabel}. Connect the backend to run the discovery workflow.`);
+function backendState(kind, title, detail) {
+  els.backend.className = `status-card status-${kind}`;
+  els.backend.innerHTML = `<b>${escapeHtml(title)}</b><span>${escapeHtml(detail)}</span>`;
+}
+
+async function init() {
+  if (!config.supabaseUrl || !config.supabaseAnonKey) {
+    backendState(
+      'error',
+      'Backend setup required',
+      'Add SUPABASE_URL and SUPABASE_ANON_KEY as GitHub repository variables, then redeploy Pages.'
+    );
+    return;
+  }
+
+  supabase = createClient(config.supabaseUrl, config.supabaseAnonKey, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  });
+
+  try {
+    const current = await supabase.auth.getSession();
+    session = current.data.session;
+    if (!session) {
+      const signed = await supabase.auth.signInAnonymously();
+      if (signed.error) throw signed.error;
+      session = signed.data.session;
+    }
+    if (!session) throw new Error('Supabase session was not created.');
+
+    backendState('ok', 'Cloud queue connected', 'Jobs continue in the background after you close this browser.');
+    els.start.disabled = false;
+    els.refresh.disabled = false;
+    await loadJobs();
+    pollTimer = setInterval(loadJobs, 5000);
+  } catch (error) {
+    backendState('error', 'Backend connection failed', error.message || String(error));
+  }
+}
+
+async function startDiscovery() {
+  if (!supabase || !session) return;
+  els.start.disabled = true;
+  const specialty = els.specialty.value;
+  const questionType = els.questionType.value;
+
+  try {
+    const { data, error } = await supabase
+      .from('discovery_jobs')
+      .insert({
+        specialty,
+        question_type: questionType,
+        candidate_count: 12,
+        final_options: 3,
+        min_verify: 3,
+        max_verify: 10,
+        limit_per_query: 20,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    backendState('ok', 'Discovery queued', 'The background worker will pick up this job. You may close the browser.');
+    jobs = [data, ...jobs.filter(job => job.id !== data.id)];
+    renderJobs();
+    await loadJobs();
+  } catch (error) {
+    backendState('error', 'Could not queue discovery', error.message || String(error));
+  } finally {
+    els.start.disabled = false;
+  }
+}
+
+async function loadJobs() {
+  if (!supabase || !session) return;
+  const { data, error } = await supabase
+    .from('discovery_jobs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (error) {
+    backendState('error', 'Could not refresh jobs', error.message || String(error));
+    return;
+  }
+  jobs = data || [];
+  renderJobs();
+}
+
+function renderJobs() {
+  const active = jobs.filter(job => ['QUEUED', 'RUNNING'].includes(job.status)).length;
+  const qualified = jobs.reduce((sum, job) => sum + qualifiedOptions(job).length, 0);
+  const needsReview = jobs.filter(job =>
+    job.status === 'FAILED' ||
+    (job.status === 'COMPLETED' && Number(job.result_json?.package?.selection_policy?.shortfall || 0) > 0)
+  ).length;
+
+  els.active.textContent = String(active);
+  els.qualified.textContent = String(qualified);
+  els.review.textContent = String(needsReview);
+
+  if (!jobs.length) {
+    els.jobs.innerHTML = '<p class="empty">No discovery jobs yet.</p>';
+    return;
+  }
+
+  els.jobs.innerHTML = jobs.map(job => {
+    const options = qualifiedOptions(job);
+    const progress = Number(job.progress || 0);
+    const statusClass = String(job.status || '').toLowerCase();
+    const optionHtml = options.length
+      ? `<div class="topic-list">${options.map(option => `
+          <article class="topic">
+            <div class="topic-head">
+              <span class="topic-number">#${escapeHtml(option.option_number)}</span>
+              <span class="topic-specialty">${escapeHtml(option.specialty || '')}</span>
+            </div>
+            <b>${escapeHtml(option.title || '')}</b>
+            <p>${escapeHtml(option.review_question || '')}</p>
+            <small>${escapeHtml((option.question_type || '').replaceAll('_',' '))}</small>
+          </article>
+        `).join('')}</div>`
+      : '';
+
+    const actions = job.status === 'COMPLETED'
+      ? `<div class="job-actions">
+          <button class="secondary small" data-copy-job="${job.id}">Copy for ChatGPT</button>
+          <button class="secondary small" data-download-job="${job.id}">Download JSON</button>
+        </div>`
+      : '';
+
+    const error = job.error_text
+      ? `<details class="error-details"><summary>Error details</summary><pre>${escapeHtml(job.error_text)}</pre></details>`
+      : '';
+
+    return `
+      <article class="job">
+        <div class="job-top">
+          <div>
+            <b>${escapeHtml(scopeLabel(job))}</b>
+            <span class="job-date">${escapeHtml(formatDate(job.created_at))}</span>
+          </div>
+          <span class="status-pill status-${statusClass}">${escapeHtml(job.status || '')}</span>
+        </div>
+        <div class="progress"><span style="width:${Math.max(0,Math.min(100,progress))}%"></span></div>
+        <div class="job-meta"><span>${progress}%</span><span>${escapeHtml(job.stage || '')}</span></div>
+        <p class="job-message">${escapeHtml(job.message || '')}</p>
+        ${optionHtml}
+        ${actions}
+        ${error}
+      </article>
+    `;
+  }).join('');
+}
+
+function qualifiedOptions(job) {
+  const options = job?.result_json?.package?.options;
+  return Array.isArray(options) ? options : [];
+}
+
+function scopeLabel(job) {
+  const specialty = job.specialty === 'ALL' ? 'All specialties' : job.specialty;
+  const question = job.question_type === 'ALL'
+    ? 'All question types'
+    : String(job.question_type || '').replaceAll('_', ' ');
+  return `${specialty} · ${question}`;
+}
+
+function formatDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
+}
+
+async function copyJob(jobId) {
+  const job = jobs.find(item => item.id === jobId);
+  const pkg = job?.result_json?.package;
+  if (!pkg) return;
+  await navigator.clipboard.writeText(JSON.stringify(pkg, null, 2));
+  backendState('ok', 'Copied', 'The qualified-topic package is ready to paste into ChatGPT.');
+}
+
+function downloadJob(jobId) {
+  const job = jobs.find(item => item.id === jobId);
+  const pkg = job?.result_json?.package;
+  if (!pkg) return;
+  const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${jobId}_review_topics.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+els.start.addEventListener('click', startDiscovery);
+els.refresh.addEventListener('click', loadJobs);
+els.jobs.addEventListener('click', event => {
+  const copy = event.target.closest('[data-copy-job]');
+  if (copy) copyJob(copy.dataset.copyJob);
+  const download = event.target.closest('[data-download-job]');
+  if (download) downloadJob(download.dataset.downloadJob);
 });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') loadJobs();
+});
+window.addEventListener('beforeunload', () => {
+  if (pollTimer) clearInterval(pollTimer);
+});
+
+init();

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Callable
 
 from scimed_scout.domain import CandidateStatus, SourceStatus
 from scimed_scout.ranking import CandidateRankingService
@@ -29,11 +29,13 @@ class ReviewDiscoveryOrchestrator:
         *,
         novelty_service: DiscoveryNoveltyService | None = None,
         scoring_service: DiscoveryScoringService | None = None,
+        progress_callback: Callable[[int, str, str], None] | None = None,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
         self.novelty_service = novelty_service
         self.scoring_service = scoring_service
+        self.progress_callback = progress_callback
 
     def run(
         self,
@@ -52,7 +54,9 @@ class ReviewDiscoveryOrchestrator:
             raise ValueError(f"Project not found: {project_id}")
 
         ranked = CandidateRankingService(self.ledger).rank_project(project_id, top_n=max_verify)
-        self.ledger.update_checkpoint(project_id, stage="DISCOVERY_RANKING", progress=20, message=f"Ranked {len(ranked)} review-topic candidates")
+        ranking_message = f"Ranked {len(ranked)} review-topic candidates"
+        self.ledger.update_checkpoint(project_id, stage="DISCOVERY_RANKING", progress=20, message=ranking_message)
+        self._progress(20, "DISCOVERY_RANKING", ranking_message)
 
         results: list[DiscoveryCandidateResult] = []
         qualified: list[str] = []
@@ -61,12 +65,15 @@ class ReviewDiscoveryOrchestrator:
             if candidate is None:
                 continue
             self.ledger.set_candidate_status(candidate.candidate_id, CandidateStatus.DEEP_VERIFYING)
+            candidate_progress = min(90, 20 + int(65 * index / max(1, min(max_verify, len(ranked)))))
+            candidate_message = f"Checking review topic {index}: {candidate.title}"
             self.ledger.update_checkpoint(
                 project_id,
                 stage="REVIEW_DISCOVERY",
-                progress=min(90, 20 + int(65 * index / max(1, min(max_verify, len(ranked))))),
-                message=f"Checking review topic {index}: {candidate.title}",
+                progress=candidate_progress,
+                message=candidate_message,
             )
+            self._progress(candidate_progress, "REVIEW_DISCOVERY", candidate_message)
             result = self.verify_candidate(candidate.candidate_id, ranking_score=ranked_item.score, limit_per_query=limit_per_query)
             results.append(result)
             if result.candidate_status == CandidateStatus.QUALIFIED:
@@ -75,12 +82,20 @@ class ReviewDiscoveryOrchestrator:
                 break
 
         final_ids = qualified[:final_options]
+        final_stage = "DISCOVERY_EXPORT" if final_ids else "REVIEW_DISCOVERY"
+        final_progress = 95 if final_ids else 75
+        final_message = (
+            f"Prepared {len(final_ids)} first-choice review topics for ChatGPT"
+            if final_ids
+            else "No fully qualified review topic is ready for the final list"
+        )
         self.ledger.update_checkpoint(
             project_id,
-            stage="DISCOVERY_EXPORT" if final_ids else "REVIEW_DISCOVERY",
-            progress=95 if final_ids else 75,
-            message=f"Prepared {len(final_ids)} first-choice review topics for ChatGPT" if final_ids else "No fully qualified review topic is ready for the final list",
+            stage=final_stage,
+            progress=final_progress,
+            message=final_message,
         )
+        self._progress(final_progress, final_stage, final_message)
         return DiscoveryRunResult(project_id, ranked, results, final_ids, qualified, final_options)
 
     def verify_candidate(self, candidate_id: str, *, ranking_score: float = 0.0, limit_per_query: int = 20) -> DiscoveryCandidateResult:
@@ -225,6 +240,10 @@ class ReviewDiscoveryOrchestrator:
             "metadata": {**previous_metadata, **new_metadata},
         }
         self.ledger.upsert_external_evidence(candidate_id, evidence_type, record.record_id, source=record.source or str((existing or {}).get("source") or ""), title=record.title or str((existing or {}).get("title") or ""), payload=payload)
+
+    def _progress(self, progress: int, stage: str, message: str) -> None:
+        if self.progress_callback is not None:
+            self.progress_callback(progress, stage, message)
 
     def _append_decision(self, candidate, *, decision: str, reason: str, payload: dict[str, Any]) -> None:
         sequence = len(self.ledger.list_decisions(candidate.candidate_id)) + 1

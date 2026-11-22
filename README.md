@@ -136,6 +136,52 @@ SQLite stores only discovery information used by the active product:
 
 Earlier experimental analysis tables from old databases are ignored by version 0.2. New databases do not create outcome, study-family, or extraction tables.
 
+## Cloud PWA and background jobs
+
+The mobile-first PWA now uses Supabase as a persistent job queue and GitHub Actions as the Python background worker.
+
+The browser workflow is:
+
+1. Open the PWA.
+2. The app creates or restores an anonymous Supabase session.
+3. Choose Specialty and Question type, including All + All.
+4. Press Start discovery.
+5. A QUEUED job is stored in Supabase.
+6. GitHub Actions polls the queue every five minutes and claims one job.
+7. The Python engine generates candidates, runs discovery verification, novelty checks and gates.
+8. Progress is written back to Supabase.
+9. Closing Chrome does not stop the background job.
+10. When complete, the PWA shows only qualified FIRST-CHOICE topics and provides Copy for ChatGPT and Download JSON.
+
+The browser never receives the Supabase service-role key or AI credentials.
+
+### One-time cloud setup
+
+Run `supabase/schema.sql` in a Supabase project and enable Anonymous Sign-Ins.
+
+Set these GitHub repository Variables:
+
+    SUPABASE_URL
+    SUPABASE_ANON_KEY
+
+Set these GitHub repository Secrets:
+
+    SUPABASE_URL
+    SUPABASE_SERVICE_ROLE_KEY
+    SCIMED_AI_ENDPOINT
+    SCIMED_AI_MODEL
+    SCIMED_AI_API_KEY
+
+Optional secret:
+
+    SEMANTIC_SCHOLAR_API_KEY
+
+Then set GitHub Pages deployment source to GitHub Actions. The `pages` workflow injects the public Supabase URL and anon key into the static PWA. The `discovery-worker` workflow is both manually runnable and scheduled.
+
+The worker installs the pinned read-only PROSPERO CLI and keeps PROSPERO failures fail-closed.
+
+For detailed setup, see `supabase/README.md`.
+
 ## CLI
 
 Initialize:

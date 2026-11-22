@@ -24,3 +24,38 @@ def test_cli_all_question_type_becomes_unrestricted_scope():
 def test_cli_all_design_scope_is_removed_as_literal_value():
     assert _open_scope(["ALL"]) == []
     assert _open_scope(["ALL", "cohort studies"]) == ["cohort studies"]
+
+
+def test_all_specialty_keeps_specific_specialty_returned_by_ai(tmp_path):
+    import json
+    from scimed_scout.ai import CandidateDiscoveryService, StaticAIProvider
+    from scimed_scout.storage import ProjectRecord, SQLiteLedger
+
+    payload = {
+        "candidates": [{
+            "title": "Stroke imaging review",
+            "specialty": "Neurology",
+            "question_type": "DIAGNOSTIC_ACCURACY",
+            "review_question": "What is the accuracy of imaging test X for acute stroke?",
+            "population": "Adults with suspected acute stroke",
+            "intervention_exposure_index_test": "Imaging test X",
+            "comparator_reference": "Reference standard",
+            "outcomes": ["sensitivity", "specificity"],
+            "eligible_designs": ["diagnostic accuracy studies"],
+            "rationale": "Important diagnostic question",
+            "novelty_hypothesis": "Current reviews may not cover the latest test generation",
+            "search_terms": ["stroke", "test X"],
+        }]
+    }
+    with SQLiteLedger(tmp_path / "all.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "ALL", question_type="ALL"))
+        records = CandidateDiscoveryService(
+            StaticAIProvider(json.dumps(payload)),
+            ledger,
+        ).generate_and_store(
+            project_id="P1",
+            specialty="ALL",
+            question_types=[],
+            count=1,
+        )
+        assert records[0].specialty == "Neurology"

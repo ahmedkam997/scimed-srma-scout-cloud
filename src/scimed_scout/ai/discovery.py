@@ -56,6 +56,7 @@ Return strict JSON with this shape:
   "candidates": [
     {{
       "title": "...",
+      "specialty": "Specific medical specialty for this topic",
       "question_type": "...",
       "review_question": "...",
       "population": "...",
@@ -125,7 +126,11 @@ class CandidateDiscoveryService:
                 candidate_id=candidate_id,
                 project_id=project_id,
                 title=proposal.title,
-                specialty=specialty,
+                specialty=(
+                    proposal.specialty
+                    if specialty.strip().upper() == "ALL" and proposal.specialty
+                    else specialty
+                ),
                 question_type=proposal.question_type,
                 review_question=proposal.review_question,
                 population=proposal.population,
@@ -153,6 +158,7 @@ class CandidateDiscoveryService:
 def stable_candidate_id(project_id: str, proposal: CandidateProposal) -> str:
     basis = "|".join([
         project_id.strip().casefold(),
+        proposal.specialty.strip().casefold(),
         proposal.title.strip().casefold(),
         proposal.review_question.strip().casefold(),
     ])
