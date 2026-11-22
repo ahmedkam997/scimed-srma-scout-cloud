@@ -56,10 +56,17 @@ class SequentialVerificationResult:
 
 
 class SequentialDeepVerifier:
-    def __init__(self, ledger: SQLiteLedger, clients: list[SourceClient], evidence_analysis_service=None):
+    def __init__(
+        self,
+        ledger: SQLiteLedger,
+        clients: list[SourceClient],
+        evidence_analysis_service=None,
+        study_verification_bridge=None,
+    ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
         self.evidence_analysis_service = evidence_analysis_service
+        self.study_verification_bridge = study_verification_bridge
 
     def run(
         self,
@@ -198,6 +205,11 @@ class SequentialDeepVerifier:
             analysis_summary = self.evidence_analysis_service.analyze_candidate(candidate_id)
             candidate = self.ledger.get_candidate(candidate_id) or candidate
 
+        study_verification_summary = None
+        if self.study_verification_bridge is not None:
+            study_verification_summary = self.study_verification_bridge.run(candidate_id)
+            candidate = self.ledger.get_candidate(candidate_id) or candidate
+
         logs = self.ledger.list_search_log(candidate_id)
         coverage = evaluate_coverage(logs, policy)
         evidence = snapshot_from_ledger(self.ledger, candidate_id)
@@ -227,6 +239,14 @@ class SequentialDeepVerifier:
                 "TYPE-A: ongoing-study hits require pipeline/new-information assessment"
             )
 
+        if bool(meta.get("family_uncertainty_decision_changing")):
+            pending.append(
+                "TYPE-A: unresolved publication/population overlap can reduce the conservative independent-study count below 4"
+            )
+        if int(meta.get("study_records_needing_review") or 0) > 0:
+            pending.append(
+                f"TYPE-A: {int(meta.get('study_records_needing_review') or 0)} study record(s) still require eligibility/design verification"
+            )
         if not evidence.study_audit_complete:
             pending.append("TYPE-A: study-family eligibility/independence audit is incomplete")
         if not evidence.synthesis_audit_complete:
@@ -301,6 +321,7 @@ class SequentialDeepVerifier:
                     "uncertain": int(meta.get("auto_uncertain_studies") or 0),
                     "counts_as_verified_evidence": False,
                 },
+                "study_verification_summary": asdict(study_verification_summary) if study_verification_summary is not None else None,
                 "final_gate_result": final_gate_result,
             },
         )
