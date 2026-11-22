@@ -62,11 +62,13 @@ class SequentialDeepVerifier:
         clients: list[SourceClient],
         evidence_analysis_service=None,
         study_verification_bridge=None,
+        synthesis_verification_bridge=None,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
         self.evidence_analysis_service = evidence_analysis_service
         self.study_verification_bridge = study_verification_bridge
+        self.synthesis_verification_bridge = synthesis_verification_bridge
 
     def run(
         self,
@@ -210,6 +212,11 @@ class SequentialDeepVerifier:
             study_verification_summary = self.study_verification_bridge.run(candidate_id)
             candidate = self.ledger.get_candidate(candidate_id) or candidate
 
+        synthesis_verification_summary = None
+        if self.synthesis_verification_bridge is not None:
+            synthesis_verification_summary = self.synthesis_verification_bridge.run(candidate_id)
+            candidate = self.ledger.get_candidate(candidate_id) or candidate
+
         logs = self.ledger.list_search_log(candidate_id)
         coverage = evaluate_coverage(logs, policy)
         evidence = snapshot_from_ledger(self.ledger, candidate_id)
@@ -322,6 +329,7 @@ class SequentialDeepVerifier:
                     "counts_as_verified_evidence": False,
                 },
                 "study_verification_summary": asdict(study_verification_summary) if study_verification_summary is not None else None,
+                "synthesis_verification_summary": asdict(synthesis_verification_summary) if synthesis_verification_summary is not None else None,
                 "final_gate_result": final_gate_result,
             },
         )
