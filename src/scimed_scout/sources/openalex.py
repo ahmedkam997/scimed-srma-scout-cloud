@@ -28,11 +28,30 @@ class OpenAlexSource:
                 if not rid:
                     continue
                 doi = str(row.get("doi") or "").removeprefix("https://doi.org/")
+                metadata = dict(row)
+                abstract = _abstract_from_inverted_index(row.get("abstract_inverted_index"))
+                if abstract:
+                    metadata["abstract"] = abstract
                 records.append(SearchRecord(
                     self.name, rid, str(row.get("title") or ""), url=rid,
                     year=row.get("publication_year") if isinstance(row.get("publication_year"), int) else None,
-                    doi=doi, metadata=row,
+                    doi=doi, metadata=metadata,
                 ))
             return SearchResult(self.name, query, SourceStatus.SEARCHED_POSITIVE, records, total)
         except Exception as exc:
             return SearchResult(self.name, query, SourceStatus.ACCESS_FAILED, message=str(exc))
+
+
+
+def _abstract_from_inverted_index(index) -> str:
+    if not isinstance(index, dict):
+        return ""
+    positions: list[tuple[int, str]] = []
+    for word, raw_positions in index.items():
+        if not isinstance(raw_positions, list):
+            continue
+        for pos in raw_positions:
+            if isinstance(pos, int):
+                positions.append((pos, str(word)))
+    positions.sort(key=lambda item: item[0])
+    return " ".join(word for _, word in positions)
