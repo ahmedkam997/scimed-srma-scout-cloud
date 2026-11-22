@@ -220,6 +220,8 @@ def evidence_metrics(
             "source": str(record.get("source") or ""),
             "title": str(record.get("title") or ""),
             "record_id": str(record.get("source_record_id") or ""),
+            "doi": str((record.get("payload") or {}).get("doi") or ""),
+            "url": str((record.get("payload") or {}).get("url") or ""),
             "overlap": str(a.get("overall_overlap") or ""),
             "confidence": float(a.get("confidence") or 0.0),
         }
