@@ -1,0 +1,49 @@
+name: smoke-cancel-rpc
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/smoke-cancel-rpc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      URL: https://vskqiszpjxsmcayuaclo.supabase.co
+      KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZza3Fpc3pwanhzbWNheXVhY2xvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUzNzY3MzQsImV4cCI6MjExMDk1MjczNH0.ussaGLgCbu_J15GCEe3VGiLuCurV65xsyEjgxoHBfHs
+    steps:
+      - name: Verify owner-only cancellation using anon API
+        run: |
+          set -euo pipefail
+          TOKEN="scimed-cancel-smoke-${GITHUB_RUN_ID}"
+          OTHER="different-client-${GITHUB_RUN_ID}"
+          body=$(curl -fsS -X POST "$URL/rest/v1/discovery_jobs" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+            -H "x-scimed-client-token: $TOKEN" \
+            -H "Content-Type: application/json" -H "Prefer: return=representation" \
+            -d '{"specialty":"SCIMED_CANCEL_SMOKE_TEST","question_type":"ALL"}')
+          id=$(jq -r '.[0].id // empty' <<< "$body")
+          test -n "$id"
+          denied=$(curl -fsS -X POST "$URL/rest/v1/rpc/scimed_cancel_job" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+            -H "x-scimed-client-token: $OTHER" \
+            -H "Content-Type: application/json" \
+            -d "{\"p_job_id\":\"$id\"}")
+          test "$denied" = "false"
+          allowed=$(curl -fsS -X POST "$URL/rest/v1/rpc/scimed_cancel_job" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+            -H "x-scimed-client-token: $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"p_job_id\":\"$id\"}")
+          test "$allowed" = "true"
+          rows=$(curl -fsS "$URL/rest/v1/discovery_jobs?select=status&id=eq.$id" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+            -H "x-scimed-client-token: $TOKEN")
+          test "$(jq -r '.[0].status // empty' <<< "$rows")" = "CANCELLED"
+          echo "CANCEL_RPC_OWNERSHIP=PASS"
+          echo "CANCEL_RPC_TRANSITION=PASS"
