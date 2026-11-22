@@ -25,6 +25,6 @@ A source failure must never be converted into a negative search result. Supporte
 - NOT_SEARCHED
 - MANUAL_VERIFIED
 
-## locked first-choice evidence-synthesis requirements
+## Locked final-review option requirements
 
-A final PROCEED decision requires all locked gates, including at least four verified independent eligible studies, at least four verified synthesis-usable studies, no unresolved Type-A issue, adequate novelty, clinical importance, publication potential and editorial stress-test performance.
+Each fully qualified final-review option must pass all locked gates, including at least four verified independent eligible studies, at least four verified synthesis-usable studies, no unresolved Type-A issue, adequate novelty, clinical importance, publication potential and editorial stress-test performance. The engine exports several qualified or clearly labeled provisional options. It does not select the overall winner. ChatGPT performs the independent final comparison.
