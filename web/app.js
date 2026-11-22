@@ -162,6 +162,42 @@ function renderJobs() {
           </div>`
         : '';
 
+    const audits = Array.isArray(job.result_json?.run_summary?.candidate_audits)
+      ? job.result_json.run_summary.candidate_audits : [];
+    const auditHtml = job.status === 'COMPLETED' && audits.length
+      ? `<details class="score-audit">
+          <summary>Scientific scoring audit (${audits.length} checked topics)</summary>
+          <p class="help">Evidence-based discovery proxies, not validated novelty measurements or publication probabilities. Verify original studies before starting a review.</p>
+          ${audits.map(audit => {
+            const score = audit.scorecard || {};
+            const trace = score.scoring_trace || {};
+            const failed = (audit.failed_gates || []).map(gate => escapeHtml(gate.name)).join('; ');
+            const pending = (audit.pending || []).map(x => escapeHtml(x)).join('; ');
+            return `<article class="score-item">
+              <b>${escapeHtml(audit.title)}</b>
+              <div class="score-data">
+                <span>Novelty: ${escapeHtml(score.overall_novelty ?? 'N/A')} / 5</span>
+                <span>Information gain proxy: ${escapeHtml(score.new_information_gain ?? 'N/A')} / 5</span>
+                <span>Priority index: ${escapeHtml(score.publication_oriented_score ?? 'N/A')} / 100</span>
+                <span>Primary-study candidates: ${escapeHtml(audit.unique_primary_study_candidates ?? 'N/A')}</span>
+              </div>
+              <small>${escapeHtml(trace.information_gain_status || 'Not estimated')}</small>
+              ${failed ? `<p>Failed gates: ${failed}</p>` : ''}
+              ${pending ? `<p>Unresolved: ${pending}</p>` : ''}
+              <details><summary>Methods and score weights</summary>
+                <pre>${escapeHtml(JSON.stringify({
+                  version: trace.method_version || '',
+                  weights: trace.criteria_weights || {},
+                  study_date_completeness: trace.primary_date_completeness,
+                  score_sensitivity_range: trace.sensitivity_score_range || [],
+                  limitations: trace.limitations || []
+                }, null, 2))}</pre>
+              </details>
+            </article>`;
+          }).join('')}
+        </details>`
+      : '';
+
     const error = job.error_text
       ? `<details class="error-details"><summary>Error details</summary><pre>${escapeHtml(job.error_text)}</pre></details>`
       : '';
@@ -179,6 +215,7 @@ function renderJobs() {
         <div class="job-meta"><span>${progress}%</span><span>${escapeHtml(job.stage || '')}</span></div>
         <p class="job-message">${escapeHtml(job.message || '')}</p>
         ${optionHtml}
+        ${auditHtml}
         ${actions}
         ${error}
       </article>
