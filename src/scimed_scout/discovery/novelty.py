@@ -173,6 +173,15 @@ def _serialize_assessment(record: dict, assessment) -> dict[str, Any]:
         "source": record.get("source", ""),
         "title": record.get("title", ""),
         "overall_overlap": assessment.overall_overlap.value,
+        "dimensions": [
+            {
+                "name": item.name,
+                "level": item.level.value,
+                "evidence": item.evidence,
+                "rationale": item.rationale,
+            }
+            for item in assessment.dimensions
+        ],
         "adequate_review": assessment.adequate_review,
         "recent_review": assessment.recent_review,
         "meaningful_new_information": assessment.meaningful_new_information,
