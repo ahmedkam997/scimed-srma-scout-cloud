@@ -73,7 +73,7 @@ class CandidateRankingService:
     def rank_project(self, project_id: str, *, top_n: int = 3) -> list[RankingResult]:
         candidates = [
             c for c in self.ledger.list_candidates(project_id)
-            if c.status not in {CandidateStatus.REJECTED, CandidateStatus.QUALIFIED}
+            if c.status != CandidateStatus.REJECTED
         ]
         ranked = sorted(
             (preliminary_rank(c) for c in candidates),
@@ -90,7 +90,7 @@ class CandidateRankingService:
                 "preliminary_ranking_reasons": list(item.reasons),
                 "preliminary_ranking_role": "verification_priority_only",
             }
-            if candidate.candidate_id in top_ids:
+            if candidate.candidate_id in top_ids and candidate.status != CandidateStatus.QUALIFIED:
                 candidate.status = CandidateStatus.SHORTLISTED
             self.ledger.upsert_candidate(candidate)
 
