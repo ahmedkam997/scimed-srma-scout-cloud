@@ -302,7 +302,7 @@ class SQLiteLedger:
         title: str = "",
         payload: dict[str, Any] | None = None,
     ) -> None:
-        allowed = {"PUBLISHED_REVIEW", "REGISTRATION", "ONGOING_STUDY", "PROTOCOL", "OTHER"}
+        allowed = {"PRIMARY_STUDY", "PUBLISHED_REVIEW", "REGISTRATION", "ONGOING_STUDY", "PROTOCOL", "OTHER"}
         evidence_type = evidence_type.strip().upper()
         if evidence_type not in allowed:
             raise ValueError(f"Unsupported evidence type: {evidence_type}")
