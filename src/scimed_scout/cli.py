@@ -223,9 +223,18 @@ def _open_scope(values) -> list[str]:
 
 
 def _question_type_scope(requested, project_question_type: str) -> list[str]:
-    explicit = _open_scope(requested)
+    raw_requested = [
+        str(value).strip()
+        for value in (requested or [])
+        if str(value).strip()
+    ]
+    if any(value.upper() == "ALL" for value in raw_requested):
+        return []
+
+    explicit = _open_scope(raw_requested)
     if explicit:
         return explicit
+
     project_value = str(project_question_type or "").strip()
     if not project_value or project_value.upper() == "ALL":
         return []
