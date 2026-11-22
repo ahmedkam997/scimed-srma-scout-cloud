@@ -395,21 +395,36 @@ class SequentialDeepVerifier:
         query: str,
         purpose: str,
     ) -> None:
+        existing = next(
+            (
+                item
+                for item in self.ledger.list_external_evidence(candidate_id, evidence_type)
+                if str(item.get("source_record_id") or "") == str(record.record_id)
+            ),
+            None,
+        )
+        previous = dict((existing or {}).get("payload") or {})
+        previous_metadata = previous.get("metadata") if isinstance(previous.get("metadata"), dict) else {}
+        new_metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        verification_status = str(previous.get("verification_status") or "DISCOVERED_UNVERIFIED")
+
+        merged_payload = {
+            **previous,
+            "url": record.url or previous.get("url", ""),
+            "year": record.year if record.year is not None else previous.get("year"),
+            "doi": record.doi or previous.get("doi", ""),
+            "query": query,
+            "purpose": purpose,
+            "verification_status": verification_status,
+            "metadata": {**previous_metadata, **new_metadata},
+        }
         self.ledger.upsert_external_evidence(
             candidate_id,
             evidence_type,
             record.record_id,
-            source=record.source,
-            title=record.title,
-            payload={
-                "url": record.url,
-                "year": record.year,
-                "doi": record.doi,
-                "query": query,
-                "purpose": purpose,
-                "verification_status": "DISCOVERED_UNVERIFIED",
-                "metadata": record.metadata,
-            },
+            source=record.source or str((existing or {}).get("source") or ""),
+            title=record.title or str((existing or {}).get("title") or ""),
+            payload=merged_payload,
         )
 
     def _append_decision(self, candidate, *, decision: str, stage: str, reason: str, payload: dict[str, Any]) -> None:
