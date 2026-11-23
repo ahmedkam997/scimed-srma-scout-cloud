@@ -92,3 +92,19 @@ test('Generic interventions remain uncertain rather than being excluded',()=>{
   });
   assert.equal(match.kind,'UNCERTAIN');
 });
+
+
+test('Source-backed registration abstract classification overrides legacy title-only guess',()=>{
+  const topic={intervention_exposure_index_test:'Ketone monoester supplementation'};
+  const record={
+    title:'Supplementation and metabolic exercise responses',
+    pico_relevance_preflight:{
+      status:'POTENTIAL_INTERVENTION_MATCH',
+      intervention_terms:['ketone','monoester'],
+      matched_intervention_terms:['ketone'],
+    }
+  };
+  const match=registrationDisplayRelevance(topic,record);
+  assert.equal(match.kind,'INTERVENTION_ANCHOR_MATCH');
+  assert.deepEqual(Array.from(match.matching),['ketone']);
+});
