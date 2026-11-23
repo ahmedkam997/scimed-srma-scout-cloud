@@ -2,7 +2,7 @@ name: Live OSF scoped registry search smoke
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/osf-search-smoke.yml']
+    paths: ['.github/workflows/osf-search-smoke.yml', 'src/scimed_scout/sources/osf.py']
   workflow_dispatch:
 permissions:
   contents: read
