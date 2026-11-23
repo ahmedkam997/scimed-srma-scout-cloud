@@ -1,6 +1,7 @@
 """Regression tests for evidence-map-style review and study classification."""
 from scimed_scout.discovery.evidence_classification import (
     classify_review_search_hit, classify_registration_search_hit,
+    review_intervention_citation_signal,
 )
 from scimed_scout.domain import SourceStatus
 from scimed_scout.sources.base import SearchRecord, SearchResult
@@ -103,3 +104,68 @@ def test_orchestrator_preserves_uncertain_article_but_avoids_false_competing_rev
         assert ambiguous[0]["payload"]["citation_classification"] == "NEEDS_BIBLIOGRAPHIC_CHECK"
         assert ambiguous[0]["payload"]["originally_requested_evidence_type"] == "PUBLISHED_REVIEW"
         assert ledger.list_search_log("C1")[0].status == SourceStatus.SEARCHED_POSITIVE
+
+
+def test_crossref_peer_review_report_is_not_a_second_systematic_review():
+    report=record(
+        'Review for "Effects of ketone supplements: a systematic review"',
+        source="Crossref",
+        type="peer-review",
+    )
+    assert classify_review_search_hit(report) == "PRIMARY_OR_NONREVIEW"
+
+
+def test_review_citation_intervention_screen_marks_unrelated_but_keeps_for_manual_audit():
+    class Topic:
+        intervention_exposure_index_test = "Ketone monoester supplementation"
+
+    unrelated=record(
+        "Regular green tea supplementation reduces oxidative stress: systematic review",
+        source="Crossref", type="journal-article",
+    )
+    plausible=record(
+        "Acute ketone monoesters and endurance exercise: a systematic review",
+        source="PubMed", publicationTypes=["Systematic Review"],
+    )
+    assert review_intervention_citation_signal(
+        Topic(), unrelated
+    ) == "NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK"
+    assert review_intervention_citation_signal(
+        Topic(), plausible
+    ) == "INTERVENTION_IN_REVIEW_CITATION"
+
+
+def test_review_search_places_unrelated_syntheses_in_audit_not_competitor_count(tmp_path):
+    with SQLiteLedger(tmp_path / "review-filter.db") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Cardiology"))
+        ledger.upsert_candidate(CandidateRecord(
+            candidate_id="C1", project_id="P1",
+            title="Ketone monoester for endurance", specialty="Cardiology",
+            question_type="EFFECTIVENESS",
+            population="Endurance athletes",
+            intervention_exposure_index_test="Ketone monoester",
+            comparator_reference="Placebo",
+            outcomes=["Performance"], eligible_designs=["RCT"],
+        ))
+        unrelated=SearchRecord(
+            "Crossref", "10.12/green",
+            "Regular green tea supplementation improves exercise stress: systematic review",
+        )
+        relevant=SearchRecord(
+            "PubMed", "12345",
+            "Systematic review of ketone monoester supplementation",
+        )
+        engine=ReviewDiscoveryOrchestrator(
+            ledger, [ConstantSearch("OpenAlex", [unrelated, relevant])]
+        )
+        engine._search_sources(
+            ledger.get_candidate("C1"), ("OpenAlex",), ("review",),
+            evidence_type="PUBLISHED_REVIEW",
+            purpose="published review", limit_per_query=10,
+        )
+        reviews=ledger.list_external_evidence("C1","PUBLISHED_REVIEW")
+        other=ledger.list_external_evidence("C1","OTHER")
+        assert [x["title"] for x in reviews] == [relevant.title]
+        assert [x["title"] for x in other] == [unrelated.title]
+        assert "NO_INTERVENTION_MENTION" in other[0]["payload"]["citation_classification"]
+        assert other[0]["payload"]["originally_requested_evidence_type"] == "PUBLISHED_REVIEW"
