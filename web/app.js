@@ -139,6 +139,9 @@ async function wakeWorker(jobId, { silent = false } = {}) {
       if (status === 'configuration_required') {
         backendState('waiting', 'One-time dispatch setup needed',
           'Add SCIMED_GITHUB_DISPATCH_TOKEN in Supabase Function Secrets, or run the GitHub workflow manually.');
+      } else if (status === 'github_dispatch_failed') {
+        backendState('error', 'GitHub rejected automatic start',
+          'Check the GitHub token: resource owner ahmedkam997, selected repository scimed-srma-scout-cloud, and Actions: Read and write. Then replace SCIMED_GITHUB_DISPATCH_TOKEN in Supabase Edge Function Secrets. The discovery job is still queued.');
       } else if (!silent) {
         backendState('waiting', 'Worker dispatch unavailable',
           'The job remains safely queued. Use the GitHub manual workflow link in its card.');
@@ -270,7 +273,7 @@ function renderJobs() {
           <p>Your job is saved. If the worker has not claimed it, request a direct start.</p>
           <button class="secondary small" data-wake-job="${escapeHtml(job.id)}">Start queued worker now</button>
           <p>For one-tap automatic starts, create a fine-grained GitHub token limited to this repository with Actions: Read and write. Save it in Supabase Edge Function Secrets as SCIMED_GITHUB_DISPATCH_TOKEN. Never put the token in the browser or chat.</p>
-          <a class="worker-link" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Create GitHub dispatch token</a>
+          <a class="worker-link" href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener noreferrer">Review existing GitHub token and Actions permissions</a>
           <a class="worker-link" href="https://supabase.com/dashboard/project/vskqiszpjxsmcayuaclo/functions" target="_blank" rel="noopener noreferrer">Open Supabase Edge Function Secrets</a>
           <a class="worker-link" href="https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/workflows/discovery-worker.yml"
              target="_blank" rel="noopener noreferrer">Manual GitHub worker controls</a>
