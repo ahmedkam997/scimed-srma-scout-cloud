@@ -79,7 +79,9 @@ class OSFRegistrationsSource:
             )
 
     def _search_trove(self, original: str, focus: str, limit: int) -> SearchResult:
-        size = min(50, max(1, int(limit)))
+        # Registry verification needs complete matching pages, not a small
+        # screening display limit. 50 per page reduces partials and API calls.
+        size = 50
         params = {
             "cardSearchText[title,description]": focus,
             "cardSearchFilter[resourceType]": "Registration",
@@ -91,6 +93,8 @@ class OSFRegistrationsSource:
         total: int | None = None
         pages = 0
         remaining = True
+        retrieved_page_hits = 0
+        malformed_hits = 0
         for page in range(self.max_pages):
             if page and not _safe_next(url, "share.osf.io", "/trove/index-card-search"):
                 return SearchResult(
@@ -117,6 +121,7 @@ class OSFRegistrationsSource:
             page_results = data.get("data")
             if not isinstance(page_results, list):
                 raise ValueError("OSF Trove search result page is missing")
+            retrieved_page_hits += len(page_results)
             raw_total = (root.get("attributes") or {}).get("totalResultCount")
             if isinstance(raw_total, int):
                 total = raw_total
@@ -138,14 +143,17 @@ class OSFRegistrationsSource:
                 attrs = card.get("attributes") or {}
                 metadata = attrs.get("resourceMetadata") or {}
                 if not isinstance(metadata, dict):
+                    malformed_hits += 1
                     continue
                 title = _literal(metadata.get("title")).strip()
                 if not title:
+                    malformed_hits += 1
                     continue
                 original_url = _literal(metadata.get("@id") or attrs.get("resourceIdentifier"))
                 candidates = re.findall(r"https://osf\.io/([a-z0-9]+)/?", original_url, re.IGNORECASE)
                 rid = candidates[0].lower() if candidates else str(card.get("id") or "")
                 if not rid:
+                    malformed_hits += 1
                     continue
                 description = _literal(metadata.get("description"))[:2400]
                 # Trove uses JSON-LD. These fields describe registration
@@ -186,12 +194,24 @@ class OSFRegistrationsSource:
                 self.name, original, SourceStatus.PARTIAL, [], total,
                 message=f"OSF Trove title/description query '{focus}': no matches in indexed public registrations. Manual broader check required.",
             )
-        complete = bool(total is not None and len(records) >= total and not remaining)
+        complete = bool(
+            total is not None
+            and not remaining
+            and retrieved_page_hits >= total
+            and malformed_hits == 0
+        )
+        # The index may contain duplicate registration cards: unique count can
+        # be below total even when the entire page traversal is exhausted.
         return SearchResult(
             self.name, original, SourceStatus.SEARCHED_POSITIVE if complete else SourceStatus.PARTIAL,
             list(records.values()), total,
-            message=f"OSF Trove query '{focus}': {len(records)} registration matches, {pages} page(s); "
-                    + ("all indexed query matches retrieved" if complete else "more indexed matches remain; partial"),
+            message=(
+                f"OSF Trove query '{focus}': {len(records)} unique registrations, "
+                f"{retrieved_page_hits}/{total} indexed hits, {pages} page(s), "
+                f"unresolved_cards={malformed_hits}; "
+                + ("all indexed query pages and cards processed"
+                   if complete else "index scope incomplete; manual verification required")
+            ),
         )
 
     def _search_v2(self, original: str, focus: str, limit: int) -> SearchResult:
