@@ -63,8 +63,18 @@ def classify_review_search_hit(record: SearchRecord) -> str:
     # Crossref includes peer-review reports whose titles quote the
     # reviewed manuscript (often containing 'systematic review'). They
     # are not independent systematic review publications.
-    if re.match(r"^\s*(?:review\s+for|peer[ -]review\s+report|"
-                r"reviewer\s+report)\b", title, re.IGNORECASE):
+    if re.match(
+        r"^\s*(?:review\s+for|peer[ -]review(?:\s+report|\s*#\s*\d+)|"
+        r"reviewer\s+report|decision\s+letter\s+for|author\s+response\s+for|"
+        r"author'?s\s+response\s+to|editorial\s+decision\s+on|"
+        r"editor\s+decision\s+for)\b",
+        title, re.IGNORECASE,
+    ):
+        return "PRIMARY_OR_NONREVIEW"
+    if any(
+        t in {"peer-review", "peer review", "peer_review", "peer review report"}
+        for t in types
+    ):
         return "PRIMARY_OR_NONREVIEW"
     if any("systematic review" in t or "meta-analysis" in t for t in types):
         return "CONFIRMED_REVIEW_CUE"
