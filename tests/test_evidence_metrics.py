@@ -20,7 +20,7 @@ def study(title, year):
     }
 
 
-def reviewed(overlap="HIGH", year=2021, unresolved=False):
+def reviewed(overlap="HIGH", year=2021, unresolved=False, search_date=None):
     a = {
         "overall_overlap": overlap,
         "confidence": 0.95,
@@ -38,7 +38,7 @@ def reviewed(overlap="HIGH", year=2021, unresolved=False):
         "title": "A comparable systematic review",
         "source_record_id": "REV-1",
         "source": "PubMed",
-        "payload": {"year": year, "discovery_semantic_assessment": a},
+        "payload": {"year": year, "metadata": {"last_search_date": search_date} if search_date else {}, "discovery_semantic_assessment": a},
     }
 
 
@@ -53,7 +53,7 @@ def test_no_matching_review_is_provisional_not_maximum_novelty():
 
 def test_high_overlap_limits_novelty_but_newer_bibliography_supports_incremental_signal():
     metrics = evidence_metrics(
-        [reviewed(year=2021)],
+        [reviewed(year=2021, search_date="2020-11-30")],
         [],
         [study(f"s{i}", 2024) for i in range(4)],
     )
@@ -62,7 +62,9 @@ def test_high_overlap_limits_novelty_but_newer_bibliography_supports_incremental
     assert metrics["new_information_gain"] == 5.0
     assert metrics["primary_records_newer_than_publication"] == 4
     assert metrics["latest_related_review_publication_year"] == 2021
-    assert metrics["information_gain_status"] == "POST_PUBLICATION_STUDY_FRACTION_PROXY"
+    assert metrics["information_gain_status"] == "POST_DOCUMENTED_SEARCH_CUTOFF_BIBLIOGRAPHIC_PROXY"
+    assert metrics["latest_related_review_search_year"] == 2020
+    assert metrics["primary_records_newer_than_review_search"] == 4
 
 
 def test_unresolved_comparison_never_gets_high_novelty_or_information_gain():
@@ -73,7 +75,7 @@ def test_unresolved_comparison_never_gets_high_novelty_or_information_gain():
 
 
 def test_missing_primary_publication_year_blocks_new_information_gain_proxy():
-    metrics = evidence_metrics([reviewed()], [], [study("only_date", 2023)] + [
+    metrics = evidence_metrics([reviewed(search_date="2021-09-30")], [], [study("only_date", 2023)] + [
         study(f"no_date_{i}", None) for i in range(3)
     ])
     assert metrics["new_information_gain"] == 0.0
@@ -145,3 +147,15 @@ def test_duplicate_primary_records_with_and_without_doi_are_counted_once():
     b = {**a, "source": "OpenAlex", "payload": {"year": 2023, "doi": ""}}
     evidence = evidence_metrics([], [], [a, b, study("distinct trial", 2024), study("third trial", 2024), study("fourth trial", 2024)])
     assert evidence["study_count_discovered_not_eligible"] == 4
+
+
+def test_old_published_review_without_actual_search_date_has_no_proven_information_gain():
+    metrics = evidence_metrics(
+        [reviewed(year=2019)],
+        [],
+        [study("new_potential_trial", 2025) for _ in range(4)],
+    )
+    assert metrics["information_gain_status"] == "NOT_ESTIMABLE_REVIEW_SEARCH_DATE"
+    assert metrics["new_information_gain"] == 0.0
+    assert metrics["latest_related_review_publication_year"] == 2019
+    assert metrics["latest_related_review_search_year"] is None
