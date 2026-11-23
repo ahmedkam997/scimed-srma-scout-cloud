@@ -372,6 +372,9 @@ function renderJobs() {
           ${provisionalOptions.map(topic => `<article class="score-item">
             <b>${escapeHtml(topic.title || '')}</b>
             <p>${escapeHtml(topic.review_question || '')}</p>
+            ${topic.triage_tier ? `<p class="help">Bibliographic preflight: ${topic.triage_tier === 'PICO_SIGNAL_FOR_MANUAL_AUDIT'
+              ? 'At least four titles mention both the intervention and clinical population; full-text eligibility and novelty remain unverified.'
+              : 'Few titles match both the intervention and population. Recheck the search and comparator before accepting the PICO.'}</p>` : ''}
             <div class="score-data">
               <span>Unscreened bibliography records: ${escapeHtml(topic.discovered_primary_study_candidates ?? 'N/A')}</span>
               <span>Clinical area: ${escapeHtml(topic.specialty || 'Unknown')}</span>
