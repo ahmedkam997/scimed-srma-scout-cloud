@@ -166,3 +166,41 @@ jobs:
               },db_headers)
               print("DISPATCH_TEST_JOB_CANCEL",code,"CANCELLED",body is True,flush=True)
           PY
+      - name: Diagnose actual Cardiology topic-generation prompt on Groq
+        run: |
+          python -m pip install -e . --quiet
+          python - <<'PY'
+          import os,json
+          from scimed_scout.ai.discovery import build_discovery_prompt,parse_candidate_proposals
+          from scimed_scout.ai.providers import OpenAICompatibleProvider
+          from scimed_scout.ai.models import AIRequest
+          from scimed_scout.ai.discovery import SYSTEM_PROMPT
+          key=os.getenv("GROQ_API_KEY","")
+          if not key:
+            print("GROQ_PROMPT NOT_CONFIGURED")
+            raise SystemExit(0)
+          provider=OpenAICompatibleProvider(
+            endpoint="https://api.groq.com/openai/v1/chat/completions",
+            model="openai/gpt-oss-20b",api_key=key,
+            empty_retries=1,name="groq-diagnostic",timeout=30)
+          prompt=build_discovery_prompt(specialty="Cardiology",count=4,
+            additional_context="Recent study evidence indicates subgroups of heart failure and cardiovascular therapeutics, with heterogeneous populations. Identify narrow clinically meaningful PICO alternatives.")
+          try:
+            response=provider.complete(AIRequest(system=SYSTEM_PROMPT,prompt=prompt,max_tokens=2200))
+            data=response.raw
+            usage=data.get("usage") or {}
+            details=usage.get("completion_tokens_details") or {}
+            first=(data.get("choices") or [{}])[0]
+            print("CARDIO_PROMPT HTTP_200",True,
+              "TEXT_LENGTH",len(response.text),
+              "FINISH_REASON",str(first.get("finish_reason"))[:40],
+              "COMPLETION_TOKENS",usage.get("completion_tokens"),
+              "REASONING_TOKENS",details.get("reasoning_tokens"),flush=True)
+            try:
+              proposals=parse_candidate_proposals(response.text)
+              print("CARDIO_PROMPT VALID_PROPOSALS",len(proposals),flush=True)
+            except Exception as ex:
+              print("CARDIO_PROMPT PARSE_ERROR",type(ex).__name__,flush=True)
+          except Exception as exc:
+            print("CARDIO_PROMPT PROVIDER_ERROR",type(exc).__name__,str(getattr(exc,"status_code",""))[:5],flush=True)
+          PY
