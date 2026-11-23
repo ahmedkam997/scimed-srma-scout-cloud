@@ -546,6 +546,18 @@ function renderJobs() {
           </article>`).join('')}
         </details>` : '';
 
+    const unverifiedGenerated = Array.isArray(job.result_json?.package?.unverified_generated_options)
+      ? job.result_json.package.unverified_generated_options : [];
+    const unverifiedGeneratedHtml = job.status === 'COMPLETED' && unverifiedGenerated.length
+      ? `<details class="score-audit">
+          <summary>Other generated PICO drafts (${unverifiedGenerated.length}) - not source checked</summary>
+          <p class="help">These ideas were generated but were NOT selected for source verification. There is no novelty clearance, eligible-study count, or bibliography yet. Use ChatGPT to perform independent source searches first.</p>
+          ${unverifiedGenerated.map(topic => `<article class="score-item">
+            <b>${escapeHtml(topic.title || '')}</b>
+            <p>${escapeHtml(topic.review_question || '')}</p>
+            ${topicDetailHtml(job, topic)}
+          </article>`).join('')}
+        </details>` : '';
     const hasScreeningQueue = originalProvisionalOptions.some(
       topic => Array.isArray(topic.primary_study_screening_queue) &&
         topic.primary_study_screening_queue.length > 0
@@ -655,6 +667,7 @@ function renderJobs() {
         ${draftHtml}
         ${evidenceHtml}
         ${provisionalHtml}
+        ${unverifiedGeneratedHtml}
         ${auditHtml}
         ${workerHelp}
         ${actions}
@@ -756,6 +769,7 @@ function reportPayload(job) {
     error_excerpt: (job.error_text || '').slice(-700),
     selection_policy: pkg.selection_policy || {},
     provisional_options: uniqueProvisionalTopics(Array.isArray(pkg.provisional_options) ? pkg.provisional_options : []),
+    unverified_generated_options: Array.isArray(pkg.unverified_generated_options) ? pkg.unverified_generated_options : [],
     original_provisional_count: Array.isArray(pkg.provisional_options) ? pkg.provisional_options.length : 0,
     near_duplicates_grouped_only_in_presentation: true,
     explanation: 'No candidate cleared all mandatory checks. PROVISIONAL_BACKUP does not mean confirmed lack of novelty.',
@@ -782,7 +796,8 @@ function findTransferTopic(job, candidateId) {
   const pkg = job?.result_json?.package || {};
   const topics = [
     ...(Array.isArray(pkg.options) ? pkg.options : []),
-    ...(Array.isArray(pkg.provisional_options) ? pkg.provisional_options : [])
+    ...(Array.isArray(pkg.provisional_options) ? pkg.provisional_options : []),
+    ...(Array.isArray(pkg.unverified_generated_options) ? pkg.unverified_generated_options : [])
   ];
   return topics.find(item => item.candidate_id === candidateId) || null;
 }
