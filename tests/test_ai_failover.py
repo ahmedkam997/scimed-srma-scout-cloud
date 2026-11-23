@@ -219,3 +219,96 @@ def test_free_router_does_not_repeat_groq_requests_after_backup_429():
         router.complete(AIRequest(system="s", prompt="p"))
     assert len(primary.calls) == 1
     assert len(backup.calls) == 1
+
+
+def test_groq_short_token_limit_waits_once_and_recovers():
+    import urllib.error
+    calls = []
+    sleeps = []
+
+    def request(req, timeout):
+        calls.append(req)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(
+                req.full_url, 429, "Too Many Requests",
+                {
+                    "retry-after": "3",
+                    "x-ratelimit-remaining-requests": "10",
+                    "x-ratelimit-remaining-tokens": "0",
+                }, None,
+            )
+        return json.dumps({
+            "model": "openai/gpt-oss-20b",
+            "choices": [{"message": {"content": '{"ok":true}'}}],
+        }).encode()
+
+    provider = OpenAICompatibleProvider(
+        endpoint="https://api.groq.com/openai/v1/chat/completions",
+        model="openai/gpt-oss-20b",
+        requester=request,
+        empty_retries=1,
+        rate_limit_sleeper=sleeps.append,
+    )
+    response = provider.complete(AIRequest(system="s", prompt="p"))
+    assert json.loads(response.text)["ok"] is True
+    assert len(calls) == 2
+    assert sleeps == [3.5]
+
+
+def test_daily_groq_limit_never_waits_and_reports_safe_header_counts():
+    import urllib.error
+    calls = []
+    sleeps = []
+
+    def request(req, timeout):
+        calls.append(req)
+        raise urllib.error.HTTPError(
+            req.full_url, 429, "Too Many Requests",
+            {
+                "retry-after": "10",
+                "x-ratelimit-remaining-requests": "0",
+                "x-ratelimit-remaining-tokens": "1200",
+            }, None,
+        )
+
+    provider = OpenAICompatibleProvider(
+        endpoint="https://api.groq.com/openai/v1/chat/completions",
+        model="openai/gpt-oss-20b",
+        api_key="do-not-print-this",
+        requester=request,
+        empty_retries=1,
+        rate_limit_sleeper=sleeps.append,
+    )
+    with pytest.raises(ProviderFailure) as caught:
+        provider.complete(AIRequest(system="s", prompt="p"))
+    assert len(calls) == 1
+    assert sleeps == []
+    assert caught.value.remaining_daily_requests == 0
+    assert caught.value.retry_after_seconds == 10
+    assert "remaining_daily_requests=0" in str(caught.value)
+    assert "do-not-print-this" not in str(caught.value)
+
+
+def test_retry_after_is_strictly_bounded_and_never_loops():
+    import urllib.error
+    sleeps = []
+    for retry_after in ("100", "not-a-number", "-3"):
+        calls = []
+
+        def request(req, timeout):
+            calls.append(req)
+            raise urllib.error.HTTPError(
+                req.full_url, 429, "Too Many Requests",
+                {"retry-after": retry_after, "x-ratelimit-remaining-requests": "4"}, None,
+            )
+        provider = OpenAICompatibleProvider(
+            endpoint="https://api.groq.com/openai/v1/chat/completions",
+            model="openai/gpt-oss-20b",
+            requester=request,
+            empty_retries=1,
+            rate_limit_sleeper=sleeps.append,
+        )
+        with pytest.raises(ProviderFailure):
+            provider.complete(AIRequest(system="s", prompt="p"))
+        assert len(calls) == 1
+    assert sleeps == []
