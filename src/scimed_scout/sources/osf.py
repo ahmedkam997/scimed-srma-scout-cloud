@@ -268,7 +268,7 @@ class OSFRegistrationsSource:
                             self.name, original, SourceStatus.SEARCHED_NEGATIVE, [], 0,
                             message=(
                                 f"OSF Trove metadata and independent OSF v2 title-filter "
-                                f"completed zero-result queries for scoped phrase '{focus}'. "
+                                f"completed zero-result queries for scoped query phrase '{focus}'. "
                                 "The result is not global novelty clearance: synonyms, "
                                 "other wording and unindexed registrations require "
                                 "independent verification."
