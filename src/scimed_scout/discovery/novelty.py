@@ -518,6 +518,54 @@ def _metadata(record: dict) -> dict:
     return raw if isinstance(raw, dict) else {}
 
 
+_GENERIC_INTERVENTION_TERMS = {
+    "supplement", "supplements", "supplementation", "administration",
+    "intervention", "interventions", "treatment", "treatments",
+    "therapy", "therapies", "clinical", "efficacy", "safety",
+    "inhibitor", "inhibitors", "agonist", "agonists", "receptor", "receptors",
+    "standard", "care", "comparison", "compared", "placebo",
+    "cardiac", "cardiovascular", "patients", "disease", "diseases",
+    "management", "high", "low", "dose", "doses", "intensity",
+    "use", "oral", "adjunctive", "versus", "physical", "during",
+    "response", "drug", "drugs", "medication", "medications", "routine",
+}
+
+
+def registration_pico_preflight(candidate, record: dict) -> dict:
+    """Keyword-only prioritization, never full PICO equivalence or exclusion.
+
+    Broad registry queries produce unrelated protocols with generic terms
+    such as 'supplementation'. Keep those hits in the raw source ledger while
+    preventing their registration age from implying an update opportunity.
+    """
+    intervention = str(candidate.intervention_exposure_index_test or "")
+    anchors = sorted(
+        term for term in _tokens(intervention)
+        if term not in _GENERIC_INTERVENTION_TERMS and not term.isdigit()
+    )
+    if not anchors:
+        label = "UNKNOWN_INTERVENTION_TERMS"
+        overlap = []
+    else:
+        evidence = _record_text(record)
+        if not evidence:
+            label = "UNKNOWN_REGISTRY_TEXT"
+            overlap = []
+        else:
+            overlap = sorted(set(anchors) & _tokens(evidence))
+            label = (
+                "POTENTIAL_INTERVENTION_MATCH"
+                if overlap else "BROAD_SEARCH_HIT_NO_INTERVENTION_MATCH"
+            )
+    return {
+        "status": label,
+        "intervention_terms": anchors,
+        "matched_intervention_terms": overlap,
+        "method": "KEYWORD_PREFLIGHT_ONLY_NOT_FULL_PICO_OVERLAP",
+        "scientific_exclusion_confirmed": False,
+    }
+
+
 def registration_age_audit(candidate, record: dict, primary_records: list[dict]) -> dict:
     """Registration age and progress are indicators, never novelty clearance.
 
@@ -542,8 +590,18 @@ def registration_age_audit(candidate, record: dict, primary_records: list[dict])
         or meta.get("reviewstatus") or "UNKNOWN"
     ).strip()[:64]
     withdrawn = str(meta.get("withdrawn") or "").casefold() in ("true", "1", "yes")
-    leads = _bibliographic_leads_after(candidate, primary_records, year)
-    age = datetime.now(timezone.utc).year - year if year is not None else None
+    topic_match = registration_pico_preflight(candidate, record)
+    # An unrelated registry result is still saved for auditing, but its age
+    # must not trigger misleading "new evidence since registration" counts.
+    if topic_match["status"] == "BROAD_SEARCH_HIT_NO_INTERVENTION_MATCH":
+        leads = {
+            "count": None, "examples": [],
+            "eligible_studies_confirmed": 0,
+            "scope_note": "NOT_ESTIMABLE_FOR_UNMATCHED_REGISTRY_TOPIC",
+        }
+    else:
+        leads = _bibliographic_leads_after(candidate, primary_records, year)
+    age = datetime.now(timezone.utc).year - year if year is not None
     modified_year = _year_value(modified_at[:4]) if modified_at else None
     recent_metadata_activity = (
         modified_year is not None
@@ -572,6 +630,7 @@ def registration_age_audit(candidate, record: dict, primary_records: list[dict])
         "registry_metadata_modified_at": modified_at or None,
         "age_years_approx": age,
         "registry_status": status,
+        "pico_relevance_preflight": topic_match,
         "withdrawn": withdrawn,
         "recent_metadata_activity": recent_metadata_activity,
         "classification": classification,
