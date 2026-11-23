@@ -187,6 +187,18 @@ function renderJobs() {
              target="_blank" rel="noopener noreferrer">Open GitHub worker controls</a>
           <p>In GitHub: Run workflow, select main, then Run workflow.</p>
         </div>` : '';
+    const draftCheckpoint = job.result_json?.checkpoint || {};
+    const draftCandidates = Array.isArray(draftCheckpoint.candidates) ? draftCheckpoint.candidates : [];
+    const draftHtml = draftCandidates.length && ['RUNNING', 'FAILED'].includes(job.status)
+      ? `<details class="score-audit">
+          <summary>Saved draft questions (${draftCandidates.length})</summary>
+          <p class="help">These AI-generated questions were saved before a later step. None has been verified for novelty, eligibility or published review overlap.</p>
+          ${draftCandidates.map(item => `<article class="score-item">
+            <b>${escapeHtml(item.title || '')}</b>
+            <p>${escapeHtml(item.review_question || '')}</p>
+          </article>`).join('')}
+        </details>` : '';
+
     const provisionalOptions = Array.isArray(job.result_json?.package?.provisional_options)
       ? job.result_json.package.provisional_options : [];
     const provisionalHtml = job.status === 'COMPLETED' && provisionalOptions.length
@@ -284,6 +296,7 @@ function renderJobs() {
         <p class="job-message">${escapeHtml(job.message || '')}</p>
         ${summaryHtml}
         ${optionHtml}
+        ${draftHtml}
         ${provisionalHtml}
         ${auditHtml}
         ${workerHelp}
