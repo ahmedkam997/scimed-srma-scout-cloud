@@ -108,7 +108,7 @@ def build_discovery_review_package(
         ),
         reverse=True,
     )
-    for verified in ordered_unresolved[:5]:
+    for verified in ordered_unresolved[:6]:
         candidate = ledger.get_candidate(verified.candidate_id)
         if candidate is None:
             continue
@@ -132,6 +132,26 @@ def build_discovery_review_package(
                 name: status.value for name, status in verified.coverage.source_statuses.items()
             },
             "discovered_primary_study_candidates": verified.evidence.unique_primary_study_candidates,
+            "published_review_examples": [
+                {
+                    "title": str(record.get("title") or ""),
+                    "source": str(record.get("source") or ""),
+                    "doi": str((record.get("payload") or {}).get("doi") or ""),
+                    "url": str((record.get("payload") or {}).get("url") or ""),
+                    "record_id": str(record.get("source_record_id") or ""),
+                }
+                for record in ledger.list_external_evidence(verified.candidate_id, "PUBLISHED_REVIEW")[:5]
+            ],
+            "primary_study_examples": [
+                {
+                    "title": str(record.get("title") or ""),
+                    "source": str(record.get("source") or ""),
+                    "doi": str((record.get("payload") or {}).get("doi") or ""),
+                    "url": str((record.get("payload") or {}).get("url") or ""),
+                    "record_id": str(record.get("source_record_id") or ""),
+                }
+                for record in ledger.list_external_evidence(verified.candidate_id, "PRIMARY_STUDY")[:5]
+            ],
             "preliminary_scoring": dict(metadata.get("discovery_gate_inputs") or {}),
             "decision": verified.decision,
             "next_action": "Manually verify source access, competing reviews, registrations and full-text eligibility before selecting this topic.",
