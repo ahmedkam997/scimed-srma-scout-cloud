@@ -602,10 +602,10 @@ def _attach_publication_linkage(registration: dict, published_records: list[dict
     if not rid or not published_records:
         return
     matches: list[dict] = []
-    if source == "PROSPERO" and re.fullmatch(r"CRD\\d{8,}", rid, flags=re.IGNORECASE):
+    if source == "PROSPERO" and re.fullmatch(r"CRD\d{8,}", rid, flags=re.IGNORECASE):
         pattern = re.compile(r"(?<![A-Z0-9])" + re.escape(rid) + r"(?![A-Z0-9])", re.IGNORECASE)
     elif source == "OSF Registries" and re.fullmatch(r"[a-z0-9]{4,12}", rid, flags=re.IGNORECASE):
-        pattern = re.compile(r"(?:https?://)?(?:www\\.)?osf\\.io/" + re.escape(rid) + r"(?:/|\\b)", re.IGNORECASE)
+        pattern = re.compile(r"(?:https?://)?(?:www\.)?osf\.io/" + re.escape(rid) + r"(?:/|\b)", re.IGNORECASE)
     else:
         return
     for review in _dedupe_records(published_records):
