@@ -122,7 +122,7 @@ def _registry_concept(value: str) -> str:
     PICO scope remains visible in the original query and proposal fields.
     Exact dosing details still belong in manual protocol verification.
     """
-    text = re.sub(r"\\([^)]*\\d[^)]*\\)", " ", str(value or ""))
+    text = re.sub(r"\([^)]*\d[^)]*\)", " ", str(value or ""))
     text = text.replace("‑", " ").replace("–", " ").replace("—", " ")
     text = re.sub(r"[^\w\s-]", " ", text, flags=re.UNICODE)
     return " ".join(text.split()[:8])
