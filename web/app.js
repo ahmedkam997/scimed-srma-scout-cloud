@@ -90,11 +90,11 @@ async function startDiscovery() {
       .insert({
         specialty,
         question_type: questionType,
-        candidate_count: 12,
+        candidate_count: 20,
         final_options: 3,
-        min_verify: 3,
-        max_verify: 10,
-        limit_per_query: 20,
+        min_verify: 4,
+        max_verify: 6,
+        limit_per_query: 12,
         revisit_days: Number(els.revisitDays.value),
       })
       .select()
@@ -152,6 +152,7 @@ function renderJobs() {
     const rejected = Number(statusCounts.REJECTED || 0);
     const checked = Number(summary.verified_candidates || 0);
     const generated = Number(summary.generated_candidates || 0);
+    const failovers = Number(summary.ai_failover_count || 0);
     const recentSkipped = Number(summary.recent_topics_skipped_count || 0);
     const recentDetail = Array.isArray(summary.recent_topics_skipped) ? summary.recent_topics_skipped : [];
     const recentHtml = job.status === 'COMPLETED' && recentSkipped
@@ -169,7 +170,8 @@ function renderJobs() {
           <b>Discovery review summary</b>
           <p>Generated ${escapeHtml(generated)} candidates. Checked ${escapeHtml(checked)}.
           Qualified ${escapeHtml(options.length)}. Provisional ${escapeHtml(provisional)}.
-          Rejected ${escapeHtml(rejected)}.</p>
+          Rejected ${escapeHtml(rejected)}.
+          AI fallback calls ${escapeHtml(failovers)}.</p>
           ${provisional && !options.length
             ? '<p>Source verification is incomplete for the provisional topics. They are not confirmed to lack novelty or scientific value.</p>'
             : ''}
@@ -262,8 +264,8 @@ function renderJobs() {
             return `<article class="score-item">
               <b>${escapeHtml(audit.title)}</b>
               <div class="score-data">
-                <span>Novelty: ${escapeHtml(score.overall_novelty ?? 'N/A')} / 5</span>
-                <span>Information gain proxy: ${escapeHtml(score.new_information_gain ?? 'N/A')} / 5</span>
+                <span>Novelty: ${escapeHtml(trace.novelty_status === 'NOT_ESTIMABLE' ? 'Not estimable' : (score.overall_novelty ?? 'N/A'))} / 5</span>
+                <span>Information gain proxy: ${escapeHtml(String(trace.information_gain_status || '').startsWith('NOT_ESTIMABLE') ? 'Not estimable' : (score.new_information_gain ?? 'N/A'))} / 5</span>
                 <span>Priority index: ${escapeHtml(score.publication_oriented_score ?? 'N/A')} / 100</span>
                 <span>Primary-study candidates: ${escapeHtml(audit.unique_primary_study_candidates ?? 'N/A')}</span>
               </div>
