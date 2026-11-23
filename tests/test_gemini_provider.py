@@ -161,3 +161,61 @@ def test_nested_gemini_three_way_router_exposes_only_safe_route_metadata():
     assert provider.total_failover_count == 2
     assert provider.unavailable_free_providers == ["gemini-free", "openrouter-free"]
     assert "example-gemini" not in str(provider.configured_free_route)
+
+
+def test_short_gemini_retry_after_recovers_once_even_without_groq_style_quota_headers():
+    from urllib.error import HTTPError
+    responses = []
+    sleeps = []
+
+    def respond(request, timeout):
+        responses.append(1)
+        if len(responses) == 1:
+            raise HTTPError(
+                request.full_url, 429, "rate limited",
+                {"Retry-After": "3"}, None,
+            )
+        return json.dumps({
+            "choices": [{"message": {"content": '{"status":"ok"}'}}]
+        }).encode()
+
+    provider = OpenAICompatibleProvider(
+        endpoint="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        model="gemini-3.5-flash-lite",
+        api_key="redacted-test-key",
+        requester=respond,
+        rate_limit_sleeper=sleeps.append,
+        empty_retries=1,
+        name="gemini-free",
+    )
+    assert json.loads(provider.complete(AIRequest(system="JSON", prompt="ok")).text)["status"] == "ok"
+    assert len(responses) == 2
+    assert sleeps == [3.5]
+
+
+def test_gemini_daily_or_large_retry_after_does_not_sleep_or_loop():
+    from urllib.error import HTTPError
+    calls, sleeps = [], []
+
+    def reject(request, timeout):
+        calls.append(1)
+        raise HTTPError(
+            request.full_url, 429, "rate limited",
+            {"Retry-After": "120"}, None,
+        )
+
+    provider = OpenAICompatibleProvider(
+        endpoint="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        model="gemini-3.5-flash-lite",
+        api_key="hidden-test-key",
+        requester=reject,
+        rate_limit_sleeper=sleeps.append,
+        empty_retries=1,
+        name="gemini-free",
+    )
+    with pytest.raises(ProviderFailure) as err:
+        provider.complete(AIRequest(system="JSON", prompt="ok"))
+    assert err.value.status_code == 429
+    assert sleeps == []
+    assert len(calls) == 1
+    assert "hidden-test-key" not in str(err.value)
