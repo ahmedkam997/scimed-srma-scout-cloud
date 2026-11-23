@@ -197,11 +197,19 @@ begin
     new.dispatch_requested_at := null;
     new.updated_at := clock_timestamp();
     return new;
+  elsif old.status='QUEUED' and new.status='QUEUED'
+    and new.dispatch_requested_at is distinct from old.dispatch_requested_at
+    and (old.dispatch_requested_at is null
+      or old.dispatch_requested_at < clock_timestamp() - interval '120 seconds') then
+    new := old;
+    new.dispatch_requested_at := clock_timestamp();
+    new.updated_at := clock_timestamp();
+    return new;
   end if;
 
   raise exception 'Unauthorized discovery job status transition';
 end;
-$$;
+$;
 
 drop trigger if exists scimed_cancel_guard on public.discovery_jobs;
 create trigger scimed_cancel_guard
@@ -277,3 +285,37 @@ $$;
 
 revoke all on function public.scimed_retry_job(uuid) from public;
 grant execute on function public.scimed_retry_job(uuid) to anon, authenticated;
+
+-- Owner-scoped dispatch reservation. Each browser is limited to one request
+-- every 120 seconds for its own queued job, without a service-role REST PATCH.
+drop policy if exists "clients_dispatch_own_queued_discovery_jobs" on public.discovery_jobs;
+create policy "clients_dispatch_own_queued_discovery_jobs"
+on public.discovery_jobs for update to anon,authenticated
+using (
+  status='QUEUED' and client_token_hash=private.scimed_client_hash()
+)
+with check (
+  status='QUEUED' and client_token_hash=private.scimed_client_hash()
+);
+
+create or replace function public.scimed_request_dispatch(p_job_id uuid)
+returns boolean language plpgsql security invoker set search_path=''
+as $$
+declare
+  v_hash text;
+  v_updated integer;
+begin
+  v_hash := private.scimed_client_hash();
+  if v_hash is null or length(v_hash) <> 64 then return false; end if;
+  update public.discovery_jobs
+  set dispatch_requested_at=clock_timestamp()
+  where id=p_job_id and client_token_hash=v_hash and status='QUEUED'
+    and (dispatch_requested_at is null
+      or dispatch_requested_at < clock_timestamp() - interval '120 seconds');
+  get diagnostics v_updated = row_count;
+  return v_updated=1;
+end;
+$$;
+
+revoke all on function public.scimed_request_dispatch(uuid) from public;
+grant execute on function public.scimed_request_dispatch(uuid) to anon,authenticated;
