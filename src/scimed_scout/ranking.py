@@ -75,9 +75,29 @@ class CandidateRankingService:
             c for c in self.ledger.list_candidates(project_id)
             if c.status != CandidateStatus.REJECTED
         ]
+        raw_ranked = [preliminary_rank(c) for c in candidates]
+        by_id = {c.candidate_id: c for c in candidates}
+
+        def source_priority(item: RankingResult) -> int:
+            # Recent, anchored PubMed title evidence is a screening PRIORITY,
+            # never a validated number of independent eligible studies.
+            preflight = (by_id[item.candidate_id].metadata or {}).get("evidence_preflight") or {}
+            if preflight.get("status") != "SEARCHED_POSITIVE":
+                return 0
+            return max(0, min(22, int(preflight.get("priority_signal") or 0)))
+
         ranked = sorted(
-            (preliminary_rank(c) for c in candidates),
-            key=lambda x: (-x.score, x.candidate_id),
+            (
+                RankingResult(
+                    item.candidate_id,
+                    item.score,
+                    item.reasons + (
+                        f"PubMed bibliographic preflight priority {source_priority(item)}/22 (not eligibility)",
+                    ) if source_priority(item) else item.reasons,
+                )
+                for item in raw_ranked
+            ),
+            key=lambda item: (-source_priority(item), -item.score, item.candidate_id),
         )
 
         ranking_by_id = {item.candidate_id: item for item in ranked}
@@ -88,7 +108,8 @@ class CandidateRankingService:
                 **(candidate.metadata or {}),
                 "preliminary_ranking_score": item.score,
                 "preliminary_ranking_reasons": list(item.reasons),
-                "preliminary_ranking_role": "verification_priority_only",
+                "preliminary_ranking_role": "source_title_signal_then_pico_completeness_not_novelty_or_eligibility",
+                "preliminary_evidence_priority_score": source_priority(item),
             }
             if candidate.candidate_id in top_ids and candidate.status != CandidateStatus.QUALIFIED:
                 candidate.status = CandidateStatus.SHORTLISTED
