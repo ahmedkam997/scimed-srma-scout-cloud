@@ -360,6 +360,34 @@ class FreeProviderFallback:
             "SCIMED_AI_API_KEY or GROQ_API_KEY in GitHub Actions secrets."
         )
 
+    @property
+    def total_failover_count(self) -> int:
+        nested = self.backup
+        return self.failover_count + (
+            nested.total_failover_count
+            if isinstance(nested, FreeProviderFallback) else 0
+        )
+
+    @property
+    def configured_free_route(self) -> list[str]:
+        providers = [self.primary.name]
+        if isinstance(self.backup, FreeProviderFallback):
+            providers.extend(self.backup.configured_free_route)
+        elif self.backup is not None:
+            providers.append(self.backup.name)
+        return providers
+
+    @property
+    def unavailable_free_providers(self) -> list[str]:
+        unavailable = []
+        if self.primary_quota_exhausted:
+            unavailable.append(self.primary.name)
+        if isinstance(self.backup, FreeProviderFallback):
+            unavailable.extend(self.backup.unavailable_free_providers)
+        elif self.backup is not None and self.backup_quota_exhausted:
+            unavailable.append(self.backup.name)
+        return unavailable
+
     def complete(self, request: AIRequest) -> AIResponse:
         if self.primary_quota_exhausted and self.backup is not None:
             return self._backup(request)
