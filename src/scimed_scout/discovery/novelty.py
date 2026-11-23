@@ -52,10 +52,27 @@ class DiscoveryNoveltyService:
             registration_records,
             force=force,
         )
+        primary_records = self.ledger.list_external_evidence(candidate_id, "PRIMARY_STUDY")
+        registration_freshness = [
+            registration_age_audit(candidate, record, primary_records)
+            for record in registration_records
+        ]
+        review_freshness = [
+            published_review_update_audit(candidate, record, primary_records)
+            for record in review_records
+        ]
 
         review_unresolved = sum(bool(item.get("unresolved")) for item in review_assessments)
         registration_unresolved = sum(bool(item.get("unresolved")) for item in registration_assessments)
-        fatal_redundancy = any(bool(item.get("fatal_redundancy")) for item in review_assessments)
+        # The LLM's "recent review" judgment is not a verified last
+        # search date. Avoid automatically rejecting an update opportunity
+        # based only on model-supplied recent/adequate fields. Retain the
+        # high-overlap items as manual review blockers instead.
+        potential_fatal_review_ids = [
+            str(item.get("record_id") or "") for item in review_assessments
+            if item.get("fatal_redundancy")
+        ]
+        fatal_redundancy = False
         material_registration_ids = [
             item.get("record_id", "")
             for item in registration_assessments
@@ -71,6 +88,9 @@ class DiscoveryNoveltyService:
             "discovery_competitor_assessment_complete": review_unresolved == 0,
             "discovery_registration_assessment_complete": registration_unresolved == 0,
             "discovery_fatal_redundancy": fatal_redundancy,
+            "discovery_potential_fatal_review_overlap_ids": potential_fatal_review_ids,
+            "discovery_registration_age_audit": registration_freshness,
+            "discovery_published_review_update_audit": review_freshness,
             "discovery_material_registration_overlap_ids": material_registration_ids,
             "discovery_competitor_records_discovered": len(all_reviews),
             "discovery_competitor_records_semantically_assessed": len(review_records),
@@ -100,8 +120,12 @@ class DiscoveryNoveltyService:
                 len(_dedupe_records(all_registrations)) - len(registration_records),
             ),
             "fatal_redundancy": fatal_redundancy,
+            "potential_fatal_review_overlap_ids": potential_fatal_review_ids,
+            "registration_age_audit": registration_freshness,
+            "published_review_update_audit": review_freshness,
             "material_registration_overlap_ids": material_registration_ids,
-            "summary": _summary(review_assessments, registration_assessments),
+            "summary": _summary(review_assessments, registration_assessments)
+                       + "\\n" + _freshness_summary(registration_freshness, review_freshness),
         }
 
     def _assess_records(
@@ -355,3 +379,172 @@ def _summary(reviews: list[dict], registrations: list[dict]) -> str:
                 f"| unresolved={bool(item.get('unresolved'))} | fatal={bool(item.get('fatal_redundancy'))}"
             )
     return "\n".join(rows[:30])
+
+
+def _date_from_metadata(metadata: dict, keys: tuple[str, ...]) -> tuple[int | None, str]:
+    """Only use an explicit date field. Publication year is never search date."""
+    for key in keys:
+        value = metadata.get(key)
+        if isinstance(value, dict):
+            value = value.get("@value") or value.get("value")
+        if isinstance(value, list):
+            value = value[0] if value else None
+        if isinstance(value, dict):
+            value = value.get("@value") or value.get("value")
+        match = re.match(r"^((?:19|20)\\d{2})(?:-[01]\\d(?:-[0-3]\\d)?)?", str(value or "").strip())
+        if match:
+            year = int(match.group(1))
+            if year <= datetime.now(timezone.utc).year:
+                return year, str(value).strip()[:32]
+    return None, ""
+
+
+def _bibliographic_leads_after(candidate, records: list[dict], baseline_year: int | None) -> dict:
+    """Count only potentially PICO-related dated citations, not eligible trials."""
+    if baseline_year is None:
+        return {"count": None, "examples": [], "eligible_studies_confirmed": 0}
+    intervention = {
+        t for t in _tokens(candidate.intervention_exposure_index_test)
+        if not t.isdigit() and len(t) > 2
+    }
+    found: dict[str, dict] = {}
+    for item in records:
+        payload = item.get("payload") or {}
+        year = _year_value(payload.get("year"))
+        if year is None or year <= baseline_year or not intervention:
+            continue
+        title = str(item.get("title") or "").strip()
+        tokens = _tokens(title)
+        if not tokens or len(tokens & intervention) / len(intervention) < 0.5:
+            continue
+        ident = _record_key(item)
+        if ident not in found:
+            found[ident] = {
+                "title": title, "year": year, "source": item.get("source", ""),
+                "url": str(payload.get("url") or ""),
+            }
+    examples = sorted(found.values(), key=lambda item: (-item["year"], item["title"]))[:4]
+    return {
+        "count": len(found),
+        "examples": examples,
+        "eligible_studies_confirmed": 0,
+    }
+
+
+def _year_value(value) -> int | None:
+    try:
+        result = int(value)
+        return result if 1900 <= result <= datetime.now(timezone.utc).year else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _metadata(record: dict) -> dict:
+    payload = record.get("payload") or {}
+    raw = payload.get("metadata") or {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def registration_age_audit(candidate, record: dict, primary_records: list[dict]) -> dict:
+    """Registration age and progress are indicators, never novelty clearance.
+
+    A PROSPERO/OSF registration is not evidence of a published systematic
+    review. Publication linkage and latest literature search date need checking.
+    """
+    meta = _metadata(record)
+    payload = record.get("payload") or {}
+    source = str(record.get("source") or "")
+    if source == "PROSPERO":
+        date_keys = ("date_first_published", "year_first_published", "date_registered", "dateRegistered")
+    else:
+        date_keys = ("date_registered", "dateRegistered", "dateCreated", "datePublished")
+    year, registered_at = _date_from_metadata(meta, date_keys)
+    if year is None:
+        year = _year_value(payload.get("year"))
+        if year is not None:
+            registered_at = str(year)
+    _, modified_at = _date_from_metadata(meta, ("date_modified", "dateModified", "last_updated"))
+    status = str(
+        meta.get("review_status") or meta.get("registry_status")
+        or meta.get("reviewstatus") or "UNKNOWN"
+    ).strip()[:64]
+    withdrawn = str(meta.get("withdrawn") or "").casefold() in ("true", "1", "yes")
+    leads = _bibliographic_leads_after(candidate, primary_records, year)
+    age = datetime.now(timezone.utc).year - year if year is not None else None
+    if withdrawn:
+        classification = "WITHDRAWN_REGISTRATION_VERIFY_PUBLICATION"
+    elif age is None:
+        classification = "UNKNOWN_DATE_MANUAL_REVIEW"
+    elif age >= 3:
+        classification = "OLDER_REGISTRATION_UPDATE_OPPORTUNITY_TO_VERIFY"
+    else:
+        classification = "RECENT_REGISTRATION_REVIEW_COMPETITION"
+    return {
+        "source": source,
+        "record_id": str(record.get("source_record_id") or ""),
+        "title": str(record.get("title") or ""),
+        "url": str(payload.get("url") or ""),
+        "registered_at": registered_at or None,
+        "registry_metadata_modified_at": modified_at or None,
+        "age_years_approx": age,
+        "registry_status": status,
+        "withdrawn": withdrawn,
+        "classification": classification,
+        "post_registration_bibliographic_leads": leads,
+        "publication_status": "NOT_VERIFIED",
+        "review_last_search_date": "NOT_VERIFIED",
+        "novelty_confirmed": False,
+        "next_action": (
+            "Check full registration progress, published follow-up review, last search date, "
+            "and eligibility of newer primary studies before deciding if an update is justified."
+        ),
+    }
+
+
+def published_review_update_audit(candidate, record: dict, primary_records: list[dict]) -> dict:
+    """A review's publication date must not be mistaken for its search cutoff."""
+    meta = _metadata(record)
+    year, cutoff = _date_from_metadata(meta, (
+        "last_search_date", "date_last_searched", "search_end_date",
+        "date_of_last_search", "search_cutoff",
+    ))
+    leads = _bibliographic_leads_after(candidate, primary_records, year)
+    pub_year = _year_value((record.get("payload") or {}).get("year"))
+    return {
+        "source": str(record.get("source") or ""),
+        "record_id": str(record.get("source_record_id") or ""),
+        "title": str(record.get("title") or ""),
+        "publication_year": pub_year,
+        "last_search_date": cutoff or None,
+        "classification": (
+            "POTENTIAL_UPDATE_VERIFY_NEW_STUDY_ELIGIBILITY"
+            if year is not None and leads["count"] and leads["count"] > 0
+            else "SEARCH_DATE_MISSING_MANUAL_CHECK" if year is None
+            else "NO_POST_SEARCH_TITLE_LEADS_FOUND_IN_SCOUT"
+        ),
+        "post_cutoff_bibliographic_leads": leads,
+        "novelty_confirmed": False,
+        "next_action": (
+            "Confirm the original review's actual literature-search cutoff, "
+            "screen newer independent primary studies, and judge whether updating changes evidence."
+        ),
+    }
+
+
+def _freshness_summary(registrations: list[dict], reviews: list[dict]) -> str:
+    lines = []
+    for item in registrations[:5]:
+        leads = item.get("post_registration_bibliographic_leads") or {}
+        lines.append(
+            f"Registration {item['source']} {item['record_id']}: "
+            f"{item['classification']}; registered={item['registered_at']}; "
+            f"status={item['registry_status']}; newer bibliographic leads={leads.get('count')}. "
+            "Not a verified publication or novelty clearance."
+        )
+    for item in reviews[:5]:
+        lines.append(
+            f"Published review {item['record_id']}: {item['classification']}; "
+            f"last_search_date={item['last_search_date']}. "
+            "Publication date does not establish last search date."
+        )
+    return "\\n".join(lines)
