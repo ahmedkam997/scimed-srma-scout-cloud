@@ -160,6 +160,7 @@ class FreeProviderFallback:
         self.model = f"{primary.model}|{backup.model}" if backup else primary.model
         self.failover_count = 0
         self.last_provider = primary.name
+        self.primary_quota_exhausted = False
 
     @classmethod
     def from_env(cls) -> "FreeProviderFallback":
@@ -183,6 +184,8 @@ class FreeProviderFallback:
         return cls(primary, backup)
 
     def complete(self, request: AIRequest) -> AIResponse:
+        if self.primary_quota_exhausted and self.backup is not None:
+            return self._backup(request)
         try:
             response = self.primary.complete(request)
             self.last_provider = response.provider
@@ -194,6 +197,8 @@ class FreeProviderFallback:
         except ProviderFailure as exc:
             if self.backup is None or exc.status_code not in (402, 408, 429, 500, 502, 503, 504, None):
                 raise
+            if exc.status_code in (402, 429):
+                self.primary_quota_exhausted = True
             return self._backup(request)
         except RuntimeError as exc:
             if self.backup is None or not any(
