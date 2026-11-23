@@ -123,3 +123,63 @@ def test_provisional_topics_are_visible_but_never_pretend_to_be_qualified(tmp_pa
         assert choice["source_statuses"]["PROSPERO"] == "ACCESS_FAILED"
         assert choice["discovered_primary_study_candidates"] == 5
         assert choice["provisional_only"] is True
+
+
+
+def test_provisional_export_removes_similar_af_questions_without_losing_audit(tmp_path):
+    from scimed_scout.discovery.models import DiscoveryRunResult, DiscoveryCandidateResult, DiscoveryEvidenceSnapshot
+    from scimed_scout.verification.coverage import VerificationCoverage
+
+    topics = [
+        "Effectiveness of adjunctive non-pulmonary vein trigger ablation versus pulmonary-vein isolation alone in persistent atrial fibrillation",
+        "Adjunctive non-pulmonary vein trigger ablation versus pulmonary-vein isolation alone in persistent atrial fibrillation",
+    ]
+    with SQLiteLedger(tmp_path / "dedup.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Cardiology"))
+        verifications = []
+        ranked = []
+        for i, title in enumerate(topics):
+            cid = f"P{i}"
+            candidate = CandidateRecord(
+                cid, "P1", title, "Cardiology",
+                question_type="EFFECTIVENESS",
+                review_question="Does additional ablation improve persistent AF outcomes?",
+                population="Adults with persistent atrial fibrillation undergoing catheter ablation",
+                intervention_exposure_index_test="Adjunctive non-pulmonary vein trigger ablation plus pulmonary-vein isolation",
+                comparator_reference="Pulmonary-vein isolation alone",
+                outcomes=["Freedom from atrial fibrillation at 12 months", "Quality of life"],
+                eligible_designs=["Randomized controlled trials"],
+            )
+            candidate.status = CandidateStatus.PROVISIONAL_BACKUP
+            ledger.upsert_candidate(candidate)
+            verifications.append(DiscoveryCandidateResult(
+                candidate_id=cid, ranking_score=90-i,
+                coverage=VerificationCoverage({"PROSPERO":SourceStatus.PARTIAL},("PROSPERO incomplete",)),
+                evidence=DiscoveryEvidenceSnapshot(10,8,1,("PubMed",)),
+                pending=["PROSPERO incomplete"],
+                candidate_status=CandidateStatus.PROVISIONAL_BACKUP,
+            ))
+            ranked.append(RankingResult(cid,90-i,()))
+        result=DiscoveryRunResult("P1",ranked,verifications,[],[],3)
+        package=build_discovery_review_package(ledger,result)
+        assert len(package["provisional_options"])==1
+        assert package["selection_policy"]["available_options"]==0
+        assert package["provisional_options"][0]["provisional_only"] is True
+
+
+def test_relevant_study_examples_do_not_prioritize_unrelated_fracture_citations():
+    from scimed_scout.discovery.review_package import _relevant_primary_examples
+    from types import SimpleNamespace
+    question = SimpleNamespace(
+        intervention_exposure_index_test="Inclisiran",
+        population="Adults with atherosclerotic cardiovascular disease",
+        comparator_reference="High intensity statin therapy"
+    )
+    records=[
+      {"title":"Models of Secondary Fracture Prevention","source":"Crossref"},
+      {"title":"Inclisiran versus statin therapy in adults with atherosclerotic cardiovascular disease","source":"PubMed"},
+      {"title":"An overview of secondary prevention strategies","source":"Crossref"},
+    ]
+    examples=_relevant_primary_examples(question, records)
+    assert len(examples)==1
+    assert examples[0]["source"]=="PubMed"
