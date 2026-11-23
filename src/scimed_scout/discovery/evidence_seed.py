@@ -79,7 +79,7 @@ def recent_pubmed_cues(
 
 
 _GAP_SIGNAL = re.compile(
-    r"\b(?:future research|further research|further studies|further trials|"
+    r"\b(?:future research|further research|further studies|further (?:randomized )?trials|"
     r"additional (?:randomized )?trials|more (?:randomized )?trials|"
     r"more high.quality studies|low certainty|very low certainty|"
     r"evidence (?:is|remains|was) (?:limited|insufficient|uncertain)|"
@@ -131,7 +131,14 @@ def recent_review_gap_cues(
         plain = re.sub(r"<[^>]*>", " ", raw).replace("\r", " ").replace("\n", " ")
         plain = re.sub(r"\s+", " ", plain).strip()
         sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z])", plain)
-        gap = next((piece for piece in sentences if _GAP_SIGNAL.search(piece)), "")
+        gap = next((
+            piece for piece in sentences
+            if _GAP_SIGNAL.search(piece)
+            and not re.search(
+                r"\b(?:no|without|not an?)\s+(?:documented\s+)?(?:evidence|research|knowledge)\s+gap\b",
+                piece, flags=re.I,
+            )
+        ), "")
         if not gap:
             continue
         key = (record.doi or record.title).casefold()
