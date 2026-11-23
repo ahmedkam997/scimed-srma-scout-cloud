@@ -394,3 +394,31 @@ def test_prospero_capped_broad_search_recovers_title_hits_but_stays_partial():
     assert result.records[-1].metadata["search_scope"] == "TITLE_ONLY_SUPPLEMENT"
     assert any("--field" in cmd for cmd in calls)
     assert result.status != SourceStatus.SEARCHED_NEGATIVE
+
+
+def test_osf_trove_registration_year_is_parsed_for_age_based_update_audit():
+    sample = {
+        "data": {
+            "attributes": {"totalResultCount": 1},
+            "relationships": {"searchResultPage": {
+                "data": [{"id": "h1", "type": "search-result"}],
+                "links": {},
+            }},
+        },
+        "included": [
+            {"id": "h1", "type": "search-result",
+             "relationships": {"indexCard": {"data": {"id": "c1"}}}},
+            {"id": "c1", "type": "index-card",
+             "attributes": {"resourceMetadata": {
+                 "@id": "https://osf.io/abc12/",
+                 "title": "Systematic review of ketone monoester",
+                 "dateRegistered": "2019-04-21",
+                 "dateModified": "2026-10-01",
+             }}},
+        ],
+    }
+    result = OSFRegistrationsSource(http(sample)).search("ketone monoester")
+    assert result.status == SourceStatus.SEARCHED_POSITIVE
+    assert result.records[0].year == 2019
+    assert result.records[0].metadata["date_registered"] == "2019-04-21"
+    assert result.records[0].metadata["date_modified"] == "2026-10-01"
