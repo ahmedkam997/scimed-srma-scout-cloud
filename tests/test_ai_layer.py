@@ -341,3 +341,60 @@ def test_discovery_stops_after_first_auth_or_quota_error(tmp_path, status):
                 project_id="P1", specialty="Cardiology", count=12
             )
         assert provider.calls == 1
+
+
+def test_groq_json_validation_400_uses_one_bounded_text_mode_fallback():
+    from io import BytesIO
+    from urllib.error import HTTPError
+
+    calls = []
+    def requester(request, timeout):
+        body = json.loads(request.data.decode("utf-8"))
+        calls.append(body)
+        if len(calls) == 1:
+            error = {"error": {"message": "Generated JSON failed validation.",
+                               "type": "invalid_request_error"}}
+            raise HTTPError(request.full_url, 400, "Bad Request", {},
+                            BytesIO(json.dumps(error).encode("utf-8")))
+        return json.dumps({
+            "choices": [{"message": {"content": '{"clinical_importance": 5}'}}]
+        }).encode("utf-8")
+
+    provider = OpenAICompatibleProvider(
+        endpoint="https://api.groq.com/openai/v1/chat/completions",
+        model="openai/gpt-oss-20b", api_key="test-key", requester=requester,
+        name="groq-free-backup", empty_retries=1,
+    )
+    response = provider.complete(AIRequest(system="Return JSON", prompt="Return JSON", max_tokens=3200))
+    assert response.text == '{"clinical_importance": 5}'
+    assert len(calls) == 2
+    assert calls[0]["response_format"] == {"type": "json_object"}
+    assert "response_format" not in calls[1]
+    assert calls[1]["max_tokens"] == 2500
+    assert calls[1]["model"] == "openai/gpt-oss-20b"
+
+
+def test_groq_non_json_400_does_not_retry_or_expose_provider_message():
+    from io import BytesIO
+    from urllib.error import HTTPError
+    from scimed_scout.ai.providers import ProviderFailure
+
+    calls = []
+    def requester(request, timeout):
+        calls.append(1)
+        error = {"error": {"message": "Invalid API parameter. PRIVATE_VALUE",
+                           "code": "invalid_request_error"}}
+        raise HTTPError(request.full_url, 400, "Bad Request", {},
+                        BytesIO(json.dumps(error).encode("utf-8")))
+
+    provider = OpenAICompatibleProvider(
+        endpoint="https://api.groq.com/openai/v1/chat/completions",
+        model="openai/gpt-oss-20b", api_key="test-key", requester=requester,
+        empty_retries=1,
+    )
+    with pytest.raises(ProviderFailure) as error:
+        provider.complete(AIRequest(system="Return JSON", prompt="JSON"))
+    assert len(calls) == 1
+    assert error.value.status_code == 400
+    assert error.value.error_category == "invalid_request_error"
+    assert "PRIVATE_VALUE" not in str(error.value)
