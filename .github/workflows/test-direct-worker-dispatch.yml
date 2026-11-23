@@ -1,0 +1,58 @@
+name: test-direct-worker-dispatch
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/test-direct-worker-dispatch.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify securely hosted worker-dispatch function
+        run: |
+          node --input-type=module <<'JS'
+          import vm from 'node:vm';
+          import fs from 'node:fs';
+          const ctx = {window: {}};
+          vm.runInNewContext(fs.readFileSync('web/config.js', 'utf8'), ctx);
+          const {supabaseUrl, supabaseAnonKey} = ctx.window.SCIMED_CONFIG;
+          const url = supabaseUrl + '/functions/v1/wake-discovery-worker';
+          const base = {
+            apikey: supabaseAnonKey,
+            authorization: 'Bearer ' + supabaseAnonKey,
+            'content-type': 'application/json',
+          };
+          const invalid = await fetch(url, {
+            method: 'POST', headers: {
+              ...base, 'x-scimed-client-token':'invalid'
+            },
+            body: JSON.stringify({job_id:'11111111-1111-4111-8111-111111111111'}),
+          });
+          console.log('INVALID_SESSION',invalid.status);
+          if(invalid.status!==403) throw new Error('Missing session validation');
+
+          const valid = await fetch(url, {
+            method: 'POST', headers: {
+              ...base, 'x-scimed-client-token':'0'.repeat(64)
+            },
+            body: JSON.stringify({job_id:'11111111-1111-4111-8111-111111111111'}),
+          });
+          const detail = await valid.json();
+          console.log('EDGE_STATUS', valid.status, detail.status);
+          if(valid.status!==503 && valid.status!==202 && valid.status!==502)
+            throw new Error('Unexpected edge dispatch endpoint response');
+          if(!['configuration_required','already_requested_or_not_queued',
+             'queue_unavailable','github_dispatch_failed'].includes(detail.status))
+            throw new Error('Unexpected edge dispatch status: ' + detail.status);
+          console.log('SECURE_DISPATCH_SMOKE_PASS');
+          JS
