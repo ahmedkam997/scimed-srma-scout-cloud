@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from scimed_scout.ai.models import CandidateProposal, normalize_question_type
-from scimed_scout.discovery.topic_diversity import same_clinical_question, select_diverse_ranked
+from scimed_scout.discovery.topic_diversity import same_clinical_question, same_discovery_family, select_diverse_ranked
 from scimed_scout.ranking import RankingResult
 
 
@@ -130,3 +130,54 @@ def test_generation_removes_near_duplicate_picos_before_literature_search(tmp_pa
         )
         assert len(generated) == 1
         assert "near-duplicate clinical PICO" in " ".join(service.generation_warnings)
+
+
+def test_cardiology_picos_of_same_intervention_are_one_verification_family_not_duplicate_manuscripts():
+    ketone1 = topic(
+        "k1", title="Effect of Ketone Monoester Supplementation on Left Ventricular Global Longitudinal Strain During Heat Stress",
+        population="Endurance athletes aged 18 to 45 years undergoing heat-stress exercise",
+        intervention="Ketone monoester supplementation", comparator="Placebo or no supplementation",
+        outcomes=["Left ventricular strain", "Troponin I"])
+    ketone2 = topic(
+        "k2", title="Ketone Monoester on Exercise-Induced Myocardial Strain in Heat Stress",
+        population="Adults engaging in endurance exercise under heat stress conditions",
+        intervention="Ketone monoester ingestion prior to exercise",
+        comparator="Placebo or no supplementation",
+        outcomes=["Global longitudinal strain", "Heart rate variability"])
+    sglt2a = topic(
+        "s1", title="Long Term Outcomes of SGLT2 Inhibitors versus DPP-4 Inhibitors in HFrEF",
+        population="Adults with heart failure with reduced ejection fraction HFrEF",
+        intervention="SGLT2 inhibitor therapy", comparator="DPP-4 inhibitor therapy",
+        outcomes=["All-cause mortality", "Heart failure hospitalization"])
+    sglt2b = topic(
+        "s2", title="SGLT2 versus DPP4 for HFrEF in Patients with Diabetes",
+        population="Adults 45 to 80 years with HFrEF and type 2 diabetes",
+        intervention="SGLT2 inhibitor empagliflozin", comparator="DPP-4 inhibitor sitagliptin",
+        outcomes=["All-cause mortality", "Renal outcomes"])
+    electro = topic(
+        "e1", title="Electroacupuncture in resistant hypertension",
+        population="Adults with resistant hypertension",
+        intervention="Electroacupuncture", comparator="Sham electroacupuncture or standard care",
+        outcomes=["Blood pressure variability"])
+    assert same_discovery_family(ketone1, ketone2)
+    assert same_discovery_family(sglt2a, sglt2b)
+    assert not same_discovery_family(electro, ketone1)
+    ranked = [RankingResult(x.candidate_id, 90-i, ()) for i,x in enumerate(
+        [ketone1, ketone2, sglt2a, sglt2b, electro])]
+    by_id = {x.candidate_id:x for x in [ketone1,ketone2,sglt2a,sglt2b,electro]}
+    selected, skipped = select_diverse_ranked(ranked, by_id, limit=5)
+    assert len(selected) == 3
+    assert {x.candidate_id for x in selected} == {"k1","s1","e1"}
+    assert len(skipped) == 2
+    assert all(x["reason"] == "SAME_CLINICAL_DISCOVERY_FAMILY_BUDGET_ONLY" for x in skipped)
+
+
+def test_different_doses_or_target_populations_are_not_suppressed_as_same_family():
+    a=topic("1",title="Drug Q 5 mg in adults",population="Adults with heart failure",
+            intervention="Drug Q 5 mg",comparator="Placebo",outcomes=["Death"])
+    b=topic("2",title="Drug Q 10 mg in adults",population="Adults with heart failure",
+            intervention="Drug Q 10 mg",comparator="Placebo",outcomes=["Death"])
+    c=topic("3",title="Drug Q 5 mg in children",population="Children with heart failure",
+            intervention="Drug Q 5 mg",comparator="Placebo",outcomes=["Death"])
+    assert not same_discovery_family(a,b)
+    assert not same_discovery_family(a,c)
