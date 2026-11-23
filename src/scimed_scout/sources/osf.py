@@ -200,19 +200,32 @@ class OSFRegistrationsSource:
                     rows = confirmation.get("data")
                     meta = confirmation.get("meta") or {}
                     links = confirmation.get("links") or {}
+                    # Live OSF APIv2 (verified against the public endpoint)
+                    # returns meta={"version": "..."} without meta.total.
+                    # A successful, empty data page with a recognized version
+                    # and no next link is a completed *scoped* title search.
+                    # Never assert that all possible registrations are absent.
+                    versioned_zero = (
+                        isinstance(meta, dict)
+                        and isinstance(meta.get("version"), str)
+                        and bool(meta["version"].strip())
+                        and meta.get("total") is None
+                    )
+                    counted_zero = isinstance(meta, dict) and meta.get("total") == 0
                     if (
                         isinstance(rows, list) and not rows
-                        and isinstance(meta, dict)
-                        and meta.get("total") == 0
+                        and (versioned_zero or counted_zero)
+                        and isinstance(links, dict)
                         and not links.get("next")
                     ):
                         return SearchResult(
                             self.name, original, SourceStatus.SEARCHED_NEGATIVE, [], 0,
                             message=(
-                                f"Both OSF Trove title/description and OSF v2 title search "
-                                f"report zero for scoped query '{focus}'. "
-                                "Other wording and unindexed registrations still require "
-                                "independent novelty review."
+                                f"OSF Trove metadata and independent OSF v2 title-filter "
+                                f"completed zero-result queries for scoped phrase '{focus}'. "
+                                "The result is not global novelty clearance: synonyms, "
+                                "other wording and unindexed registrations require "
+                                "independent verification."
                             ),
                         )
                     if isinstance(rows, list) and rows:
