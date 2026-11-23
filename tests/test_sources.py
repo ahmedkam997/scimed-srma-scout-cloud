@@ -83,3 +83,41 @@ def test_clinicaltrials_incomplete_page_keeps_records_with_partial_status():
 def test_clinicaltrials_invalid_empty_term_is_not_negative():
     result = ClinicalTrialsGovSource(http({"totalCount": 0, "studies": []})).search("( )")
     assert result.status == SourceStatus.PARTIAL
+
+
+def test_registry_plan_anchors_all_queries_to_intervention():
+    from scimed_scout.storage import CandidateRecord
+    from scimed_scout.verification.queries import build_search_plan
+    c = CandidateRecord(
+        candidate_id="C-REGISTRY", project_id="P1",
+        title="Inclisiran compared with high intensity statins in ASCVD",
+        specialty="Cardiology", question_type="EFFECTIVENESS",
+        population="Adults with ASCVD on statin therapy",
+        intervention_exposure_index_test="Inclisiran 300 mg biannually",
+        comparator_reference="High dose statin therapy",
+        outcomes=["LDL cholesterol at 12 months"],
+        search_terms=["inclisiran", "LDL cholesterol", "secondary prevention"],
+    )
+    plan = build_search_plan(c)
+    assert len(plan.registry_queries) == 4
+    assert all("inclisiran" in q.casefold() for q in plan.registry_queries)
+    assert all(q.casefold() != "ldl cholesterol" for q in plan.registry_queries)
+    assert all("inclisiran" in q.casefold() for q in plan.pipeline_queries)
+
+
+def test_registry_plan_removes_dose_parenthesis_without_losing_treatment():
+    from scimed_scout.storage import CandidateRecord
+    from scimed_scout.verification.queries import build_search_plan
+    c = CandidateRecord(
+        candidate_id="C-VITD", project_id="P1",
+        title="Vitamin D3 and marathon cardiac biomarkers",
+        specialty="Cardiology", question_type="EFFECTIVENESS",
+        population="Endurance runners completing a marathon",
+        intervention_exposure_index_test="Vitamin D3 supplementation (2000 IU daily for 4 weeks)",
+        comparator_reference="Placebo",
+        outcomes=["High sensitivity troponin post marathon"],
+    )
+    plan = build_search_plan(c)
+    assert len(plan.registry_queries) > 1
+    assert all("Vitamin D3 supplementation" in q for q in plan.registry_queries)
+    assert all("(" not in q and ")" not in q for q in plan.registry_queries)
