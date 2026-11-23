@@ -490,10 +490,21 @@ def registration_age_audit(candidate, record: dict, primary_records: list[dict])
     withdrawn = str(meta.get("withdrawn") or "").casefold() in ("true", "1", "yes")
     leads = _bibliographic_leads_after(candidate, primary_records, year)
     age = datetime.now(timezone.utc).year - year if year is not None else None
+    modified_year = _year_value(modified_at[:4]) if modified_at else None
+    recent_metadata_activity = (
+        modified_year is not None
+        and modified_year >= datetime.now(timezone.utc).year - 1
+    )
     if withdrawn:
         classification = "WITHDRAWN_REGISTRATION_VERIFY_PUBLICATION"
     elif age is None:
         classification = "UNKNOWN_DATE_MANUAL_REVIEW"
+    elif age >= 3 and recent_metadata_activity:
+        classification = "OLD_REGISTRATION_WITH_RECENT_METADATA_ACTIVITY"
+    elif age >= 3 and any(marker in status.casefold() for marker in (
+        "completed", "published", "finished",
+    )):
+        classification = "OLDER_COMPLETED_REGISTRATION_CHECK_PUBLISHED_REVIEW"
     elif age >= 3:
         classification = "OLDER_REGISTRATION_UPDATE_OPPORTUNITY_TO_VERIFY"
     else:
@@ -508,6 +519,7 @@ def registration_age_audit(candidate, record: dict, primary_records: list[dict])
         "age_years_approx": age,
         "registry_status": status,
         "withdrawn": withdrawn,
+        "recent_metadata_activity": recent_metadata_activity,
         "classification": classification,
         "post_registration_bibliographic_leads": leads,
         "publication_status": "NOT_VERIFIED",
