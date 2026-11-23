@@ -372,19 +372,20 @@ class ReviewDiscoveryOrchestrator:
                     )
                     for record in result.records:
                         record_type = evidence_type
+                        classification = ""
                         if evidence_type == "PUBLISHED_REVIEW":
                             kind = classify_review_search_hit(record)
+                            classification = kind
                             if kind != "CONFIRMED_REVIEW_CUE":
-                                # Keep every uncertain bibliographic citation
-                                # in a separate audit tier. A primary trial
-                                # is not a competing published systematic review.
-                                record_type = "UNCLASSIFIED_REVIEW_LEAD"
+                                # SQLite's existing OTHER evidence bucket
+                                # retains every ambiguous or primary citation.
+                                # Such records are not competing review counts.
+                                record_type = "OTHER"
                         elif evidence_type == "REGISTRATION":
                             kind = classify_registration_search_hit(record)
-                            if kind == "PRIMARY_STUDY_PREREGISTRATION":
-                                record_type = "PRIMARY_STUDY_REGISTRATION"
-                            elif kind == "UNCLASSIFIED_REGISTRATION":
-                                record_type = "UNCLASSIFIED_REGISTRATION"
+                            classification = kind
+                            if kind in ("PRIMARY_STUDY_PREREGISTRATION", "UNCLASSIFIED_REGISTRATION"):
+                                record_type = "OTHER"
                         elif evidence_type == "PRIMARY_STUDY":
                             if _obvious_review(record):
                                 continue
@@ -401,9 +402,15 @@ class ReviewDiscoveryOrchestrator:
                             record,
                             query,
                             purpose,
+                            classification=classification,
+                            originally_requested=evidence_type,
                         )
 
-    def _store_record(self, candidate_id: str, evidence_type: str, record: SearchRecord, query: str, purpose: str) -> None:
+    def _store_record(
+        self, candidate_id: str, evidence_type: str, record: SearchRecord,
+        query: str, purpose: str, *,
+        classification: str = "", originally_requested: str = "",
+    ) -> None:
         existing = next((item for item in self.ledger.list_external_evidence(candidate_id, evidence_type) if str(item.get("source_record_id") or "") == str(record.record_id)), None)
         previous = dict((existing or {}).get("payload") or {})
         previous_metadata = previous.get("metadata") if isinstance(previous.get("metadata"), dict) else {}
@@ -415,6 +422,8 @@ class ReviewDiscoveryOrchestrator:
             "doi": record.doi or previous.get("doi", ""),
             "query": query,
             "purpose": purpose,
+            "citation_classification": classification or previous.get("citation_classification", ""),
+            "originally_requested_evidence_type": originally_requested or evidence_type,
             "metadata": {**previous_metadata, **new_metadata},
         }
         self.ledger.upsert_external_evidence(candidate_id, evidence_type, record.record_id, source=record.source or str((existing or {}).get("source") or ""), title=record.title or str((existing or {}).get("title") or ""), payload=payload)
