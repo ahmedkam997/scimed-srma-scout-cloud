@@ -247,7 +247,7 @@ def test_prospero_focused_query_finishes_in_first_50_record_page():
     assert result.status == SourceStatus.SEARCHED_POSITIVE
     assert len(result.records) == 35
     assert len(queries) == 1
-    assert queries[0][queries[0].index("--page-size") + 1] == "40"
+    assert queries[0][queries[0].index("--page-size") + 1] == "50"
     assert queries[0][-4:] == ["--sort", "accession", "--order", "asc"]
 
 
