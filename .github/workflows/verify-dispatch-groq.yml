@@ -45,41 +45,45 @@ jobs:
             raise
           print("EDGE_DISPATCH_FAKE_JOB_TEST_PASS",flush=True)
           PY
-      - name: Diagnose Groq account access without disclosing key or response body
+      - name: Diagnose Groq block class by request headers
         run: |
           python - <<'PY'
-          import json,os,urllib.request,urllib.error
+          import os,json,urllib.request,urllib.error
           key=os.getenv("GROQ_API_KEY") or ""
           if not key:
-            print("GROQ_ACCOUNT_ACCESS NOT_CONFIGURED",flush=True)
+            print("GROQ_KEY_MISSING",flush=True)
             raise SystemExit(0)
-          req=urllib.request.Request(
-            "https://api.groq.com/openai/v1/models",
-            headers={"Authorization":"Bearer "+key,"Accept":"application/json"})
-          try:
-            with urllib.request.urlopen(req,timeout=18) as response:
-              obj=json.load(response)
-              models=obj.get("data",[])
-              available={m.get("id") for m in models if isinstance(m,dict)}
-              print("GROQ_MODELS_HTTP",response.status,"MODEL_COUNT",len(models),
-                "GPT_OSS_20B_ENABLED","openai/gpt-oss-20b" in available,
-                "LLAMA_8B_ENABLED","llama-3.1-8b-instant" in available,flush=True)
-          except urllib.error.HTTPError as err:
-            raw=err.read(1200)
+          ua_items=[
+            ("scimed","SciMed-Review-Scout/1.0"),
+            ("browser","Mozilla/5.0 (compatible; SciMedResearch/1.0)"),
+            ("curl","curl/8.6.0"),
+          ]
+          for label,ua in ua_items:
+            request=urllib.request.Request(
+              "https://api.groq.com/openai/v1/models",
+              headers={"Authorization":"Bearer "+key,
+                       "User-Agent":ua,
+                       "Accept":"application/json"})
             try:
-              parsed=json.loads(raw)
-              error=parsed.get("error") or {}
-              msg=str(error.get("message") or "").lower()
-              code=str(error.get("code") or error.get("type") or "").lower()
-            except Exception:
-              msg="";code=""
-            reason="UNKNOWN"
-            if any(t in msg+" "+code for t in ("region","country","location","geograph")): reason="REGION_RESTRICTED"
-            elif any(t in msg+" "+code for t in ("organi","workspace","permission","project","forbidden")):reason="ACCOUNT_OR_PROJECT_RESTRICTED"
-            elif any(t in msg+" "+code for t in ("invalid api key","unauthoriz","invalid_key")): reason="INVALID_KEY"
-            elif any(t in msg+" "+code for t in ("rate limit","quota")): reason="QUOTA"
-            print("GROQ_MODELS_HTTP",err.code,"CLASSIFICATION",reason,
-                  "ERROR_TYPE",code[:40] if code.isascii() and all(x.isalnum() or x in "_-" for x in code) else "unspecified",flush=True)
-          except Exception as exc:
-            print("GROQ_MODELS_EXCEPTION",type(exc).__name__,flush=True)
+              with urllib.request.urlopen(request,timeout=15) as resp:
+                data=json.load(resp)
+                print("GROQ_UA",label,"HTTP",resp.status,
+                      "MODELS",len(data.get("data",[])),flush=True)
+            except urllib.error.HTTPError as exc:
+              content_type=str(exc.headers.get("content-type") or "")
+              data=exc.read(1500)
+              text=data.decode("utf8","ignore").lower()
+              signals={
+                "HTML": ("<!doctype html" in text or "<html" in text),
+                "CLOUDFLARE": ("cloudflare" in text or "error 1010" in text),
+                "REGION": any(w in text for w in ("country","region","location","geograph")),
+                "PERMISSION": any(w in text for w in ("permission","organization","project","forbidden")),
+                "NOT_JSON": ("json" not in content_type),
+              }
+              print("GROQ_UA",label,"HTTP",exc.code,
+                    "CONTENT_TYPE",content_type[:35],
+                    "BLOCK_SIGNALS",",".join(k for k,v in signals.items() if v) or "NONE",
+                    flush=True)
+            except Exception as exc:
+              print("GROQ_UA",label,"EXCEPTION",type(exc).__name__,flush=True)
           PY
