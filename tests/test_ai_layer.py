@@ -187,3 +187,88 @@ def test_openai_provider_reads_text_part_array():
         }).encode("utf-8"),
     )
     assert provider.complete(AIRequest(system="s", prompt="p")).text == "valid text"
+
+
+class SequenceProvider:
+    name = "test-sequence"
+    model = "free-mock"
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.requests = []
+
+    def complete(self, request):
+        from scimed_scout.ai.models import AIResponse
+        self.requests.append(request)
+        text = self.replies[min(len(self.requests)-1, len(self.replies)-1)]
+        if isinstance(text, Exception):
+            raise text
+        return AIResponse(text, self.name, self.model, {})
+
+
+def _proposal_named(name):
+    item = candidate_payload()["candidates"][0]
+    return {**item, "title": name, "review_question": f"Does {name} change management?"}
+
+
+def test_candidate_generation_salvages_complete_objects_then_retries_short_json(tmp_path):
+    complete = json.dumps(_proposal_named("Fully formed topic A"))
+    bad = '{"candidates":[' + complete + ',{"title":"unfinished string'
+    second = json.dumps({"candidates": [
+        _proposal_named("Fully formed topic B"), _proposal_named("Fully formed topic C"),
+    ]})
+    provider = SequenceProvider([bad, second])
+    with SQLiteLedger(tmp_path / "recover.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Cardiology"))
+        records = CandidateDiscoveryService(provider, ledger).generate_and_store(
+            project_id="P1", specialty="Cardiology", count=3
+        )
+        assert len(records) == 3
+        assert len(provider.requests) == 2
+        assert [r.title for r in records] == [
+            "Fully formed topic A", "Fully formed topic B", "Fully formed topic C"
+        ]
+        assert all("unfinished" not in record.title for record in records)
+
+
+def test_discovery_large_requested_count_uses_small_bounded_batches(tmp_path):
+    class BatchResponder:
+        name = "batch-test"
+        model = "free-mock"
+
+        def __init__(self):
+            self.counts = []
+
+        def complete(self, request):
+            from scimed_scout.ai.models import AIResponse
+            import re
+            count = int(re.search(r"Generate (\d+) candidate", request.prompt).group(1))
+            assert count <= 4
+            self.counts.append(count)
+            start = sum(self.counts) - count
+            payload = {"candidates": [
+                _proposal_named(f"Distinct topic {start + j}") for j in range(count)
+            ]}
+            return AIResponse(json.dumps(payload), self.name, self.model, {})
+
+    provider = BatchResponder()
+    with SQLiteLedger(tmp_path / "batch.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Cardiology"))
+        found = CandidateDiscoveryService(provider, ledger).generate_and_store(
+            project_id="P1", specialty="Cardiology", count=12
+        )
+        assert len(found) == 12
+        assert provider.counts == [4, 4, 4]
+
+
+def test_truncated_json_does_not_invent_a_partial_candidate(tmp_path):
+    provider = SequenceProvider([
+        '{"candidates":[{"title":"Cut off before remaining required fields',
+    ])
+    with SQLiteLedger(tmp_path / "invalid.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Cardiology"))
+        with pytest.raises(RuntimeError, match="no complete candidate JSON"):
+            CandidateDiscoveryService(provider, ledger).generate_and_store(
+                project_id="P1", specialty="Cardiology", count=2
+            )
+        assert len(provider.requests) <= 4
