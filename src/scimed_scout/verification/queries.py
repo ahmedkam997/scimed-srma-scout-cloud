@@ -58,18 +58,24 @@ def build_search_plan(candidate: CandidateRecord, *, max_queries: int = 4) -> Se
         _join(concept, "meta-analysis"),
     ])[:max_queries]
 
-    # Registration registries need multi-concept *focused* queries. A
-    # stand-alone cue such as "LDL cholesterol" or "vitamin D3" retrieves
-    # hundreds of protocols and exhausts free pagination without assessing
-    # the proposed PICO. Keep the intervention anchor on every search.
-    # Do not equate these exploratory queries with an exhaustive search.
-    registry_anchor = _registry_concept(concept)
+    # Official PROSPERO search accepts quoted phrases combined using AND.
+    # Long uncontrolled text such as intervention + dose + placebo returned
+    # hundreds of unrelated hits and caused incomplete page traversal.
+    # Keep each registry search tied to a clinical intervention AND a disease
+    # or outcome concept. These are exploratory; not a validated search.
+    anchor = _registry_anchor(concept)
+    disease = _registry_focus(subject)
+    comparator_focus = _registry_focus(comparator)
+    outcome_focus = _registry_focus(outcome)
     registry = _dedupe([
-        _compact(_join(registry_anchor, _registry_concept(subject)), 105),
-        _compact(_join(registry_anchor, _registry_concept(outcome)), 105),
-        _compact(_join(registry_anchor, _registry_concept(comparator)), 105),
-        _compact(_join(registry_anchor, _registry_concept(title)), 105),
-    ])[:max_queries] or primary
+        _and_query(anchor, disease[:2]),
+        _and_query(anchor, disease[2:4]) if len(disease) > 2 else "",
+        _and_query(anchor, comparator_focus[:2]),
+        _and_query(anchor, outcome_focus[:2]),
+    ])[:max_queries]
+    if not registry:
+        registry = [_registry_phrase(anchor)] if anchor else list(primary[:1])
+    registry_anchor = _registry_concept(concept)
 
     pipeline = _dedupe([
         _compact(_join(registry_anchor, _registry_concept(subject)), 105),
@@ -126,3 +132,47 @@ def _registry_concept(value: str) -> str:
     text = text.replace("‑", " ").replace("–", " ").replace("—", " ")
     text = re.sub(r"[^\w\s-]", " ", text, flags=re.UNICODE)
     return " ".join(text.split()[:8])
+
+
+_REGISTRY_NOISE = {
+    "adult", "adults", "patients", "patient", "aged", "years",
+    "year", "using", "receiving", "undergoing", "health",
+    "intervention", "interventions", "therapy", "therapies",
+    "treatment", "treatments", "with", "without", "during", "in",
+    "of", "for", "and", "the", "study", "research",
+    "ingestion", "administration", "supplementation", "supplement",
+    "dose", "dosage", "volume", "weight", "body", "per",
+    "matched", "placebo", "sham", "control", "standard", "care",
+    "comparator", "followup", "follow", "time", "primary",
+    "efficacy", "safety", "effects", "effect", "acute",
+    "no", "or", "vs", "versus", "outcomes",
+}
+
+
+def _registry_focus(value: str) -> list[str]:
+    """Clinical terms, without dose/time and generic Boolean noise."""
+    raw = re.sub(r"\([^)]*\)", " ", str(value or ""))
+    raw = raw.replace("‑", "-").replace("–", "-").replace("—", "-")
+    tokens = re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", raw.casefold())
+    return list(dict.fromkeys(
+        token for token in tokens
+        if token not in _REGISTRY_NOISE and len(token) >= 3
+        and not token.isdigit()
+    ))
+
+
+def _registry_anchor(intervention: str) -> list[str]:
+    terms = _registry_focus(intervention)
+    return terms[:3]
+
+
+def _registry_phrase(words: list[str]) -> str:
+    if not words:
+        return ""
+    return '"' + " ".join(words[:3]).replace('"', "") + '"'
+
+
+def _and_query(anchor: list[str], supplementary: list[str]) -> str:
+    if not anchor or not supplementary:
+        return ""
+    return _registry_phrase(anchor) + " AND " + _registry_phrase(supplementary)
