@@ -169,3 +169,24 @@ def test_review_search_places_unrelated_syntheses_in_audit_not_competitor_count(
         assert [x["title"] for x in other] == [unrelated.title]
         assert "NO_INTERVENTION_MENTION" in other[0]["payload"]["citation_classification"]
         assert other[0]["payload"]["originally_requested_evidence_type"] == "PUBLISHED_REVIEW"
+
+
+def test_peer_review_letters_and_author_responses_are_not_competing_systematic_reviews():
+    noisy = [
+        'Peer Review #2 of "Systematic review of ketone monoester and exercise"',
+        'Review for "Meta-analysis of SGLT2 inhibitors for heart failure"',
+        'Decision letter for "Systematic review of electroacupuncture in hypertension"',
+        'Author response for "A systematic review of SGLT2 inhibitors"',
+        "Author's response to systematic review of surgical interventions",
+        'Editorial decision on "Systematic review of antithrombotic treatment"',
+    ]
+    for title in noisy:
+        assert classify_review_search_hit(record(title, source="Crossref")) == "PRIMARY_OR_NONREVIEW"
+    assert classify_review_search_hit(record(
+        "Systematic review of SGLT2 inhibitors in heart failure",
+        source="Crossref", type="peer-review",
+    )) == "PRIMARY_OR_NONREVIEW"
+    assert classify_review_search_hit(record(
+        "Systematic review of SGLT2 inhibitors in heart failure",
+        source="PubMed", publicationTypes=["Systematic Review"],
+    )) == "CONFIRMED_REVIEW_CUE"
