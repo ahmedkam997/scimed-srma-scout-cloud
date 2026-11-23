@@ -272,3 +272,42 @@ def test_truncated_json_does_not_invent_a_partial_candidate(tmp_path):
                 project_id="P1", specialty="Cardiology", count=2
             )
         assert len(provider.requests) <= 4
+
+
+def test_discovery_does_not_research_a_recently_checked_identical_pico(tmp_path):
+    old = {
+        **candidate_payload()["candidates"][0],
+        "specialty": "Radiology",
+        "status": "PROVISIONAL_BACKUP",
+        "checked_at": "2026-11-22T12:00:00+00:00",
+        "recheck_at": "2026-11-29T12:00:00+00:00",
+    }
+    provider = StaticAIProvider(json.dumps(candidate_payload()))
+    skipped = []
+    with SQLiteLedger(tmp_path / "recent.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Radiology"))
+        found = CandidateDiscoveryService(provider, ledger).generate_and_store(
+            project_id="P1", specialty="Radiology", count=1,
+            recent_topics=[old], skipped_recent=skipped,
+        )
+        assert found == []
+        assert len(skipped) == 1
+        assert skipped[0]["reason"] == "RECENTLY_CHECKED_PICO"
+
+
+def test_discovery_preserves_different_clinical_comparator(tmp_path):
+    old = {
+        **candidate_payload()["candidates"][0],
+        "specialty": "Radiology",
+        "status": "REJECTED",
+        "recheck_at": "2026-12-22T12:00:00+00:00",
+    }
+    changed = candidate_payload({"comparator_reference": "Completely different reference standard"})
+    provider = StaticAIProvider(json.dumps(changed))
+    with SQLiteLedger(tmp_path / "different.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Radiology"))
+        found = CandidateDiscoveryService(provider, ledger).generate_and_store(
+            project_id="P1", specialty="Radiology", count=1,
+            recent_topics=[old],
+        )
+        assert len(found) == 1
