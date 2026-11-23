@@ -134,12 +134,58 @@ class ProsperoCliSource:
                 break
 
         complete = (not count_changed and total is not None and len(all_records) >= total)
+        supplemental = 0
+        if not complete and pages_fetched and total and (
+            total > page_size * max_pages or count_changed
+        ):
+            # The index is too broad or changed while paginating. A bounded
+            # title-only search identifies further directly relevant
+            # protocols, but must never turn an incomplete ALL-field search
+            # into a conclusive negative or scientific novelty clearance.
+            prefix = ["node", node_entry] if node_entry and os.path.isfile(node_entry) else [self.executable]
+            command = [
+                *prefix, "search", query, "--field", "TI",
+                "--page", "1", "--page-size", str(page_size),
+                "--sort", "accession", "--order", "asc",
+            ]
+            try:
+                reply = self.runner(command) if self.runner else self._run(command)
+                if reply.returncode == 0:
+                    envelope = json.loads(reply.stdout)
+                    data = envelope.get("data", {}) if isinstance(envelope, dict) else {}
+                    if envelope.get("ok") is True and isinstance(data, dict):
+                        hits = data.get("hits")
+                        note = str(data.get("raw_note") or "").casefold()
+                        if isinstance(hits, list) and not any(
+                            mark in note for mark in ("error", "failed", "timeout", "unavailable")
+                        ):
+                            for hit in hits:
+                                if not isinstance(hit, dict):
+                                    continue
+                                accession = str(hit.get("accession_number") or "").strip()
+                                rid = accession or str(hit.get("record_id") or "").strip()
+                                if not rid or rid in all_records:
+                                    continue
+                                year = hit.get("year_first_published")
+                                if isinstance(year, str) and year.isdigit():
+                                    year = int(year)
+                                all_records[rid] = SearchRecord(
+                                    source=self.name, record_id=rid,
+                                    title=str(hit.get("title") or ""),
+                                    url=(f"https://www.crd.york.ac.uk/PROSPERO/view/{accession}" if accession else ""),
+                                    year=year if isinstance(year, int) else None,
+                                    metadata={**hit, "search_scope": "TITLE_ONLY_SUPPLEMENT"},
+                                )
+                                supplemental += 1
+            except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+                pass
         status = SourceStatus.SEARCHED_POSITIVE if complete else SourceStatus.PARTIAL
         return SearchResult(
             self.name, query, status, list(all_records.values()), total,
             message=(
                 f"PROSPERO pages checked={pages_fetched}; retrieved={len(all_records)}; "
                 f"total={total}; count_changed={count_changed}; "
+                f"title_only_supplemental_records={supplemental}; "
                 f"{'complete response' if complete else 'additional matches not retrieved or index changed; manual verification required'}"
             ),
         )
