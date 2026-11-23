@@ -6,6 +6,7 @@ or prove that absent title matches mean no eligible evidence exists.
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -115,10 +116,14 @@ def evaluate_preflight(candidate: CandidateRecord, result: Any) -> dict[str, Any
 
 
 class FocusedEvidencePreflight:
-    def __init__(self, source: Any, *, max_candidates: int = 24, per_query: int = 12):
+    def __init__(
+        self, source: Any, *, max_candidates: int = 24,
+        per_query: int = 12, pause_seconds: float = 0.7,
+    ):
         self.source = source
         self.max_candidates = max(0, min(50, int(max_candidates)))
         self.per_query = max(1, min(20, int(per_query)))
+        self.pause_seconds = max(0.0, min(2.0, float(pause_seconds)))
 
     def annotate(
         self,
@@ -136,6 +141,11 @@ class FocusedEvidencePreflight:
             query = search_query(candidate)
             if not query:
                 continue
+            # A PubMed preflight calls eSearch and eSummary, often two
+            # network requests. Space candidate requests to respect NCBI's
+            # unauthenticated request-rate budget without introducing paid APIs.
+            if checked and self.pause_seconds:
+                time.sleep(self.pause_seconds)
             try:
                 result = self.source.search(query, limit=self.per_query)
                 signal = evaluate_preflight(candidate, result)
