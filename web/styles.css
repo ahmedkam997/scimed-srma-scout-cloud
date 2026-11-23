@@ -21,3 +21,14 @@
 .job-failure-hint{font-size:12px;line-height:1.5;background:#fff8eb;border:1px solid #fed7aa;color:#7c2d12;border-radius:9px;padding:10px;margin:8px 0}
 .worker-help button[data-wake-job]{width:100%;margin:8px 0;border-color:#abc4e9;color:#153c70}
 .worker-help button[data-wake-job]:disabled{opacity:.55}
+
+.topic-transfer{margin:12px 0 4px;border-top:1px solid #d0d5dd;padding:11px 0 0;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
+.topic-transfer>summary{font-size:12px;color:#175cd3;font-weight:800;cursor:pointer;padding:5px 0}
+.topic-transfer p{font-size:12px;line-height:1.55;margin:8px 0}
+.topic-transfer p b{display:inline;font-size:12px;margin:0;color:#344054}
+.topic-transfer details{border:1px solid #eaecf0;border-radius:8px;padding:8px;margin-top:8px;background:#fff}
+.topic-transfer details>summary{cursor:pointer;font-weight:700;color:#344054}
+.topic-transfer .job-actions{margin:10px 0 13px}
+.topic-transfer .job-actions button{flex:1 1 155px;white-space:normal;line-height:1.35}
+.topic-transfer .research-audit-row{border-bottom:1px solid #f2f4f7;padding:7px 0;overflow-wrap:anywhere}
+.topic-transfer .score-data{margin-top:11px}
