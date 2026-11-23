@@ -60,6 +60,12 @@ def classify_review_search_hit(record: SearchRecord) -> str:
     title = str(record.title or "").strip()
     meta = record.metadata if isinstance(record.metadata, dict) else {}
     types = _types(record)
+    # Crossref includes peer-review reports whose titles quote the
+    # reviewed manuscript (often containing 'systematic review'). They
+    # are not independent systematic review publications.
+    if re.match(r"^\\s*(?:review\\s+for|peer[ -]review\\s+report|"
+                r"reviewer\\s+report)\\b", title, re.IGNORECASE):
+        return "PRIMARY_OR_NONREVIEW"
     if any("systematic review" in t or "meta-analysis" in t for t in types):
         return "CONFIRMED_REVIEW_CUE"
     if _REVIEW_TITLE.search(title):
@@ -91,3 +97,54 @@ def classify_registration_search_hit(record: SearchRecord) -> str:
     ):
         return "PRIMARY_STUDY_PREREGISTRATION"
     return "UNCLASSIFIED_REGISTRATION"
+
+
+_PICO_INTERVENTION_NOISE = {
+    "treatment", "treatments", "therapy", "therapies", "intervention",
+    "interventions", "efficacy", "effect", "effects", "safety", "use",
+    "using", "administration", "ingestion", "oral", "intravenous",
+    "supplementation", "supplement", "supplements", "extract",
+    "standardized", "study", "clinical", "dose", "doses", "mg",
+    "per", "kg", "before", "after", "during", "compared",
+    "versus", "against", "versus", "with", "without", "and",
+    "for", "the", "adult", "adults", "patient", "patients",
+    "index", "test", "testing", "evaluation", "diagnosis",
+    "monitoring", "assay", "agent", "medicine",
+}
+
+
+def _normalize_token(token: str) -> str:
+    token = token.casefold()
+    return token[:-1] if len(token) >= 6 and token.endswith("s") else token
+
+
+def review_intervention_citation_signal(candidate: Any, record: SearchRecord) -> str:
+    """Conservative metadata-only PICO screen for broad review-search hits.
+
+    No signal = move to manual bibliography tier, NOT scientific exclusion.
+    Abstract and title mentions are source-linked signals only, and cannot
+    establish clinical review overlap without the actual review methods.
+    """
+    intervention = str(getattr(candidate, "intervention_exposure_index_test", "") or "")
+    intervention_terms = {
+        _normalize_token(t)
+        for t in re.findall(r"[a-z0-9]+", intervention.casefold())
+        if t not in _PICO_INTERVENTION_NOISE and len(t) >= 3
+    }
+    if not intervention_terms:
+        return "INTERVENTION_NOT_SPECIFIC_ENOUGH_TO_TRIAGE"
+    metadata = record.metadata if isinstance(record.metadata, dict) else {}
+    parts = [
+        str(record.title or ""), str(metadata.get("abstract") or ""),
+        str(metadata.get("abstractText") or ""),
+        str(metadata.get("summary") or ""),
+        str(metadata.get("description") or ""),
+    ]
+    citation = " ".join(parts).casefold()
+    citation_terms = {
+        _normalize_token(t) for t in re.findall(r"[a-z0-9]+", citation)
+        if len(t) >= 3
+    }
+    if intervention_terms & citation_terms:
+        return "INTERVENTION_IN_REVIEW_CITATION"
+    return "NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK"
