@@ -148,11 +148,29 @@ class OSFRegistrationsSource:
                 if not rid:
                     continue
                 description = _literal(metadata.get("description"))[:2400]
+                # Trove uses JSON-LD. These fields describe registration
+                # metadata, not the last date the review searched literature.
+                registered = _literal(
+                    metadata.get("dateRegistered") or metadata.get("dateCreated")
+                    or metadata.get("datePublished")
+                ).strip()
+                modified = _literal(metadata.get("dateModified")).strip()
+                status = _literal(metadata.get("status")).strip()
+                withdrawn = _literal(metadata.get("withdrawn")).strip()
+                year = int(registered[:4]) if re.match(r"^(?:19|20)\\d{2}", registered) else None
                 records[rid] = SearchRecord(
                     self.name, rid, title=title,
                     url=f"https://osf.io/{rid}/" if candidates else "",
-                    metadata={"abstract": description, "trove_card_id": str(card.get("id") or ""),
-                              "registry_search": "OSF Trove title+description"},
+                    year=year,
+                    metadata={
+                        "abstract": description,
+                        "trove_card_id": str(card.get("id") or ""),
+                        "registry_search": "OSF Trove title+description",
+                        "date_registered": registered,
+                        "date_modified": modified,
+                        "registry_status": status,
+                        "withdrawn": withdrawn,
+                    },
                 )
             pages += 1
             next_link = (data.get("links") or {}).get("next")
@@ -190,11 +208,20 @@ class OSFRegistrationsSource:
             attrs = item.get("attributes") or {}
             if not rid:
                 continue
+            registered = str(attrs.get("date_registered") or "")
+            year = int(registered[:4]) if re.match(r"^(?:19|20)\\d{2}", registered) else None
             records.append(SearchRecord(
                 self.name, rid, title=str(attrs.get("title") or ""),
                 url=str((item.get("links") or {}).get("html") or f"https://osf.io/{rid}/"),
-                metadata={"abstract": str(attrs.get("description") or "")[:2000],
-                          "registry_search": "OSF v2 title-only fallback"},
+                year=year,
+                metadata={
+                    "abstract": str(attrs.get("description") or "")[:2000],
+                    "registry_search": "OSF v2 title-only fallback",
+                    "date_registered": registered,
+                    "date_modified": str(attrs.get("date_modified") or ""),
+                    "registry_status": str(attrs.get("reviews_state") or ""),
+                    "withdrawn": bool(attrs.get("withdrawn", False)),
+                },
             ))
         next_link = (data.get("links") or {}).get("next")
         return SearchResult(
