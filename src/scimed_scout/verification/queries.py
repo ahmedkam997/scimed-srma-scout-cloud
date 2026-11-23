@@ -124,5 +124,5 @@ def _registry_concept(value: str) -> str:
     """
     text = re.sub(r"\\([^)]*\\d[^)]*\\)", " ", str(value or ""))
     text = text.replace("‑", " ").replace("–", " ").replace("—", " ")
-    text = re.sub(r"[^\\w\\s-]", " ", text, flags=re.UNICODE)
+    text = re.sub(r"[^\w\s-]", " ", text, flags=re.UNICODE)
     return " ".join(text.split()[:8])
