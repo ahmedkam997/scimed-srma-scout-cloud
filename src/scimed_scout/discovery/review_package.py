@@ -166,6 +166,10 @@ def build_discovery_review_package(
                 "Title/PICO keyword ranking only; no full-text eligibility, "
                 "trial-family independence, or effect-data verification."
             ),
+            "bibliographic_pico_fit": _pico_fit_signals(
+                candidate,
+                ledger.list_external_evidence(verified.candidate_id, "PRIMARY_STUDY"),
+            ),
             "registration_examples": [
                 {
                     "title": str(record.get("title") or ""),
@@ -270,3 +274,42 @@ def _relevant_primary_examples(candidate: Any, records: list[dict], *, limit: in
 
     scored.sort(key=lambda x: (-x[0], x[1]))
     return [record for _, _, record in scored[:max(0, limit)]]
+
+
+
+def _pico_fit_signals(candidate: Any, records: list[dict]) -> dict[str, Any]:
+    """Bibliographic title indicators; no study-eligibility assumptions."""
+    intervention = _tokens(getattr(candidate, "intervention_exposure_index_test", ""))
+    comparator = _tokens(getattr(candidate, "comparator_reference", ""))
+    population = _tokens(getattr(candidate, "population", ""))
+    intervention_mentions = 0
+    direct_comparison_signals = 0
+    clinical_context_signals = 0
+    for record in records:
+        words = _tokens(str(record.get("title") or ""))
+        if not words or not intervention:
+            continue
+        i_fraction = len(words & intervention) / len(intervention)
+        c_fraction = len(words & comparator) / max(1, len(comparator))
+        p_fraction = len(words & population) / max(1, len(population))
+        if i_fraction >= 0.5:
+            intervention_mentions += 1
+            if c_fraction >= 0.4:
+                direct_comparison_signals += 1
+            if p_fraction >= 0.20:
+                clinical_context_signals += 1
+    return {
+        "basis": "Bibliographic title tokens only; not eligibility-screened study counts",
+        "total_unscreened_records": len(records),
+        "intervention_title_matches": intervention_mentions,
+        "intervention_comparator_title_matches": direct_comparison_signals,
+        "intervention_population_title_matches": clinical_context_signals,
+        "direct_head_to_head_trials_confirmed": False,
+        "independent_studies_confirmed": False,
+        "warning": (
+            "No title-level comparator signal; verify whether direct-comparison studies exist. "
+            "An absent term in a title does not exclude an eligible study."
+            if not direct_comparison_signals else
+            "Title matches are hypotheses for manual abstract and full-text checks."
+        ),
+    }
