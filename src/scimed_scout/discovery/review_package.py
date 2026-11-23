@@ -148,6 +148,8 @@ def build_discovery_review_package(
     ordered_unresolved = sorted(
         unresolved,
         key=lambda item: (
+            fit_by_id.get(item.candidate_id, {}).get("abstract_or_title_full_pico_signals", 0),
+            fit_by_id.get(item.candidate_id, {}).get("intervention_outcome_text_matches", 0),
             fit_by_id.get(item.candidate_id, {}).get("intervention_comparator_title_matches", 0),
             fit_by_id.get(item.candidate_id, {}).get("intervention_population_title_matches", 0),
             fit_by_id.get(item.candidate_id, {}).get("intervention_title_matches", 0),
@@ -451,7 +453,7 @@ def _source_record_for_review(record: dict[str, Any]) -> dict[str, Any]:
         assessment = {}
     text = next((
         str(value) for value in (
-            metadata.get("abstract"), metadata.get("summary"),
+            metadata.get("abstractText"), metadata.get("abstract"), metadata.get("summary"),
             metadata.get("description"), payload.get("abstract"),
         )
         if isinstance(value, str) and value.strip()
@@ -545,39 +547,86 @@ def _relevant_primary_examples(candidate: Any, records: list[dict], *, limit: in
 
 
 def _pico_fit_signals(candidate: Any, records: list[dict]) -> dict[str, Any]:
-    """Bibliographic title indicators; no study-eligibility assumptions."""
+    """Rank unscreened bibliographic leads by reproducible title/abstract clues.
+
+    A title/abstract mention cannot establish independent RCTs, arm-level
+    eligibility or extractable data. Duplicate indexed citations count once.
+    """
     intervention = _tokens(getattr(candidate, "intervention_exposure_index_test", ""))
     comparator = _tokens(getattr(candidate, "comparator_reference", ""))
     population = _tokens(getattr(candidate, "population", ""))
+    outcomes = _tokens(" ".join(getattr(candidate, "outcomes", []) or []))
     intervention_mentions = 0
     direct_comparison_signals = 0
     clinical_context_signals = 0
+    outcome_text_signals = 0
+    full_pico_signals = 0
+    matched_examples: list[dict[str, str]] = []
+    seen_titles: set[str] = set()
     for record in records:
-        words = _tokens(str(record.get("title") or ""))
+        title = str(record.get("title") or "")
+        key = " ".join(re.findall(r"[a-z0-9]+", title.casefold()))
+        if not key or key in seen_titles:
+            continue
+        seen_titles.add(key)
+        words = _tokens(title)
+        payload = record.get("payload") or {}
+        meta = payload.get("metadata") or {}
+        if not isinstance(meta, dict):
+            meta = {}
+        raw_abstract = str(
+            meta.get("abstractText") or meta.get("abstract")
+            or meta.get("summary") or ""
+        )
+        body = words | _tokens(raw_abstract)
         if not words or not intervention:
             continue
         i_fraction = len(words & intervention) / len(intervention)
+        i_body = len(body & intervention) / len(intervention)
         c_fraction = len(words & comparator) / max(1, len(comparator))
         p_fraction = len(words & population) / max(1, len(population))
+        c_body = len(body & comparator) / max(1, len(comparator))
+        p_body = len(body & population) / max(1, len(population))
+        o_body = len(body & outcomes) / max(1, len(outcomes))
         if i_fraction >= 0.5:
             intervention_mentions += 1
             if c_fraction >= 0.4:
                 direct_comparison_signals += 1
             if p_fraction >= 0.20:
                 clinical_context_signals += 1
+        if i_body >= 0.5 and o_body >= 0.35 and outcomes:
+            outcome_text_signals += 1
+        if (
+            i_body >= 0.5 and p_body >= 0.2
+            and (c_body >= 0.3 or o_body >= 0.35)
+        ):
+            full_pico_signals += 1
+            if len(matched_examples) < 5:
+                matched_examples.append({
+                    "title": title[:230],
+                    "url": str(payload.get("url") or ""),
+                    "doi": str(payload.get("doi") or ""),
+                    "eligibility": "NOT_CHECKED",
+                })
     return {
-        "basis": "Bibliographic title tokens only; not eligibility-screened study counts",
+        "basis": (
+            "Deduplicated bibliographic title/abstract PICO signals only; "
+            "not study eligibility, independent populations or usable outcomes"
+        ),
         "total_unscreened_records": len(records),
+        "distinct_bibliographic_titles_screened": len(seen_titles),
         "intervention_title_matches": intervention_mentions,
         "intervention_comparator_title_matches": direct_comparison_signals,
         "intervention_population_title_matches": clinical_context_signals,
+        "intervention_outcome_text_matches": outcome_text_signals,
+        "abstract_or_title_full_pico_signals": full_pico_signals,
+        "source_linked_full_pico_clues": matched_examples,
         "direct_head_to_head_trials_confirmed": False,
         "independent_studies_confirmed": False,
         "warning": (
-            "No title-level comparator signal; verify whether direct-comparison studies exist. "
-            "An absent term in a title does not exclude an eligible study."
-            if not direct_comparison_signals else
-            "Title matches are hypotheses for manual abstract and full-text checks."
+            "Bibliographic matches do not establish eligible trial designs, "
+            "sample independence, comparator arms or extractable outcomes. "
+            "Full-text and trial-family screening remain mandatory."
         ),
     }
 
@@ -618,7 +667,9 @@ def _primary_screening_queue(
         if not dedup or dedup in seen:
             continue
         seen.add(dedup)
-        abstract = str(meta.get("abstract") or meta.get("summary") or "")[:900]
+        abstract = str(
+            meta.get("abstractText") or meta.get("abstract") or meta.get("summary") or ""
+        )[:900]
         title_tokens = _tokens(title)
         body_tokens = title_tokens | _tokens(abstract)
         if intervention:
