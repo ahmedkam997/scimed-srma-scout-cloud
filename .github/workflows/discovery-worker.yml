@@ -1,5 +1,5 @@
 name: discovery-worker
-# Controlled single Gemini free API pilot launched from existing SciMed queue with fallbacks.
+# Controlled evidence-first literature-gap regression pilot from SciMed queue.
 
 on:
   push:
