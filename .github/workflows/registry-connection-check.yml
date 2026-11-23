@@ -1,0 +1,56 @@
+name: registry-connection-check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/registry-connection-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned read-only PROSPERO CLI
+        run: npm install -g github:erichuang777777/PROSPERO-MCP#v0.2.2
+      - name: PROSPERO diagnostic (public metadata only)
+        env:
+          PROSPERO_NETWORK_MODE: online
+        run: |
+          set +e
+          echo "CLI path: $(command -v prospero || echo MISSING)"
+          timeout 28s prospero health > /tmp/prospero_health.out 2>&1
+          echo "Health exit: $?"
+          head -c 850 /tmp/prospero_health.out; echo
+          timeout 35s prospero search "heart failure" --page-size 3 > /tmp/prospero_search.out 2>&1
+          echo "Search exit: $?"
+          head -c 1400 /tmp/prospero_search.out; echo
+      - name: Compare OSF title API and search discovery public endpoints
+        run: |
+          python - <<'PY'
+          import json,urllib.parse,urllib.request,urllib.error
+          checks=[
+            ("registrations-title","https://api.osf.io/v2/registrations/",{"filter[title]":"heart failure","page[size]":3}),
+            ("registrations-broad","https://api.osf.io/v2/registrations/",{"filter[title]":"heart","page[size]":3}),
+            ("search","https://api.osf.io/v2/search/",{"filter[q]":"heart failure","page[size]":3}),
+            ("search-registrations","https://api.osf.io/v2/search/registrations/",{"filter[q]":"heart failure","page[size]":3}),
+          ]
+          for name,base,params in checks:
+            url=base+"?"+urllib.parse.urlencode(params)
+            try:
+              request=urllib.request.Request(url,headers={"User-Agent":"SciMed-Reg-Checker/1.0","Accept":"application/json"})
+              with urllib.request.urlopen(request,timeout=15) as res:
+                raw=res.read(150000)
+                data=json.loads(raw)
+                rows=data.get("data",[])
+                print(name,"HTTP",res.status,"count",len(rows),"next",bool(data.get("links",{}).get("next")),"total",data.get("links",{}).get("meta",{}).get("total"),"first",[(r.get("type"),r.get("attributes",{}).get("title","")[:65]) for r in rows[:2]])
+            except Exception as exc:
+              print(name, "ERROR",type(exc).__name__,str(exc)[:180])
+          PY
