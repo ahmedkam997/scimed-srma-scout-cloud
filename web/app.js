@@ -101,14 +101,60 @@ async function startDiscovery() {
       .single();
 
     if (error) throw error;
-    backendState('ok', 'Discovery queued', 'The background worker will pick up this job. You may close the browser.');
+    backendState('waiting', 'Discovery queued', 'Requesting a worker for your saved job.');
     jobs = [data, ...jobs.filter(job => job.id !== data.id)];
     renderJobs();
+    await wakeWorker(data.id, { silent: true });
     await loadJobs();
   } catch (error) {
     backendState('error', 'Could not queue discovery', error.message || String(error));
   } finally {
     els.start.disabled = false;
+  }
+}
+
+async function wakeWorker(jobId, { silent = false } = {}) {
+  if (!supabase) return;
+  const job = jobs.find(row => row.id === jobId);
+  if (!job || job.status !== 'QUEUED') return;
+
+  const button = Array.from(els.jobs.querySelectorAll('[data-wake-job]'))
+    .find(item => item.dataset.wakeJob === jobId);
+  if (button) button.disabled = true;
+
+  try {
+    const { data, error } = await supabase.functions.invoke('wake-discovery-worker', {
+      body: { job_id: jobId },
+      headers: { 'x-scimed-client-token': deviceToken() },
+    });
+    if (error) {
+      let status = '';
+      try {
+        const detail = await error.context?.json?.();
+        status = detail?.status || '';
+      } catch {}
+      if (status === 'configuration_required') {
+        backendState('waiting', 'One-time dispatch setup needed',
+          'Add SCIMED_GITHUB_DISPATCH_TOKEN in Supabase Function Secrets, or run the GitHub workflow manually.');
+      } else if (!silent) {
+        backendState('waiting', 'Worker dispatch unavailable',
+          'The job remains safely queued. Use the GitHub manual workflow link in its card.');
+      }
+    } else if (data?.status === 'dispatched') {
+      backendState('ok', 'Worker requested',
+        'GitHub accepted the request to run the worker. Your existing job remains queued until claimed.');
+    } else if (data?.status === 'already_requested_or_not_queued') {
+      if (!silent) backendState('waiting', 'Worker request already submitted',
+        'No duplicate run was requested. Refresh to check whether the worker claimed this job.');
+    } else if (!silent) {
+      backendState('waiting', 'Worker not dispatched',
+        'Use the GitHub workflow link to start the saved job manually.');
+    }
+  } catch (error) {
+    if (!silent) backendState('waiting', 'Could not request worker',
+      'The job is still in the queue. Open the manual GitHub workflow link.');
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
@@ -216,12 +262,14 @@ function renderJobs() {
 
     const queuedAgeMinutes = job.status === 'QUEUED'
       ? (Date.now() - new Date(job.created_at).getTime()) / 60000 : 0;
-    const workerHelp = job.status === 'QUEUED' && queuedAgeMinutes >= 10
+    const workerHelp = job.status === 'QUEUED' && queuedAgeMinutes >= 1
       ? `<div class="worker-help">
-          <p>GitHub's automatic scheduler is delayed. Your job is safely queued.</p>
+          <p>Your job is saved. If the worker has not claimed it, request a direct start.</p>
+          <button class="secondary small" data-wake-job="${escapeHtml(job.id)}">Start queued worker now</button>
+          <p>One-time direct start requires a secure GitHub dispatch token in Supabase.</p>
           <a class="worker-link" href="https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/workflows/discovery-worker.yml"
-             target="_blank" rel="noopener noreferrer">Open GitHub worker controls</a>
-          <p>In GitHub: Run workflow, select main, then Run workflow.</p>
+             target="_blank" rel="noopener noreferrer">Manual GitHub worker controls</a>
+          <p>Fallback: choose Run workflow, main, then Run workflow. Do not create another discovery job.</p>
         </div>` : '';
     const draftCheckpoint = job.result_json?.checkpoint || {};
     const draftCandidates = Array.isArray(draftCheckpoint.candidates) ? draftCheckpoint.candidates : [];
@@ -462,6 +510,11 @@ els.refresh.addEventListener('click', async () => {
   }
 });
 els.jobs.addEventListener('click', event => {
+  const wake = event.target.closest('[data-wake-job]');
+  if (wake) {
+    wakeWorker(wake.dataset.wakeJob);
+    return;
+  }
   const cancel = event.target.closest('[data-cancel-job]');
   if (cancel) {
     cancelJob(cancel.dataset.cancelJob);
