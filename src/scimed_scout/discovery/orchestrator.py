@@ -78,7 +78,9 @@ class ReviewDiscoveryOrchestrator:
         # verification limit is not an index cutoff on the raw topic list.
         extra_budget = max(0, min(4, int(adaptive_extra)))
         total_budget = max_verify + extra_budget
-        ranked = CandidateRankingService(self.ledger).rank_project(project_id, top_n=total_budget)
+        ranked = CandidateRankingService(self.ledger).rank_project(
+            project_id, top_n=total_budget, return_all=True,
+        )
         by_id = {c.candidate_id: c for c in self.ledger.list_candidates(project_id)}
         diverse, skipped_duplicates = select_diverse_ranked(ranked, by_id, limit=total_budget)
         ranking_message = (
