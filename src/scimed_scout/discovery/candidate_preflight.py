@@ -57,9 +57,24 @@ def search_query(candidate: CandidateRecord, *, current_year: int | None = None)
     )
 
 
+_GENERAL_POPULATION_TERMS = {
+    "adult", "adults", "patient", "patients", "aged", "age", "years",
+    "year", "male", "female", "women", "men", "person", "people",
+    "individuals", "human", "humans",
+}
+_NON_PRIMARY_TITLES = re.compile(
+    r"\\b(?:systematic review|meta.analysis|scoping review|umbrella review|"
+    r"network meta.analysis|commentary|comment on|comments to|letter|"
+    r"editorial|perspective|narrative review|study protocol|protocol for|"
+    r"hypothesis.generating|case report|case series|in vitro|"
+    r"animal model|mouse|mice|rat|rats|bibliometric|guideline)\\b",
+    flags=re.IGNORECASE,
+)
+
+
 def evaluate_preflight(candidate: CandidateRecord, result: Any) -> dict[str, Any]:
     anchor = set(_anchor(candidate))
-    population = set(_tokens(candidate.population))
+    population = set(_tokens(candidate.population)) - _GENERAL_POPULATION_TERMS
     comparator = set(_tokens(candidate.comparator_reference))
     records = list(getattr(result, "records", []) or [])
     matched: list[dict[str, Any]] = []
@@ -73,6 +88,11 @@ def evaluate_preflight(candidate: CandidateRecord, result: Any) -> dict[str, Any
             continue
         population_match = round(len(terms & population) / max(1, len(population)), 2)
         comparator_match = round(len(terms & comparator) / max(1, len(comparator)), 2)
+        suspected_nonprimary = bool(_NON_PRIMARY_TITLES.search(title))
+        # This clinical preflight is deliberately conservative. Without at
+        # least one population/condition term and an original-report-like
+        # title, a raw intervention hit should not dominate topic selection.
+        plausible_primary = bool(population_match > 0 and not suspected_nonprimary)
         matched.append({
             "title": title[:260],
             "source": "PubMed",
@@ -82,6 +102,8 @@ def evaluate_preflight(candidate: CandidateRecord, result: Any) -> dict[str, Any
             "intervention_title_match": round(intervention_match, 2),
             "population_title_match": population_match,
             "comparator_title_match": comparator_match,
+            "suspected_nonprimary_title": suspected_nonprimary,
+            "plausible_original_report_title": plausible_primary,
             "fulltext_eligibility": "NOT_CHECKED",
             "trial_family_independence": "NOT_CONFIRMED",
         })
@@ -89,10 +111,13 @@ def evaluate_preflight(candidate: CandidateRecord, result: Any) -> dict[str, Any
     recent = sum(x["year"] is not None and x["year"] >= current_year - 3 for x in matched)
     relevant_population = sum(x["population_title_match"] > 0 for x in matched)
     relevant_comparator = sum(x["comparator_title_match"] > 0 for x in matched)
-    # Title signals only. Their only effect is scheduling independent checks.
-    priority = min(22, 3 * min(len(matched), 4) + 2 * min(recent, 3)
-                   + 2 * min(relevant_population, 2)
-                   + min(relevant_comparator, 2))
+    plausible = [item for item in matched if item["plausible_original_report_title"]]
+    plausible_recent = sum(x["year"] is not None and x["year"] >= current_year - 3 for x in plausible)
+    # Title-only original-report cues are NOT confirmed eligible studies.
+    # Avoid ranking commentaries or studies of a different illness highly.
+    priority = min(22, 3 * min(len(plausible), 4) + 2 * min(plausible_recent, 3)
+                   + 2 * min(sum(x["population_title_match"] > 0 for x in plausible), 2)
+                   + min(sum(x["comparator_title_match"] > 0 for x in plausible), 2))
     status = getattr(getattr(result, "status", None), "value", "NOT_SEARCHED")
     return {
         "status": status,
@@ -101,6 +126,9 @@ def evaluate_preflight(candidate: CandidateRecord, result: Any) -> dict[str, Any
         "records_sampled": len(records),
         "intervention_title_matches": len(matched),
         "recent_intervention_title_matches": recent,
+        "plausible_original_report_title_matches": len(plausible),
+        "recent_plausible_original_report_title_matches": plausible_recent,
+        "discarded_nonprimary_or_other_population_title_leads": len(matched) - len(plausible),
         "population_title_matches": relevant_population,
         "comparator_title_matches": relevant_comparator,
         "priority_signal": priority,
@@ -108,7 +136,7 @@ def evaluate_preflight(candidate: CandidateRecord, result: Any) -> dict[str, Any
         "eligible_independent_studies_confirmed": None,
         "novelty_confirmed": False,
         "interpretation": (
-            "BIBLIOGRAPHIC_PRIORITY_ONLY: title terms are not full-text eligibility, "
+            "BIBLIOGRAPHIC_PRIORITY_ONLY: condition-matched original-like title cues are not full-text eligibility, "
             "independent trials, or evidence of novelty; zero title matches "
             "cannot exclude available evidence."
         ),
