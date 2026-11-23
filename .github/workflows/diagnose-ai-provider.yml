@@ -1,0 +1,47 @@
+name: diagnose-ai-provider
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/diagnose-ai-provider.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SCIMED_AI_API_KEY: ${{ secrets.SCIMED_AI_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    steps:
+      - name: One tiny safe completion request per configured free provider
+        run: |
+          python - <<'PY'
+          import json,os,urllib.error,urllib.request
+          providers=[
+            ('openrouter','https://openrouter.ai/api/v1/chat/completions','openrouter/free',os.getenv('SCIMED_AI_API_KEY')),
+            ('groq','https://api.groq.com/openai/v1/chat/completions','openai/gpt-oss-20b',os.getenv('GROQ_API_KEY')),
+          ]
+          for name,url,model,key in providers:
+            if not key:
+              print('PROVIDER',name,'NOT_CONFIGURED',flush=True)
+              continue
+            payload={'model':model,'messages':[{'role':'user','content':'Reply with JSON only: {"ok":true}'}],
+              'max_tokens':220,'temperature':0}
+            req=urllib.request.Request(url,data=json.dumps(payload).encode(),method='POST',
+              headers={'Authorization':'Bearer '+key,'Content-Type':'application/json','Accept':'application/json'})
+            try:
+              with urllib.request.urlopen(req,timeout=20) as response:
+                result=json.loads(response.read())
+                choices=result.get('choices') or [{}]
+                answer=(choices[0].get('message') or {}).get('content') or ''
+                print('PROVIDER',name,'HTTP',response.status,
+                  'TEXT_AVAILABLE',bool(str(answer).strip()),'FINISH_REASON',choices[0].get('finish_reason'),flush=True)
+            except urllib.error.HTTPError as e:
+              print('PROVIDER',name,'HTTP',e.code,'NO_CONTENT_LOGGED',flush=True)
+            except Exception as e:
+              print('PROVIDER',name,'EXCEPTION',type(e).__name__,flush=True)
+          PY
