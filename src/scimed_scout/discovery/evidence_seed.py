@@ -131,14 +131,29 @@ def recent_review_gap_cues(
         plain = re.sub(r"<[^>]*>", " ", raw).replace("\r", " ").replace("\n", " ")
         plain = re.sub(r"\s+", " ", plain).strip()
         sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z])", plain)
-        gap = next((
-            piece for piece in sentences
-            if _GAP_SIGNAL.search(piece)
-            and not re.search(
+        gap = ""
+        gap_signal = ""
+        for piece in sentences:
+            match = _GAP_SIGNAL.search(piece)
+            if not match or re.search(
                 r"\b(?:no|without|not an?)\s+(?:documented\s+)?(?:evidence|research|knowledge)\s+gap\b",
                 piece, flags=re.I,
-            )
-        ), "")
+            ):
+                continue
+            # In long abstracts, the actual evidence-gap phrase can occur
+            # after 330 characters. Center the excerpt on the matched words.
+            # Never present a truncated methods/results sentence as a quoted
+            # claim of an actual research gap.
+            gap_signal = match.group(0)
+            if len(piece) <= 330:
+                gap = piece
+            else:
+                left = max(0, match.start() - 80)
+                right = min(len(piece), match.end() + 210)
+                gap = ("…" if left else "") + piece[left:right] + (
+                    "…" if right < len(piece) else ""
+                )
+            break
         if not gap:
             continue
         key = (record.doi or record.title).casefold()
@@ -153,6 +168,7 @@ def recent_review_gap_cues(
             "doi": record.doi or "",
             "pmid": record.record_id,
             "gap_sentence_from_abstract": gap[:330],
+            "matched_gap_phrase": gap_signal,
             "last_literature_search_date": None,
             "fulltext_gap_verified": False,
             "new_independent_eligible_studies_confirmed": None,
