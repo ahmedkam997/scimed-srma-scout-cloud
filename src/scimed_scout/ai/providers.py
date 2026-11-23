@@ -289,10 +289,11 @@ class ProviderFailure(RuntimeError):
 
 
 class FreeProviderFallback:
-    """Fail over to a separate Groq free-plan account on quota/unavailable errors.
+    """Use independent explicitly free provider keys sequentially.
 
-    This is not an OpenRouter-model switch, which shares account-level limits.
-    The backup is used only after failure, never in parallel with the primary.
+    With GEMINI_API_KEY: Gemini -> OpenRouter free -> Groq free.
+    Otherwise: OpenRouter free -> Groq free (or Groq alone).
+    No provider is called concurrently and no paid fallback is configured.
     """
 
     def __init__(self, primary: AIProvider, backup: AIProvider | None = None):
@@ -307,24 +308,57 @@ class FreeProviderFallback:
 
     @classmethod
     def from_env(cls) -> "FreeProviderFallback":
-        primary = OpenAICompatibleProvider.from_env()
-        if primary.model != "openrouter/free" and not primary.model.endswith(":free"):
+        openrouter_model = os.getenv("SCIMED_AI_MODEL", "openrouter/free").strip()
+        if openrouter_model != "openrouter/free" and not openrouter_model.endswith(":free"):
             raise RuntimeError(
                 "Only OpenRouter free routing or explicit :free models are permitted in SciMed's no-charge mode"
             )
-        key = os.getenv("GROQ_API_KEY", "").strip()
-        backup = (
+
+        openrouter_key = os.getenv("SCIMED_AI_API_KEY", "").strip()
+        openrouter = (
+            OpenAICompatibleProvider.from_env() if openrouter_key else None
+        )
+        groq_key = os.getenv("GROQ_API_KEY", "").strip()
+        groq = (
             OpenAICompatibleProvider(
                 endpoint="https://api.groq.com/openai/v1/chat/completions",
                 model="openai/gpt-oss-20b",
-                api_key=key,
+                api_key=groq_key,
                 timeout=60.0,
                 empty_retries=1,
                 name="groq-free-backup",
-            )
-            if key else None
+            ) if groq_key else None
         )
-        return cls(primary, backup)
+        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if gemini_key:
+            # Explicit allowlist makes enabling Gemini safe even if a project
+            # later enters a billable tier. No Pro/preview model selection.
+            allowed = {
+                "gemini-3.5-flash-lite",
+                "gemini-3.1-flash-lite",
+                "gemini-2.5-flash-lite",
+            }
+            gemini_model = os.getenv("GEMINI_FREE_MODEL", "gemini-3.5-flash-lite").strip()
+            if gemini_model not in allowed:
+                raise RuntimeError("GEMINI_FREE_MODEL is not in SciMed's free-only allowlist")
+            gemini = OpenAICompatibleProvider(
+                endpoint="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                model=gemini_model,
+                api_key=gemini_key,
+                timeout=60.0,
+                empty_retries=1,
+                name="gemini-free",
+            )
+            fallback = cls(openrouter, groq) if openrouter and groq else (openrouter or groq)
+            return cls(gemini, fallback)
+        if openrouter:
+            return cls(openrouter, groq)
+        if groq:
+            return cls(groq)
+        raise RuntimeError(
+            "No free AI provider configured. Set GEMINI_API_KEY, "
+            "SCIMED_AI_API_KEY or GROQ_API_KEY in GitHub Actions secrets."
+        )
 
     def complete(self, request: AIRequest) -> AIResponse:
         if self.primary_quota_exhausted and self.backup is not None:
@@ -338,9 +372,17 @@ class FreeProviderFallback:
                 return self._backup(request, original=response)
             return response
         except ProviderFailure as exc:
-            if self.backup is None or exc.status_code not in (402, 408, 429, 500, 502, 503, 504, None):
+            unavailable = exc.status_code in (402, 408, 429, 500, 502, 503, 504, None)
+            # New Gemini keys sometimes have project/model restrictions.
+            # Use the independent free backup rather than aborting the whole
+            # scientific discovery. Never send the key to the fallback.
+            gemini_access_error = (
+                self.primary.name == "gemini-free"
+                and exc.status_code in (400, 401, 403, 404)
+            )
+            if self.backup is None or not (unavailable or gemini_access_error):
                 raise
-            if exc.status_code in (402, 429):
+            if exc.status_code in (402, 429) or gemini_access_error:
                 self.primary_quota_exhausted = True
             return self._backup(request)
         except RuntimeError as exc:
@@ -376,14 +418,12 @@ class FreeProviderFallback:
             return response
         except (ProviderFailure, RuntimeError) as exc:
             if isinstance(exc, ProviderFailure) and (
-                exc.status_code in (402, 429)
-                or (exc.status_code == 400 and exc.error_category in (
-                    "rate_limit", "context_window", "unsupported_parameter",
-                ))
+                exc.status_code in (400, 401, 402, 403, 404, 429)
             ):
-                # A temporary Groq TPM HTTP 400 can repeat for every
-                # competitor/scoring request. Stop spending quota within this
-                # worker job; keep the scientific assessment unresolved.
+                # A free provider with invalid credentials, exhausted tokens
+                # or unsupported model should not be retried on every topic.
+                # Its errors remain source-audited and scientific work stays
+                # unresolved, never promoted by an AI response.
                 self.backup_quota_exhausted = True
             if original is not None:
                 return original
