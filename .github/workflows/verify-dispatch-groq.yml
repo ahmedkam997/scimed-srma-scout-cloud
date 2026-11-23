@@ -1,0 +1,85 @@
+name: verify-dispatch-groq
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/verify-dispatch-groq.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify owner-scoped dispatch path without starting a job
+        run: |
+          python - <<'PY'
+          import json, re, urllib.request, urllib.error, pathlib
+          s=pathlib.Path("web/config.js").read_text()
+          public_key=re.search(r'supabaseAnonKey:\s*"([^"]+)"',s).group(1)
+          endpoint="https://vskqiszpjxsmcayuaclo.supabase.co/functions/v1/wake-discovery-worker"
+          # Intentionally impossible job UUID. No GitHub run is dispatched.
+          body=json.dumps({"job_id":"a1123456-1234-4123-8123-123456789abc"}).encode()
+          req=urllib.request.Request(endpoint,data=body,method="POST",headers={
+            "apikey":public_key, "Authorization":"Bearer "+public_key,
+            "x-scimed-client-token":"a"*64,
+            "Origin":"https://ahmedkam997.github.io",
+            "Content-Type":"application/json"})
+          try:
+            with urllib.request.urlopen(req,timeout=20) as res:
+              data=json.load(res)
+              print("EDGE_DISPATCH_HTTP",res.status,"STATUS",str(data.get("status"))[:100],flush=True)
+              assert res.status==202 and data.get("status")=="already_requested_or_not_queued"
+          except urllib.error.HTTPError as err:
+            try: data=json.loads(err.read(800))
+            except Exception: data={}
+            print("EDGE_DISPATCH_HTTP",err.code,"STATUS",str(data.get("status"))[:90],
+                  "DB_HTTP",str(data.get("db_http"))[:8],
+                  "DB_CODE",str(data.get("db_code"))[:25],flush=True)
+            raise
+          print("EDGE_DISPATCH_FAKE_JOB_TEST_PASS",flush=True)
+          PY
+      - name: Diagnose Groq account access without disclosing key or response body
+        run: |
+          python - <<'PY'
+          import json,os,urllib.request,urllib.error
+          key=os.getenv("GROQ_API_KEY") or ""
+          if not key:
+            print("GROQ_ACCOUNT_ACCESS NOT_CONFIGURED",flush=True)
+            raise SystemExit(0)
+          req=urllib.request.Request(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization":"Bearer "+key,"Accept":"application/json"})
+          try:
+            with urllib.request.urlopen(req,timeout=18) as response:
+              obj=json.load(response)
+              models=obj.get("data",[])
+              available={m.get("id") for m in models if isinstance(m,dict)}
+              print("GROQ_MODELS_HTTP",response.status,"MODEL_COUNT",len(models),
+                "GPT_OSS_20B_ENABLED","openai/gpt-oss-20b" in available,
+                "LLAMA_8B_ENABLED","llama-3.1-8b-instant" in available,flush=True)
+          except urllib.error.HTTPError as err:
+            raw=err.read(1200)
+            try:
+              parsed=json.loads(raw)
+              error=parsed.get("error") or {}
+              msg=str(error.get("message") or "").lower()
+              code=str(error.get("code") or error.get("type") or "").lower()
+            except Exception:
+              msg="";code=""
+            reason="UNKNOWN"
+            if any(t in msg+" "+code for t in ("region","country","location","geograph")): reason="REGION_RESTRICTED"
+            elif any(t in msg+" "+code for t in ("organi","workspace","permission","project","forbidden")):reason="ACCOUNT_OR_PROJECT_RESTRICTED"
+            elif any(t in msg+" "+code for t in ("invalid api key","unauthoriz","invalid_key")): reason="INVALID_KEY"
+            elif any(t in msg+" "+code for t in ("rate limit","quota")): reason="QUOTA"
+            print("GROQ_MODELS_HTTP",err.code,"CLASSIFICATION",reason,
+                  "ERROR_TYPE",code[:40] if code.isascii() and all(x.isalnum() or x in "_-" for x in code) else "unspecified",flush=True)
+          except Exception as exc:
+            print("GROQ_MODELS_EXCEPTION",type(exc).__name__,flush=True)
+          PY
