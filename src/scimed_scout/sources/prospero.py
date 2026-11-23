@@ -36,7 +36,10 @@ class ProsperoCliSource:
                 message="PROSPERO CLI missing. Worker must build verified v0.2.2 source; not an empty registry.",
             )
 
-        page_size = min(50, max(1, int(limit)))
+        # A 50-record first page avoids needless page-turn requests on
+        # focused clinical queries. PROSPERO can change result totals while
+        # paginating; do not treat such changes as complete coverage.
+        page_size = min(50, max(40, int(limit)))
         max_pages = min(5, max(1, self.max_pages))
         all_records: dict[str, SearchRecord] = {}
         total: int | None = None
@@ -47,6 +50,7 @@ class ProsperoCliSource:
             command = [
                 *prefix, "search", query,
                 "--page", str(page), "--page-size", str(page_size),
+                "--sort", "accession", "--order", "asc",
             ]
             try:
                 completed = self.runner(command) if self.runner else self._run(command)
@@ -85,6 +89,14 @@ class ProsperoCliSource:
                 hits = data.get("hits")
                 if not isinstance(hits, list):
                     raise ValueError("CLI missing PROSPERO hits list")
+                # A successful CLI envelope must also contain a clean
+                # upstream response. A transport/index warning is not a
+                # trustworthy zero-match registry search.
+                note = str(data.get("raw_note") or "").strip()
+                if note and any(mark in note.casefold() for mark in (
+                    "error", "unavailable", "timeout", "failed", "invalid",
+                )):
+                    raise ValueError("upstream PROSPERO search reported an error")
             except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
                 return SearchResult(
                     self.name, query, SourceStatus.PARTIAL,
