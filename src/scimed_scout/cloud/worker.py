@@ -57,6 +57,26 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
             )
             generator = CandidateDiscoveryService(provider, ledger)
             evidence_cues = recent_pubmed_cues(job.specialty, job.question_type)
+            # Save real bibliographic leads BEFORE any paid/free AI endpoint
+            # is called. A quota or malformed JSON must not erase the evidence
+            # already retrieved from PubMed. These are NOT review PICO proposals.
+            store.update_job(
+                job.id,
+                result_json={
+                    "checkpoint": {
+                        "stage": "PUBMED_EVIDENCE_CUES",
+                        "verified": False,
+                        "note": "Real PubMed records. Not confirmed eligible primary studies, systematic-review ideas, or evidence of novelty.",
+                        "candidate_count": 0,
+                        "recent_pubmed_cues": evidence_cues,
+                        "candidates": [],
+                    }
+                },
+                message=(
+                    f"Saved {len(evidence_cues)} PubMed research leads; checking free AI access"
+                    if evidence_cues else "No PubMed leads available; checking free AI access"
+                ),
+            )
 
             def generation_progress(found: int, target: int) -> None:
                 store.ensure_active(job.id)
@@ -276,6 +296,8 @@ def run_once(store: SupabaseJobStore | None = None) -> int:
     except Exception as exc:
         detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         try:
+            # Keep any previously saved literature checkpoint on error.
+            # A FAILED run may still contain useful PubMed leads to inspect.
             store.fail(job.id, detail)
         except JobCancelled:
             print(json.dumps({"status": "CANCELLED", "job_id": job.id}))
