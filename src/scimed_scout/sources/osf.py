@@ -67,8 +67,13 @@ class OSFRegistrationsSource:
             # mistaken for proof that no competing review exists. Retry one
             # broader intervention anchor before returning a provisional audit.
             if (
-                result.status == SourceStatus.PARTIAL and not result.records
-                and "no indexed matches" in (result.message or "")
+                result.status in (
+                    SourceStatus.PARTIAL, SourceStatus.SEARCHED_NEGATIVE,
+                ) and not result.records
+                and (
+                    result.status == SourceStatus.SEARCHED_NEGATIVE
+                    or "no indexed matches" in (result.message or "")
+                )
                 and len(focus.split()) > 2
             ):
                 broad = " ".join(focus.split()[:2])
