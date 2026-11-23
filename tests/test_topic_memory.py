@@ -31,6 +31,7 @@ def previous(*, status="REJECTED", age_days=2, title="Drug X for adult heart fai
         "intervention_exposure_index_test": "Drug X",
         "comparator_reference": "Usual care",
         "outcomes": ["mortality"],
+        "eligible_designs": ["RCT"],
         "status": status,
     }
     date = (NOW - timedelta(days=age_days)).isoformat()
