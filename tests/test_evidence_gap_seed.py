@@ -82,3 +82,20 @@ def test_discovery_gaps_from_abstract_are_not_fulltext_adjudicated():
     lead=recent_review_gap_cues("Cardiology",client=src)[0]
     assert lead["fulltext_gap_verified"] is False
     assert "Evidence" not in lead["role"]
+
+
+def test_long_review_abstract_gap_excerpt_contains_exact_uncertainty_words():
+    long_results = (
+        "Background. " + "Observed heart rate and cardiac output in study participants. " * 12
+        + "Further randomized trials are needed to assess patient-important outcomes."
+    )
+    source=FakeEurope([record(
+        "A systematic review and meta-analysis of exercise interventions",
+        long_results,
+    )])
+    result=recent_review_gap_cues("Cardiology",client=source)
+    assert len(result)==1
+    assert "Further randomized trials" in result[0]["gap_sentence_from_abstract"]
+    assert "Further randomized trials" in result[0]["matched_gap_phrase"]
+    assert len(result[0]["gap_sentence_from_abstract"]) <= 330
+    assert result[0]["fulltext_gap_verified"] is False
