@@ -366,7 +366,7 @@ def _primary_screening_queue(
     search_years = []
     for review in review_age_audits:
         date = str(review.get("last_search_date") or "")
-        match = re.search(r"(?:19|20)\\d{2}", date)
+        match = re.search(r"(?:19|20)\d{2}", date)
         if match:
             search_years.append(int(match.group()))
     baseline_year = max(search_years) if search_years else None
@@ -379,7 +379,7 @@ def _primary_screening_queue(
             meta = {}
         title = str(item.get("title") or "").strip()
         if not title or re.search(
-            r"\\b(?:systematic review|meta-analysis|scoping review|network meta-analysis)\\b",
+            r"\b(?:systematic review|meta-analysis|scoping review|network meta-analysis)\b",
             title, flags=re.IGNORECASE,
         ):
             continue
@@ -399,7 +399,7 @@ def _primary_screening_queue(
         population_match = len(body_tokens & population) / max(1, len(population))
         comparator_match = len(body_tokens & comparator) / max(1, len(comparator))
         score = round(3 * match_title + 2 * match_body + population_match + comparator_match, 3)
-        ncts = sorted(set(re.findall(r"\\bNCT\\d{8}\\b", title + " " + abstract, flags=re.IGNORECASE)))
+        ncts = sorted(set(re.findall(r"\bNCT\d{8}\b", title + " " + abstract, flags=re.IGNORECASE)))
         year = payload.get("year")
         year = int(year) if str(year or "").isdigit() else None
         if year is None or baseline_year is None:
