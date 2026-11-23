@@ -13,6 +13,7 @@ from scimed_scout.verification.policy import policy_for_question_type
 from scimed_scout.verification.queries import build_search_plan
 
 from .constants import MIN_DISCOVERY_STUDIES
+from .candidate_preflight import FocusedEvidencePreflight
 from .evidence import discovery_evidence_snapshot
 from .gates import final_discovery_decision
 from .models import DiscoveryCandidateResult, DiscoveryRunResult
@@ -33,6 +34,7 @@ class ReviewDiscoveryOrchestrator:
         scoring_service: DiscoveryScoringService | None = None,
         progress_callback: Callable[[int, str, str], None] | None = None,
         cancellation_check: Callable[[], None] | None = None,
+        evidence_preflight: FocusedEvidencePreflight | None = None,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
@@ -40,6 +42,7 @@ class ReviewDiscoveryOrchestrator:
         self.scoring_service = scoring_service
         self.progress_callback = progress_callback
         self.cancellation_check = cancellation_check
+        self.evidence_preflight = evidence_preflight
 
     def run(
         self,
@@ -49,6 +52,7 @@ class ReviewDiscoveryOrchestrator:
         max_verify: int = 10,
         final_options: int = 3,
         limit_per_query: int = 20,
+        adaptive_extra: int = 0,
     ) -> DiscoveryRunResult:
         if min_verify < 1 or max_verify < min_verify:
             raise ValueError("Require 1 <= min_verify <= max_verify")
@@ -58,11 +62,26 @@ class ReviewDiscoveryOrchestrator:
             raise ValueError(f"Project not found: {project_id}")
 
         self._check_cancellation()
-        ranked = CandidateRankingService(self.ledger).rank_project(project_id, top_n=max_verify)
+        preflight_summary = {}
+        if self.evidence_preflight is not None:
+            self._progress(
+                18, "EVIDENCE_PREFLIGHT",
+                "Checking focused PubMed bibliographic title signals for topic priority",
+            )
+            preflight_summary = self.evidence_preflight.annotate(
+                self.ledger, project_id, cancellation_check=self._check_cancellation,
+            )
+        # Select distinct PICOs from ALL ranked proposals. The initial deep
+        # verification limit is not an index cutoff on the raw topic list.
+        extra_budget = max(0, min(4, int(adaptive_extra)))
+        total_budget = max_verify + extra_budget
+        ranked = CandidateRankingService(self.ledger).rank_project(project_id, top_n=total_budget)
         by_id = {c.candidate_id: c for c in self.ledger.list_candidates(project_id)}
-        diverse, skipped_duplicates = select_diverse_ranked(ranked, by_id, limit=max_verify)
+        diverse, skipped_duplicates = select_diverse_ranked(ranked, by_id, limit=total_budget)
         ranking_message = (
-            f"Ranked {len(ranked)} candidates, selected {len(diverse)} distinct PICOs; "
+            f"Ranked {len(ranked)} candidates using title-signal priority, "
+            f"selected up to {len(diverse)} distinct PICOs "
+            f"({max_verify} initial, {extra_budget} conditional backups); "
             f"skipped {len(skipped_duplicates)} near-duplicate questions"
         )
         self.ledger.update_checkpoint(project_id, stage="DISCOVERY_RANKING", progress=20, message=ranking_message)
@@ -70,8 +89,13 @@ class ReviewDiscoveryOrchestrator:
 
         results: list[DiscoveryCandidateResult] = []
         qualified: list[str] = []
+        adaptive_skipped = ""
         for index, ranked_item in enumerate(diverse, 1):
             self._check_cancellation()
+            if index > max_verify:
+                adaptive_skipped = self._adaptive_skip_reason(results)
+                if adaptive_skipped:
+                    break
             candidate = self.ledger.get_candidate(ranked_item.candidate_id)
             if candidate is None:
                 continue
@@ -110,7 +134,26 @@ class ReviewDiscoveryOrchestrator:
         return DiscoveryRunResult(
             project_id, ranked, results, final_ids, qualified, final_options,
             duplicate_topics_skipped=skipped_duplicates,
+            bibliographic_preflight_summary=preflight_summary,
+            adaptive_deep_checks_used=max(0, len(results) - max_verify),
+            adaptive_checks_skipped_reason=adaptive_skipped,
         )
+
+    def _adaptive_skip_reason(self, prior: list[DiscoveryCandidateResult]) -> str:
+        if not prior:
+            return "No initial candidate reviews exist"
+        provider = getattr(self.scoring_service, "provider", None)
+        if provider is not None and getattr(provider, "primary_quota_exhausted", False):
+            backup = getattr(provider, "backup", None)
+            if backup is None or getattr(provider, "backup_quota_exhausted", False):
+                return "Free AI provider quota exhausted; further deep checks deferred"
+        if all(result.coverage.blockers for result in prior):
+            return (
+                "All initial candidate reviews have mandatory source-coverage blockers. "
+                "Checking additional proposals would repeat the same unavailable registry "
+                "or pipeline sources; retain them as unscreened drafts."
+            )
+        return ""
 
     def verify_candidate(self, candidate_id: str, *, ranking_score: float = 0.0, limit_per_query: int = 20) -> DiscoveryCandidateResult:
         candidate = self.ledger.get_candidate(candidate_id)
