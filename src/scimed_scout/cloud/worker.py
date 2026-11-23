@@ -47,12 +47,23 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 message="Generating review-topic candidates",
             )
             generator = CandidateDiscoveryService(provider, ledger)
+
+            def generation_progress(found: int, target: int) -> None:
+                store.ensure_active(job.id)
+                store.update_job(
+                    job.id,
+                    stage="CANDIDATE_GENERATION",
+                    progress=5 + int(12 * found / max(1, target)),
+                    message=f"Generated {found}/{target} complete topic proposals; checking more candidates",
+                )
+
             candidates = generator.generate_and_store(
                 project_id=project_id,
                 specialty=job.specialty,
                 question_types=[] if job.question_type.strip().upper() == "ALL" else [job.question_type],
                 design_scope=[],
                 count=job.candidate_count,
+                progress_callback=generation_progress,
             )
             store.ensure_active(job.id)
             if not candidates:
