@@ -459,6 +459,7 @@ function renderJobs() {
           ${draftCandidates.map(item => `<article class="score-item">
             <b>${escapeHtml(item.title || '')}</b>
             <p>${escapeHtml(item.review_question || '')}</p>
+            ${topicDetailHtml(job, item)}
           </article>`).join('')}
         </details>` : '';
 
@@ -797,7 +798,8 @@ function findTransferTopic(job, candidateId) {
   const topics = [
     ...(Array.isArray(pkg.options) ? pkg.options : []),
     ...(Array.isArray(pkg.provisional_options) ? pkg.provisional_options : []),
-    ...(Array.isArray(pkg.unverified_generated_options) ? pkg.unverified_generated_options : [])
+    ...(Array.isArray(pkg.unverified_generated_options) ? pkg.unverified_generated_options : []),
+    ...(Array.isArray(job?.result_json?.checkpoint?.candidates) ? job.result_json.checkpoint.candidates : [])
   ];
   return topics.find(item => item.candidate_id === candidateId) || null;
 }
