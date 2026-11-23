@@ -187,12 +187,51 @@ class OSFRegistrationsSource:
             if not remaining or (total is not None and len(records) >= total):
                 break
 
-        # Trove's filtered, indexed metadata is not a guarantee of global
-        # negative coverage, even if the index reports zero results.
+        # A valid zero in Trove alone is not global registration clearance.
+        # Ask OSF's separate v2 registration index for an explicit zero and
+        # retain the narrower query scope in the audit.
         if not records:
+            if total == 0 and not remaining and malformed_hits == 0:
+                try:
+                    confirmation = self.http.get_json(self.endpoint, {
+                        "filter[title]": focus,
+                        "page[size]": 20,
+                    })
+                    rows = confirmation.get("data")
+                    meta = confirmation.get("meta") or {}
+                    links = confirmation.get("links") or {}
+                    if (
+                        isinstance(rows, list) and not rows
+                        and isinstance(meta, dict)
+                        and meta.get("total") == 0
+                        and not links.get("next")
+                    ):
+                        return SearchResult(
+                            self.name, original, SourceStatus.SEARCHED_NEGATIVE, [], 0,
+                            message=(
+                                f"Both OSF Trove title/description and OSF v2 title search "
+                                f"report zero for scoped query '{focus}'. "
+                                "Other wording and unindexed registrations still require "
+                                "independent novelty review."
+                            ),
+                        )
+                    if isinstance(rows, list) and rows:
+                        return SearchResult(
+                            self.name, original, SourceStatus.PARTIAL,
+                            message=(
+                                f"OSF v2 found {len(rows)} matches for query '{focus}' "
+                                "despite Trove zero; audit indexes manually."
+                            ),
+                        )
+                except (RuntimeError, ValueError, TypeError, KeyError, OSError):
+                    pass
             return SearchResult(
                 self.name, original, SourceStatus.PARTIAL, [], total,
-                message=f"OSF Trove title/description query '{focus}': no matches in indexed public registrations. Manual broader check required.",
+                message=(
+                    f"OSF Trove title/description query '{focus}': no indexed matches, "
+                    "but independent OSF v2 zero confirmation is absent. "
+                    "Manual broader check required."
+                ),
             )
         complete = bool(
             total is not None
