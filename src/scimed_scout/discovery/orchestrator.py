@@ -385,4 +385,11 @@ def _run_source_queries(
                 message=str(exc),
             )
         results.append((query, result))
+        if result.status == SourceStatus.ACCESS_FAILED and (
+            "429" in (result.message or "") or "Too Many Requests" in (result.message or "")
+        ):
+            # A provider-wide limit is not solved by issuing the other PICO
+            # query variants immediately. Retain the failed search audit,
+            # and do not invent negative results for skipped queries.
+            break
     return results
