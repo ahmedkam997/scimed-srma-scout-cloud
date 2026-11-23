@@ -27,4 +27,15 @@ jobs:
           if r.status != SourceStatus.SEARCHED_NEGATIVE:
               raise SystemExit("OSF v2/Trove scoped zero confirmation failed")
           print("PASS: independent scoped-zero check complete. No global novelty claim.")
+          # Follow up on two actual earlier SciMed source blockers using public
+          # read-only searches only. Their titles/PICOs are not sent to AI.
+          for clinical_query in (
+              "testosterone replacement major adverse",
+              "standardized withania hypertension",
+          ):
+              r=source.search(clinical_query,limit=10)
+              print(f"PREVIOUS_BLOCKER: query={clinical_query!r} status={r.status.value} "
+                    f"registrations_found={len(r.records)} message={r.message[:320]}")
+              if r.status == SourceStatus.ACCESS_FAILED:
+                  print("Source is inaccessible; retain source-coverage blocker.")
           PY
