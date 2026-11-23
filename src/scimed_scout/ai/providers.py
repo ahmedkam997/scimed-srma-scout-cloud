@@ -182,12 +182,12 @@ class OpenAICompatibleProvider:
                 return self.requester(req, self.timeout) if self.requester else self._request(req)
             except urllib.error.HTTPError as exc:
                 header = exc.headers
-                retry_after = _positive_float(header.get("retry-after")) if header else None
+                retry_after = _positive_float(_header_value(header, "retry-after"))
                 requests_left = _nonnegative_int(
-                    header.get("x-ratelimit-remaining-requests") if header else None
+                    _header_value(header, "x-ratelimit-remaining-requests")
                 )
                 tokens_left = _nonnegative_int(
-                    header.get("x-ratelimit-remaining-tokens") if header else None
+                    _header_value(header, "x-ratelimit-remaining-tokens")
                 )
                 is_gemini = self.endpoint.startswith(
                     "https://generativelanguage.googleapis.com/"
@@ -218,6 +218,16 @@ class OpenAICompatibleProvider:
     def _request(self, req: urllib.request.Request) -> bytes:
         with urllib.request.urlopen(req, timeout=self.timeout) as response:
             return response.read()
+
+
+def _header_value(headers: object, name: str) -> str | None:
+    """Accept case-insensitive HTTP response headers from each provider."""
+    if headers is None or not hasattr(headers, "items"):
+        return None
+    for key, value in headers.items():
+        if str(key).casefold() == name:
+            return str(value)
+    return None
 
 
 def _http_error_category(exc: urllib.error.HTTPError) -> str:
