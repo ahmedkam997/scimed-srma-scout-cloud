@@ -13,32 +13,37 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 7
+    timeout-minutes: 12
     steps:
-      - name: Inspect OSF Trove registration metadata search
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install SciMed Python adapter
+        run: python -m pip install -e .
+      - name: Build pinned PROSPERO v0.2.2 source
+        run: |
+          git clone --quiet --depth 1 --branch v0.2.2 https://github.com/erichuang777777/PROSPERO-MCP.git "$RUNNER_TEMP/prospero-mcp"
+          npm install --prefix "$RUNNER_TEMP/prospero-mcp" --no-audit --no-fund
+          npm run build --prefix "$RUNNER_TEMP/prospero-mcp"
+          test -s "$RUNNER_TEMP/prospero-mcp/dist/cli.js"
+          echo "PROSPERO_CLI_JS=$RUNNER_TEMP/prospero-mcp/dist/cli.js" >> "$GITHUB_ENV"
+      - name: Test live SciMed registry adapters with public queries
+        env:
+          PROSPERO_NETWORK_MODE: online
         run: |
           python - <<'PY'
-          import json,urllib.request,urllib.parse
-          BASE="https://share.osf.io/trove/index-card-search"
-          cases=[
-            {"cardSearchText[title,description]":"heart failure","page[size]":3,"acceptMediatype":"application/vnd.api+json"},
-            {"cardSearchText":"heart failure","cardSearchFilter[resourceType]":"Registration","page[size]":3,"acceptMediatype":"application/vnd.api+json"},
-            {"cardSearchText[title,description]":"heart failure","cardSearchFilter[resourceType]":"Registration","page[size]":3,"acceptMediatype":"application/vnd.api+json"},
-            {"cardSearchText[title,description]":"heart failure","cardSearchFilter[resourceType]":"https://osf.io/vocab/2022/Registration","page[size]":3,"acceptMediatype":"application/vnd.api+json"},
-          ]
-          for params in cases:
-            url=BASE+"?"+urllib.parse.urlencode(params)
-            try:
-              req=urllib.request.Request(url,headers={"Accept":"application/vnd.api+json"})
-              with urllib.request.urlopen(req,timeout=12) as res: data=json.loads(res.read())
-              items=data.get("data",[])
-              print("CASE",list(params.keys()),"filter",params.get("cardSearchFilter[resourceType]"),"COUNT",len(items),"NEXT",bool(data.get("links",{}).get("next")),"META",str(data.get("meta"))[:100])
-              print("DATA_TYPE",type(items).__name__,"DATA_KEYS",list(items.keys())[:15] if isinstance(items,dict) else [],"TOP_KEYS",list(data.keys())[:12])
-              print("DATA_HEAD",json.dumps(items,ensure_ascii=False)[:350])
-              sample=data.get("included",[])[:5]
-              print("INCLUDED_TYPES",[(item.get("type"),list(item.get("attributes",{}).keys())[:8]) for item in sample])
-              for item in sample[:2]:
-                print("INCLUDED_ITEM",json.dumps(item,ensure_ascii=False)[:1600])
-            except Exception as exc:
-              print("ERROR",type(exc).__name__,str(exc)[:190])
+          from scimed_scout.sources.prospero import ProsperoCliSource
+          from scimed_scout.sources.osf import OSFRegistrationsSource
+          from scimed_scout.domain import SourceStatus
+          for source in (ProsperoCliSource(max_pages=1),OSFRegistrationsSource(max_pages=1)):
+            result=source.search("heart failure",limit=3)
+            print("REGISTRY",source.name,"STATUS",result.status.value,"MATCHES",len(result.records),"TOTAL",result.total_count,"INFO",result.message[:200],flush=True)
+            assert result.status != SourceStatus.ACCESS_FAILED, f"{source.name}: access failed"
+            assert len(result.records) >= 1, f"{source.name}: no test results"
+            assert result.status == SourceStatus.PARTIAL, "Broad sample must not be marked as exhaustive"
+          print("REGISTRY_LIVE_TEST_PASS")
           PY
