@@ -139,7 +139,9 @@ def test_prospero_multi_page_partial_does_not_infer_absence():
     res = ProsperoCliSource(runner=run, max_pages=2).search("heart failure", limit=1)
     assert res.status == SourceStatus.PARTIAL
     assert res.records[0].record_id == "CRD420261111111"
-    assert commands[1][-4:-2] == ["--page", "2"]
+    page_flag = commands[1].index("--page")
+    assert commands[1][page_flag:page_flag + 2] == ["--page", "2"]
+    assert commands[1][-4:] == ["--sort", "accession", "--order", "asc"]
     assert "additional matches" in res.message
 
 
@@ -223,3 +225,38 @@ def test_osf_trove_three_pages_are_retrieved_and_verified_when_exhausted():
     assert len(calls) == 3
     assert result.status == SourceStatus.SEARCHED_POSITIVE
     assert len(result.records) == 3
+
+
+def test_prospero_focused_query_finishes_in_first_50_record_page():
+    # The user-requested discovery limit is 20, but a focused PROSPERO
+    # query with 35 matches should finish without a second page request.
+    queries = []
+    def fake(command):
+        queries.append(command)
+        n = 35
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps({
+            "ok": True, "data": {
+                "total_hits": n,
+                "hits": [
+                    {"record_id": str(i), "accession_number": f"CRD4202600{i:06d}",
+                     "title": f"Protocol {i}"} for i in range(n)
+                ],
+            },
+        }), stderr="")
+    result = ProsperoCliSource(runner=fake).search("focused ablation question", limit=20)
+    assert result.status == SourceStatus.SEARCHED_POSITIVE
+    assert len(result.records) == 35
+    assert len(queries) == 1
+    assert queries[0][queries[0].index("--page-size") + 1] == "40"
+    assert queries[0][-4:] == ["--sort", "accession", "--order", "asc"]
+
+
+def test_prospero_cli_success_with_upstream_error_note_is_partial():
+    def fake(command):
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps({
+            "ok": True, "data": {"total_hits": 0, "hits": [],
+                "raw_note": "Search backend unavailable"},
+        }), stderr="")
+    result = ProsperoCliSource(runner=fake).search("x")
+    assert result.status == SourceStatus.PARTIAL
+    assert result.status != SourceStatus.SEARCHED_NEGATIVE
