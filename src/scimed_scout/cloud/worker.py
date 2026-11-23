@@ -6,9 +6,11 @@ import tempfile
 import traceback
 from pathlib import Path
 from typing import Any
+from datetime import datetime, timezone
 
 from scimed_scout.ai import CandidateDiscoveryService, OpenAICompatibleProvider
 from scimed_scout.competitors import SemanticCompetitorAssessor
+from scimed_scout.discovery.topic_memory import recent_topic_memory
 from scimed_scout.discovery import (
     DiscoveryNoveltyService,
     DiscoveryScoringService,
@@ -23,6 +25,12 @@ from .supabase import DiscoveryJob, JobCancelled, SupabaseJobStore
 
 def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
     store.ensure_active(job.id)
+    history_rows = store.recent_completed_jobs(
+        client_token_hash=job.client_token_hash,
+        revisit_days=job.revisit_days,
+    )
+    prior_topics = recent_topic_memory(history_rows, revisit_days=job.revisit_days)
+    recently_skipped: list[dict[str, Any]] = []
     provider = OpenAICompatibleProvider.from_env()
     if not provider.endpoint or not provider.model:
         raise RuntimeError("SCIMED_AI_ENDPOINT and SCIMED_AI_MODEL are required in GitHub Secrets")
@@ -64,9 +72,36 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 design_scope=[],
                 count=job.candidate_count,
                 progress_callback=generation_progress,
+                recent_topics=prior_topics,
+                skipped_recent=recently_skipped,
             )
             store.ensure_active(job.id)
             if not candidates:
+                if recently_skipped:
+                    return {
+                        "package": {
+                            "package_type": "SCIMED_REVIEW_DISCOVERY_CHATGPT_REVIEW",
+                            "scope": "REVIEW_TOPIC_DISCOVERY_ONLY",
+                            "options": [],
+                            "provisional_options": [],
+                            "selection_policy": {
+                                "desired_options": job.final_options,
+                                "available_options": 0,
+                                "shortfall": job.final_options,
+                                "comparison_ready": False,
+                            },
+                        },
+                        "run_summary": {
+                            "generated_candidates": 0,
+                            "verified_candidates": 0,
+                            "status_counts": {},
+                            "candidate_audits": [],
+                            "recent_topics_skipped": recently_skipped[:40],
+                            "recent_topics_skipped_count": len(recently_skipped),
+                            "revisit_days": job.revisit_days,
+                            "message": "Only recently checked questions were generated. No redundant literature searches were run.",
+                        },
+                    }
                 raise RuntimeError("Candidate generation produced no new review topics")
 
             # Persist completed candidate proposals before slower source checks.
@@ -174,6 +209,26 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "desired_options": result.desired_options,
                     "status_counts": status_counts,
                     "candidate_audits": candidate_audits,
+                    "recent_topics_skipped": recently_skipped[:40],
+                    "recent_topics_skipped_count": len(recently_skipped),
+                    "revisit_days": job.revisit_days,
+                    "topic_history": [
+                        {
+                            "candidate_id": item.candidate_id,
+                            "title": checked.title,
+                            "specialty": checked.specialty,
+                            "question_type": checked.question_type,
+                            "population": checked.population,
+                            "intervention_exposure_index_test": checked.intervention_exposure_index_test,
+                            "comparator_reference": checked.comparator_reference,
+                            "outcomes": checked.outcomes,
+                            "eligible_designs": checked.eligible_designs,
+                            "status": item.candidate_status.value,
+                            "checked_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                        for item in result.verified
+                        if (checked := ledger.get_candidate(item.candidate_id)) is not None
+                    ],
                 },
             }
             return result_json
