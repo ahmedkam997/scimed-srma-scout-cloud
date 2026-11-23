@@ -482,6 +482,14 @@ function renderJobs() {
           ${incompleteFromLegacy ? '(including ' + escapeHtml(incompleteFromLegacy) + ' earlier runs left in DEEP_VERIFYING)' : ''}.
           Rejected ${escapeHtml(rejected)}.
           AI fallback calls ${escapeHtml(failovers)}.</p>
+          ${Array.isArray(summary.configured_free_ai_route) && summary.configured_free_ai_route.length
+            ? `<p>Free AI route: ${escapeHtml(summary.configured_free_ai_route.join(' → '))}.
+              Last responding model provider: ${escapeHtml(summary.last_ai_provider || 'unknown')}.</p>`
+            : ''}
+          ${Array.isArray(summary.unavailable_free_providers) && summary.unavailable_free_providers.length
+            ? `<p>Unavailable or throttled free providers this run:
+              ${escapeHtml(summary.unavailable_free_providers.join(', '))}. No paid fallback used.</p>`
+            : ''}
           ${summary.bibliographic_preflight ? `<p>Source-informed PubMed preflight:
             ${escapeHtml(summary.bibliographic_preflight.candidates_checked ?? 0)} questions searched;
             ${escapeHtml(summary.bibliographic_preflight.topics_with_title_signals ?? 0)} with intervention-title signals.
