@@ -187,3 +187,39 @@ def test_prospero_count_drift_preserves_fetched_pages_without_false_clearance():
     assert result.status==SourceStatus.PARTIAL
     assert len(result.records)==2
     assert "count_changed=True" in result.message
+
+
+def test_osf_trove_three_pages_are_retrieved_and_verified_when_exhausted():
+    calls = []
+    def load(url):
+        calls.append(url)
+        number = len(calls)
+        next_url = (
+            f"https://share.osf.io/trove/index-card-search?page%5Bcursor%5D={number + 1}"
+            if number < 3 else None
+        )
+        return {
+            "data": {
+                "attributes": {"totalResultCount": 3},
+                "relationships": {"searchResultPage": {
+                    "data": [{"id": f"hit{number}", "type": "search-result"}],
+                    "links": {"next": {"href": next_url}} if next_url else {},
+                }},
+            },
+            "included": [
+                {"id": f"hit{number}", "type": "search-result",
+                 "relationships": {"indexCard": {"data": {"id": f"card{number}", "type": "index-card"}}}},
+                {"id": f"card{number}", "type": "index-card",
+                 "attributes": {"resourceMetadata": {
+                     "@id": f"https://osf.io/abc{number}/",
+                     "title": [{"@value": f"Registration {number}"}],
+                 }}},
+            ],
+        }
+
+    result = OSFRegistrationsSource(JsonHttpClient(loader=load)).search(
+        "heart failure ablation", limit=20
+    )
+    assert len(calls) == 3
+    assert result.status == SourceStatus.SEARCHED_POSITIVE
+    assert len(result.records) == 3
