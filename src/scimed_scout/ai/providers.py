@@ -84,6 +84,14 @@ class OpenAICompatibleProvider:
                 "temperature": request.temperature,
                 "max_tokens": token_limit,
             }
+            if self.endpoint.startswith("https://api.groq.com/") and self.model in (
+                "openai/gpt-oss-20b", "openai/gpt-oss-120b"
+            ):
+                # GPT-OSS output budget includes reasoning tokens. Groq supports
+                # JSON object mode and low effort on these models, reducing
+                # empty/truncated content during longer clinical topic requests.
+                payload["reasoning_effort"] = "low"
+                payload["response_format"] = {"type": "json_object"}
             req = urllib.request.Request(
                 self.endpoint,
                 data=json.dumps(payload).encode("utf-8"),
@@ -224,7 +232,7 @@ class FreeProviderFallback:
                 system=request.system,
                 prompt=request.prompt,
                 temperature=request.temperature,
-                max_tokens=min(request.max_tokens, 2200),
+                max_tokens=min(request.max_tokens, 4000),
             )
             response = self.backup.complete(capped)
             if not _looks_like_complete_json(response.text):
