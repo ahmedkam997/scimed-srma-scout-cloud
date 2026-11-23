@@ -398,6 +398,29 @@ function renderJobs() {
             <details><summary>Relevant registration records (not cleared)</summary>
               ${(topic.registration_examples || []).map(item => `<p>${safeEvidenceLink(item)}</p>`).join('') || '<p>No registry examples preserved</p>'}
             </details>
+            ${(topic.registration_age_audit || []).length
+              ? `<details open><summary>PROSPERO / OSF age and update check</summary>
+                  <p class="help">Registration is not journal publication. An old protocol does not automatically block a new evidence update. All classifications require source verification.</p>
+                  ${topic.registration_age_audit.map(item => `<article class="score-item">
+                    <b>${escapeHtml(item.source)}: ${escapeHtml(item.title)}</b>
+                    <p>Registered: ${escapeHtml(item.registered_at || 'unknown')}.
+                      Registry status: ${escapeHtml(item.registry_status || 'unknown')}.
+                      Metadata changed: ${escapeHtml(item.registry_metadata_modified_at || 'unknown')}.</p>
+                    <p>Age audit: ${escapeHtml(item.classification)}.
+                      Potential newer PICO-related citations: ${escapeHtml(item.post_registration_bibliographic_leads?.count ?? 'unknown')}.
+                      Eligible new trials: not verified.</p>
+                    <p class="help">${escapeHtml(item.next_action || '')}</p>
+                  </article>`).join('')}
+                </details>` : ''}
+            ${(topic.published_review_update_audit || []).length
+              ? `<details><summary>Published review currency check</summary>
+                  ${topic.published_review_update_audit.map(item => `<p>
+                    ${escapeHtml(item.title)}.
+                    Publication year: ${escapeHtml(item.publication_year ?? 'unknown')}.
+                    Documented last search: ${escapeHtml(item.last_search_date || 'unknown')}.
+                    Update signal: ${escapeHtml(item.classification)}.
+                  </p>`).join('')}
+                </details>` : ''}
             <details><summary>Why provisional?</summary>
               <p>${(topic.source_blockers || []).map(escapeHtml).join('; ') || 'Manual source and methods checks remain'}</p>
               <p>To resolve unreviewed registration matches, check
@@ -457,6 +480,9 @@ function renderJobs() {
               ${pending ? `<p>Unresolved: ${pending}</p>` : ''}
               ${blockers ? `<p>Source coverage blockers: ${blockers}</p>` : ''}
               ${sourceStatus ? `<p>Source search statuses: ${sourceStatus}</p>` : ''}
+              ${(audit.registration_age_audit || []).length ? `<p>Registration age checks:
+                ${audit.registration_age_audit.map(item => escapeHtml(item.source + ' ' + (item.registered_at || 'unknown date') + ' / ' + item.classification)).join('; ')}
+                </p>` : ''}
               ${diagnostics ? `<details><summary>Source failure details</summary><p>${diagnostics}</p></details>` : ''}
               <details><summary>Methods and score weights</summary>
                 <pre>${escapeHtml(JSON.stringify({
