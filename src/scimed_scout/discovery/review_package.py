@@ -95,6 +95,48 @@ def build_discovery_review_package(
             ),
         })
 
+    # Preserve useful follow-up candidates without mislabeling them as
+    # scientifically qualified. Source gaps and all PICO details travel with
+    # each provisional option for independent verification.
+    provisional_options: list[dict[str, Any]] = []
+    ordered_unresolved = sorted(
+        (item for item in result.verified if item.candidate_status.value in
+         {"PROVISIONAL_BACKUP", "DEEP_VERIFYING"}),
+        key=lambda item: (
+            (ranking_by_id.get(item.candidate_id).score if ranking_by_id.get(item.candidate_id) else 0),
+            item.evidence.unique_primary_study_candidates,
+        ),
+        reverse=True,
+    )
+    for verified in ordered_unresolved[:5]:
+        candidate = ledger.get_candidate(verified.candidate_id)
+        if candidate is None:
+            continue
+        metadata = candidate.metadata or {}
+        provisional_options.append({
+            "candidate_id": verified.candidate_id,
+            "title": candidate.title,
+            "specialty": candidate.specialty,
+            "question_type": candidate.question_type,
+            "review_question": candidate.review_question,
+            "population": candidate.population,
+            "intervention_exposure_index_test": candidate.intervention_exposure_index_test,
+            "comparator_reference": candidate.comparator_reference,
+            "outcomes": candidate.outcomes,
+            "eligible_designs": candidate.eligible_designs,
+            "provisional_only": True,
+            "qualification_status": verified.candidate_status.value,
+            "source_blockers": list(verified.coverage.blockers),
+            "unresolved_checks": list(verified.pending),
+            "source_statuses": {
+                name: status.value for name, status in verified.coverage.source_statuses.items()
+            },
+            "discovered_primary_study_candidates": verified.evidence.unique_primary_study_candidates,
+            "preliminary_scoring": dict(metadata.get("discovery_gate_inputs") or {}),
+            "decision": verified.decision,
+            "next_action": "Manually verify source access, competing reviews, registrations and full-text eligibility before selecting this topic.",
+        })
+
     return {
         "package_type": "SCIMED_REVIEW_DISCOVERY_CHATGPT_REVIEW",
         "schema_version": 1,
@@ -118,6 +160,8 @@ def build_discovery_review_package(
             "chatgpt_is_final_comparator": True,
         },
         "options": options,
+        "provisional_options": provisional_options,
+        "provisional_options_are_not_qualified": True,
     }
 
 
