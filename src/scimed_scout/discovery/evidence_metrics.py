@@ -68,9 +68,9 @@ def _key(record: dict) -> str:
 def _unique_records(records: list[dict]) -> list[dict]:
     # Match discovery evidence's DOI-or-title deduplication. Records are only
     # bibliographic candidates, not confirmed independent study populations.
-    unique = []
-    seen_doi: set[str] = set()
-    seen_title: set[str] = set()
+    unique: list[dict] = []
+    seen_doi: dict[str, int] = {}
+    seen_title: dict[str, int] = {}
     for record in records:
         payload = record.get("payload") or {}
         metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
@@ -87,13 +87,51 @@ def _unique_records(records: list[dict]) -> list[dict]:
             or external.get("DOI") or external.get("doi") or article_doi or ""
         ).strip().casefold().removeprefix("https://doi.org/").removeprefix("http://doi.org/").rstrip(".")
         title = " ".join(re.findall(r"[a-z0-9]+", str(record.get("title") or "").casefold()))
-        if (doi and doi in seen_doi) or (title and title in seen_title):
-            continue
-        unique.append(record)
+        idx = seen_doi.get(doi) if doi else None
+        if idx is None and title:
+            idx = seen_title.get(title)
+        if idx is None:
+            idx = len(unique)
+            unique.append(record)
+        else:
+            # PubMed and Europe PMC often provide complementary data:
+            # one has semantic overlap assessment and another has a sourced
+            # full-text search date. Merge only provenance-bearing fields.
+            # Never infer eligibility, independence, or publication status.
+            previous = unique[idx]
+            old_payload = previous.get("payload") or {}
+            old_meta = old_payload.get("metadata") if isinstance(old_payload.get("metadata"), dict) else {}
+            new_meta = metadata
+            old_abstract = str(old_meta.get("abstract") or old_meta.get("summary") or "")
+            new_abstract = str(new_meta.get("abstract") or new_meta.get("summary") or "")
+            preferred = record if len(new_abstract) > len(old_abstract) else previous
+            alternate = previous if preferred is record else record
+            preferred_payload = dict(preferred.get("payload") or {})
+            alternate_payload = alternate.get("payload") or {}
+            preferred_meta = dict(preferred_payload.get("metadata") or {})
+            alternate_meta = alternate_payload.get("metadata") or {}
+            for field in (
+                "last_search_date", "date_last_searched", "search_end_date",
+                "date_of_last_search", "search_cutoff",
+                "search_date_evidence_quote", "search_date_evidence_url",
+                "search_date_evidence_level",
+            ):
+                if not preferred_meta.get(field) and alternate_meta.get(field):
+                    preferred_meta[field] = alternate_meta[field]
+            if not preferred_payload.get("discovery_semantic_assessment"):
+                assessment = alternate_payload.get("discovery_semantic_assessment")
+                if isinstance(assessment, dict):
+                    preferred_payload["discovery_semantic_assessment"] = assessment
+            if not preferred_payload.get("doi") and alternate_payload.get("doi"):
+                preferred_payload["doi"] = alternate_payload["doi"]
+            if not preferred_payload.get("year") and alternate_payload.get("year"):
+                preferred_payload["year"] = alternate_payload["year"]
+            preferred_payload["metadata"] = preferred_meta
+            unique[idx] = {**preferred, "payload": preferred_payload}
         if doi:
-            seen_doi.add(doi)
+            seen_doi[doi] = idx
         if title:
-            seen_title.add(title)
+            seen_title[title] = idx
     return unique
 
 
