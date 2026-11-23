@@ -73,3 +73,24 @@ def test_osf_single_short_phrase_does_not_retry_identical_broad_search():
     result = OSFRegistrationsSource(JsonHttpClient(loader=load)).search("heart failure")
     assert result.status == SourceStatus.PARTIAL
     assert sum("share.osf.io" in url for url in seen) == 1
+
+
+def test_osf_independently_confirmed_narrow_zero_still_checks_broad_anchor_for_hidden_protocols():
+    seen = []
+    def load(url):
+        seen.append(url)
+        if "api.osf.io" in url:
+            return {"data": [], "meta": {"version": "2.10"}, "links": {"next": None}}
+        phrase = parse_qs(urlsplit(url).query)["cardSearchText[title,description]"][0]
+        return trove_page(
+            "Systematic review and meta-analysis of testosterone replacement"
+        ) if phrase == "testosterone replacement" else trove_page()
+
+    result = OSFRegistrationsSource(JsonHttpClient(loader=load)).search(
+        '"testosterone replacement" AND "major adverse"'
+    )
+    assert result.status == SourceStatus.SEARCHED_POSITIVE
+    assert len(result.records) == 1
+    assert "broader intervention" in result.message
+    assert sum("share.osf.io" in url for url in seen) == 2
+    assert sum("api.osf.io" in url for url in seen) == 1
