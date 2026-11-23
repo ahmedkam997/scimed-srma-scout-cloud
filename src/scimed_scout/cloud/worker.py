@@ -116,6 +116,12 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "decision": verified.decision,
                     "pending": list(verified.pending)[:12],
                     "failed_gates": failed_gates,
+                    "coverage_blockers": list(verified.coverage.blockers),
+                    "coverage_warnings": list(verified.coverage.warnings),
+                    "source_statuses": {
+                        name: status.value
+                        for name, status in verified.coverage.source_statuses.items()
+                    },
                     "unique_primary_study_candidates": verified.evidence.unique_primary_study_candidates,
                     "scorecard": scorecard,
                 })
