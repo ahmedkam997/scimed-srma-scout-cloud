@@ -260,6 +260,11 @@ def build_discovery_review_package(
                 for record in ledger.list_external_evidence(verified.candidate_id, "REGISTRATION")[:5]
             ],
             "preliminary_scoring": dict(metadata.get("discovery_gate_inputs") or {}),
+            "preliminary_scoring_only": bool(metadata.get("discovery_scoring_preliminary_only")),
+            "preliminary_scoring_warning": (
+                str(metadata.get("discovery_scoring_preliminary_reason") or "")
+                or "No independent assessment of eligible studies, review overlap or novelty is established."
+            ),
             "decision": verified.decision,
             "next_action": "Manually verify source access, competing reviews, registrations and full-text eligibility before selecting this topic.",
         })
