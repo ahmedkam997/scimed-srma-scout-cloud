@@ -226,7 +226,12 @@ class CandidateDiscoveryService:
                     if len(proposals_with_response) >= target:
                         break
             except (ValueError, RuntimeError) as exc:
-                # Providers fail independently. Continue with a smaller request.
+                if getattr(exc, "status_code", None) in (402, 429):
+                    raise RuntimeError(
+                        "Free AI request quota is exhausted. Add the GROQ_API_KEY GitHub "
+                        "Secret for independent free-plan fallback, or retry when the "
+                        "provider resets its allowance."
+                    ) from exc
                 failure_messages.append(f"Batch request failed: {type(exc).__name__}")
             if progress_callback is not None:
                 progress_callback(len(proposals_with_response), target)
@@ -276,6 +281,11 @@ class CandidateDiscoveryService:
                     if len(proposals_with_response) >= target:
                         break
             except (ValueError, RuntimeError) as exc:
+                if getattr(exc, "status_code", None) in (402, 429):
+                    raise RuntimeError(
+                        "Free AI request quota is exhausted. Configure GROQ_API_KEY "
+                        "or retry after the free allowance resets."
+                    ) from exc
                 failure_messages.append(f"Short retry failed: {type(exc).__name__}")
             if progress_callback is not None:
                 progress_callback(len(proposals_with_response), target)
