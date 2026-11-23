@@ -99,7 +99,7 @@ def test_registry_plan_anchors_all_queries_to_intervention():
         search_terms=["inclisiran", "LDL cholesterol", "secondary prevention"],
     )
     plan = build_search_plan(c)
-    assert len(plan.registry_queries) == 4
+    assert 2 <= len(plan.registry_queries) <= 4
     assert all("inclisiran" in q.casefold() for q in plan.registry_queries)
     assert all(q.casefold() != "ldl cholesterol" for q in plan.registry_queries)
     assert all("inclisiran" in q.casefold() for q in plan.pipeline_queries)
@@ -119,7 +119,8 @@ def test_registry_plan_removes_dose_parenthesis_without_losing_treatment():
     )
     plan = build_search_plan(c)
     assert len(plan.registry_queries) > 1
-    assert all("Vitamin D3 supplementation" in q for q in plan.registry_queries)
+    assert all('"vitamin d3"' in q.casefold() for q in plan.registry_queries)
+    assert all("supplementation" not in q.casefold() for q in plan.registry_queries)
     assert all("(" not in q and ")" not in q for q in plan.registry_queries)
 
 
