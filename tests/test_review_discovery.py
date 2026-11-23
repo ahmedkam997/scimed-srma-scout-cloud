@@ -187,3 +187,74 @@ def test_completed_candidate_with_complete_registry_but_unresolved_scoring_is_pr
         assert result.decision == "PROVISIONAL — SCIENTIFIC ASSESSMENT INCOMPLETE"
         assert ledger.get_candidate("C1").status == CandidateStatus.PROVISIONAL_BACKUP
         assert any("Free provider quota" in x for x in result.pending)
+
+
+def test_source_complete_topic_scores_preliminary_importance_but_never_claims_novelty(tmp_path):
+    class MixedPublicationSource:
+        name = "PubMed"
+
+        def search(self, query, *, limit=20):
+            if "systematic review" in query.lower() or "meta-analysis" in query.lower():
+                return SearchResult(
+                    self.name, query, SourceStatus.SEARCHED_POSITIVE,
+                    [SearchRecord(
+                        self.name, "REVIEW1",
+                        title="Systematic review of Test A for disease X",
+                        doi="10.1000/competingreview",
+                        metadata={"abstract": "We systematically reviewed Test A in adults."},
+                    )], 1,
+                )
+            return SearchResult(
+                self.name, query, SourceStatus.SEARCHED_POSITIVE,
+                primary_records(5), 5,
+            )
+
+    class PreliminaryScorer:
+        def __init__(self):
+            self.calls = 0
+
+        def score(self, *args, **kwargs):
+            self.calls += 1
+            return gate_inputs()
+
+    score = PreliminaryScorer()
+    all_clients = clients(n=5)
+    all_clients[0] = MixedPublicationSource()
+    with SQLiteLedger(tmp_path / "provisional_score.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Radiology", question_type="DIAGNOSTIC_ACCURACY"))
+        review_candidate = candidate()
+        review_candidate.metadata = {}
+        ledger.upsert_candidate(review_candidate)
+        result = ReviewDiscoveryOrchestrator(
+            ledger, all_clients, scoring_service=score,
+        ).verify_candidate("C1")
+        metadata = ledger.get_candidate("C1").metadata
+        assert result.coverage.complete
+        assert score.calls == 1
+        assert metadata["discovery_scoring_preliminary_only"] is True
+        assert metadata["discovery_scoring_deferred"] is False
+        assert metadata["discovery_gate_inputs"]["clinical_importance"] == 5
+        assert result.candidate_status == CandidateStatus.PROVISIONAL_BACKUP
+        assert result.final_gate_result is None
+        assert any("published reviews" in x for x in result.pending)
+
+
+def test_missing_mandatory_registration_source_defers_preliminary_ai_scoring(tmp_path):
+    class NeverCalledScorer:
+        def score(self, *args, **kwargs):
+            raise AssertionError("Must not score when PROSPERO is unavailable")
+
+    with SQLiteLedger(tmp_path / "source_missing_score.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Radiology", question_type="DIAGNOSTIC_ACCURACY"))
+        record = candidate()
+        record.metadata = {}
+        ledger.upsert_candidate(record)
+        result = ReviewDiscoveryOrchestrator(
+            ledger, clients(prospero=SourceStatus.ACCESS_FAILED),
+            scoring_service=NeverCalledScorer(),
+        ).verify_candidate("C1")
+        metadata = ledger.get_candidate("C1").metadata
+        assert not result.coverage.complete
+        assert metadata["discovery_scoring_deferred"] is True
+        assert metadata["discovery_scoring_deferred_reason"] == "Mandatory source coverage unavailable"
+        assert result.candidate_status == CandidateStatus.PROVISIONAL_BACKUP
