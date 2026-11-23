@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from datetime import datetime, timezone
 
-from scimed_scout.ai import CandidateDiscoveryService, OpenAICompatibleProvider
+from scimed_scout.ai import CandidateDiscoveryService, FreeProviderFallback
 from scimed_scout.competitors import SemanticCompetitorAssessor
 from scimed_scout.discovery.topic_memory import recent_topic_memory
 from scimed_scout.discovery import (
@@ -31,9 +31,9 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
     )
     prior_topics = recent_topic_memory(history_rows, revisit_days=job.revisit_days)
     recently_skipped: list[dict[str, Any]] = []
-    provider = OpenAICompatibleProvider.from_env()
-    if not provider.endpoint or not provider.model:
-        raise RuntimeError("SCIMED_AI_ENDPOINT and SCIMED_AI_MODEL are required in GitHub Secrets")
+    provider = FreeProviderFallback.from_env()
+    if not provider.primary.endpoint or not provider.primary.model or not provider.primary.api_key:
+        raise RuntimeError("SCIMED_AI_ENDPOINT, SCIMED_AI_MODEL and SCIMED_AI_API_KEY are required")
 
     with tempfile.TemporaryDirectory(prefix="scimed-review-scout-") as temp_dir:
         db_path = Path(temp_dir) / "worker.sqlite3"
@@ -209,6 +209,8 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "desired_options": result.desired_options,
                     "status_counts": status_counts,
                     "candidate_audits": candidate_audits,
+                    "ai_failover_count": provider.failover_count,
+                    "last_ai_provider": provider.last_provider,
                     "recent_topics_skipped": recently_skipped[:40],
                     "recent_topics_skipped_count": len(recently_skipped),
                     "revisit_days": job.revisit_days,
