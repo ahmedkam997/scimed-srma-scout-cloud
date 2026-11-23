@@ -69,47 +69,43 @@ def build_batch_overlap_prompt(candidate: CandidateRecord, records: list[dict]) 
                 "record_id": str(record.get("source_record_id") or ""),
                 "source": str(record.get("source") or ""),
                 "title": str(record.get("title") or ""),
-                "evidence_text": evidence_text[:1600],
+                "evidence_text": evidence_text[:900],
             }
         )
 
-    return f"""Candidate:
-Title: {candidate.title}
-Question type: {candidate.question_type}
-Review question: {candidate.review_question}
+    # A compact schema is important for free GPT-OSS inference. Responses
+    # with eight verbose dimensions frequently exhausted output budgets and
+    # caused every competitor to become "unresolved".
+    return f"""Evaluate each existing record against this proposed SRMA PICO.
+Proposed: {candidate.title}
 Population: {candidate.population}
-Intervention/Exposure/Index test: {candidate.intervention_exposure_index_test}
-Comparator/Reference: {candidate.comparator_reference}
+Intervention: {candidate.intervention_exposure_index_test}
+Comparator: {candidate.comparator_reference}
 Outcomes: {candidate.outcomes}
-Eligible designs: {candidate.eligible_designs}
+Study designs: {candidate.eligible_designs}
+Existing source-backed records: {json.dumps(rows, ensure_ascii=False)}
 
-Existing records:
-{json.dumps(rows, ensure_ascii=False)}
-
-Return:
+Return ONE strict JSON object with assessments for EVERY supplied record_id.
+Each dimension must use a short exact quote from that record's evidence_text, or
+level UNRESOLVED with evidence "". Never infer last search date from publication
+year, or equate a PROSPERO/OSF registration with a journal publication.
+Required fields for each entry:
 {{
-  "assessments": [
-    {{
-      "record_id": "exact supplied record_id",
-      "overall_overlap": "NONE|LOW|MODERATE|HIGH|ESSENTIALLY_IDENTICAL|UNRESOLVED",
-      "dimensions": [
-        {{"name":"population","level":"...","rationale":"...","evidence":"..."}},
-        {{"name":"intervention_exposure_index_test","level":"...","rationale":"...","evidence":"..."}},
-        {{"name":"comparator_reference","level":"...","rationale":"...","evidence":"..."}},
-        {{"name":"outcomes","level":"...","rationale":"...","evidence":"..."}},
-        {{"name":"design_scope","level":"...","rationale":"...","evidence":"..."}},
-        {{"name":"clinical_decision","level":"...","rationale":"...","evidence":"..."}},
-        {{"name":"era","level":"...","rationale":"...","evidence":"..."}},
-        {{"name":"study_set_search_cutoff","level":"...","rationale":"...","evidence":"..."}}
-      ],
-      "adequate_review": true|false|null,
-      "recent_review": true|false|null,
-      "meaningful_new_information": true|false|null,
-      "confidence": 0.0,
-      "rationale": "..."
-    }}
-  ]
-}}"""
+ "record_id":"exact supplied ID",
+ "overall_overlap":"NONE|LOW|MODERATE|HIGH|ESSENTIALLY_IDENTICAL|UNRESOLVED",
+ "dimensions":[
+  {{"name":"population","level":"HIGH","evidence":"exact quote"}},
+  {{"name":"intervention_exposure_index_test","level":"HIGH","evidence":"exact quote"}},
+  {{"name":"comparator_reference","level":"HIGH","evidence":"exact quote"}},
+  {{"name":"outcomes","level":"HIGH","evidence":"exact quote"}},
+  {{"name":"design_scope","level":"HIGH","evidence":"exact quote"}},
+  {{"name":"clinical_decision","level":"HIGH","evidence":"exact quote"}}
+ ],
+ "adequate_review":null,"recent_review":null,"meaningful_new_information":null,
+ "confidence":0.0,"rationale":"brief"
+}}
+Wrap entries in {{"assessments":[...]}}. Choose levels based on evidence, not
+on the example's HIGH placeholder. Do not claim a recent search without date."""
 
 
 class SemanticCompetitorAssessor:
@@ -156,7 +152,7 @@ class SemanticCompetitorAssessor:
                     system=SYSTEM_PROMPT + "\nAssess every supplied record independently and return one item for each record_id.",
                     prompt=build_batch_overlap_prompt(candidate, usable),
                     temperature=0.0,
-                    max_tokens=2000,
+                    max_tokens=2400,
                 )
             )
             provider_name = response.provider
