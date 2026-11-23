@@ -1,5 +1,5 @@
 name: discovery-worker
-# Controlled evidence-first literature-gap regression pilot from SciMed queue.
+# One controlled Cardiology follow-up after the live OSF index-response and source-ranked review fixes.
 
 on:
   push:
