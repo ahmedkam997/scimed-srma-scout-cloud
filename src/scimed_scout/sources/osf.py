@@ -92,12 +92,23 @@ class OSFRegistrationsSource:
         pages = 0
         remaining = True
         for page in range(self.max_pages):
-            if page:
-                if not _safe_next(url, "share.osf.io", "/trove/index-card-search"):
-                    raise ValueError("unsafe OSF Trove pagination URL")
-                obj = self.http.get_json(url, headers={"Accept": "application/vnd.api+json"})
-            else:
-                obj = self.http.get_json(url, params, headers={"Accept": "application/vnd.api+json"})
+            if page and not _safe_next(url, "share.osf.io", "/trove/index-card-search"):
+                return SearchResult(
+                    self.name, original, SourceStatus.PARTIAL, list(records.values()), total,
+                    message="OSF Trove supplied an untrusted next-page URL; stopped safely with partial records.",
+                )
+            try:
+                if page:
+                    obj = self.http.get_json(url, headers={"Accept": "application/vnd.api+json"})
+                else:
+                    obj = self.http.get_json(url, params, headers={"Accept": "application/vnd.api+json"})
+            except Exception:
+                if records:
+                    return SearchResult(
+                        self.name, original, SourceStatus.PARTIAL, list(records.values()), total,
+                        message=f"OSF Trove page {page + 1} could not be retrieved; kept prior pages.",
+                    )
+                raise
             root = obj.get("data")
             included = obj.get("included")
             if not isinstance(root, dict) or not isinstance(included, list):
