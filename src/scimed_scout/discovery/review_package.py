@@ -182,6 +182,14 @@ def build_discovery_review_package(
                 "trial-family independence, or effect-data verification."
             ),
             "bibliographic_pico_fit": fit_by_id.get(verified.candidate_id, {}),
+            "registration_age_audit": list(metadata.get("discovery_registration_age_audit") or []),
+            "published_review_update_audit": list(metadata.get("discovery_published_review_update_audit") or []),
+            "registration_age_policy": (
+                "An old registration is not proof of a published review. "
+                "Newer bibliographic records are not verified eligible studies. "
+                "Check project status, actual review publication, search cutoff, "
+                "clinical overlap and meaningful new evidence before accepting an update."
+            ),
             "triage_tier": (
                 "PICO_SIGNAL_FOR_MANUAL_AUDIT"
                 if fit_by_id.get(verified.candidate_id, {}).get("intervention_population_title_matches", 0) >= 4
