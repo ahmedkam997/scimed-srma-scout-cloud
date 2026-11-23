@@ -99,3 +99,34 @@ def test_candidate_model_normalizes_ai_labels_before_creating_registry_policy():
         "eligible_designs":["Randomized controlled trials"],
     }
     assert CandidateProposal.from_dict(raw).question_type=="EFFECTIVENESS"
+
+
+def test_generation_removes_near_duplicate_picos_before_literature_search(tmp_path):
+    import json
+
+    from scimed_scout.ai.discovery import CandidateDiscoveryService
+    from scimed_scout.ai.providers import StaticAIProvider
+    from scimed_scout.storage import ProjectRecord, SQLiteLedger
+
+    common = {
+        "question_type": "Effectiveness",
+        "review_question": "Does adjunctive non-pulmonary vein trigger ablation improve AF outcomes?",
+        "population": "Adults with persistent atrial fibrillation undergoing catheter ablation",
+        "intervention_exposure_index_test": "Adjunctive non-pulmonary vein trigger ablation plus pulmonary-vein isolation",
+        "comparator_reference": "Pulmonary-vein isolation alone",
+        "outcomes": ["Freedom from atrial fibrillation at 12 months", "Quality of life"],
+        "eligible_designs": ["Randomized controlled trials"],
+    }
+    candidates = [
+        {**common, "title": "Effectiveness of adjunctive non-pulmonary vein trigger ablation versus pulmonary-vein isolation alone in persistent atrial fibrillation"},
+        {**common, "title": "Adjunctive non-pulmonary vein trigger ablation versus pulmonary-vein isolation alone in persistent atrial fibrillation"},
+    ]
+    provider = StaticAIProvider(text=json.dumps({"candidates": candidates}))
+    with SQLiteLedger(tmp_path / "diversity.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord(project_id="DIVERSITY", specialty="Cardiology", question_type="ALL"))
+        service = CandidateDiscoveryService(provider, ledger)
+        generated = service.generate_and_store(
+            project_id="DIVERSITY", specialty="Cardiology", count=2,
+        )
+        assert len(generated) == 1
+        assert "near-duplicate clinical PICO" in " ".join(service.generation_warnings)
