@@ -7,6 +7,7 @@ from typing import Any
 
 from scimed_scout.competitors import OverlapLevel, SemanticCompetitorAssessor
 from scimed_scout.storage import SQLiteLedger
+from .open_access_dates import OpenAccessSearchDateResolver
 
 
 class DiscoveryNoveltyService:
@@ -24,12 +25,16 @@ class DiscoveryNoveltyService:
         max_reviews: int = 5,
         max_registrations: int = 4,
         batch_size: int = 2,
+        search_date_resolver: OpenAccessSearchDateResolver | None = None,
+        max_fulltext_reviews: int = 2,
     ):
         self.ledger = ledger
         self.assessor = assessor
         self.max_reviews = max(1, int(max_reviews))
         self.max_registrations = max(1, int(max_registrations))
         self.batch_size = max(1, min(20, int(batch_size)))
+        self.search_date_resolver = search_date_resolver
+        self.max_fulltext_reviews = max(0, min(4, int(max_fulltext_reviews)))
 
     def assess_candidate(self, candidate_id: str, *, force: bool = False) -> dict[str, Any]:
         candidate = self.ledger.get_candidate(candidate_id)
@@ -46,6 +51,10 @@ class DiscoveryNoveltyService:
             self.max_registrations,
         )
 
+        resolved_dates = self._resolve_search_dates(candidate_id, review_records)
+        if resolved_dates:
+            all_reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
+            review_records = _select_records(candidate, all_reviews, self.max_reviews)
         review_assessments = self._assess_records(candidate, review_records, force=force)
         registration_assessments = self._assess_records(
             candidate,
@@ -93,6 +102,7 @@ class DiscoveryNoveltyService:
             "discovery_potential_fatal_review_overlap_ids": potential_fatal_review_ids,
             "discovery_registration_age_audit": registration_freshness,
             "discovery_published_review_update_audit": review_freshness,
+            "discovery_fulltext_search_date_resolutions": resolved_dates,
             "discovery_material_registration_overlap_ids": material_registration_ids,
             "discovery_competitor_records_discovered": len(all_reviews),
             "discovery_competitor_records_semantically_assessed": len(review_records),
@@ -125,10 +135,52 @@ class DiscoveryNoveltyService:
             "potential_fatal_review_overlap_ids": potential_fatal_review_ids,
             "registration_age_audit": registration_freshness,
             "published_review_update_audit": review_freshness,
+            "fulltext_search_date_resolutions": resolved_dates,
             "material_registration_overlap_ids": material_registration_ids,
             "summary": _summary(review_assessments, registration_assessments)
                        + "\\n" + _freshness_summary(registration_freshness, review_freshness),
         }
+
+    def _resolve_search_dates(
+        self,
+        candidate_id: str,
+        records: list[dict],
+    ) -> list[dict[str, Any]]:
+        if self.search_date_resolver is None or self.max_fulltext_reviews == 0:
+            return []
+        found: list[dict[str, Any]] = []
+        attempted = 0
+        for record in records:
+            meta = _metadata(record)
+            if any(meta.get(k) for k in (
+                "last_search_date", "date_last_searched", "search_end_date",
+                "date_of_last_search", "search_cutoff",
+            )):
+                continue
+            if attempted >= self.max_fulltext_reviews:
+                break
+            attempted += 1
+            evidence = self.search_date_resolver.resolve(record)
+            if evidence is None:
+                continue
+            payload = dict(record.get("payload") or {})
+            updated = dict(meta)
+            updated["last_search_date"] = evidence["date"]
+            updated["search_date_evidence_quote"] = evidence["quote"]
+            updated["search_date_evidence_url"] = evidence["source_url"]
+            updated["search_date_evidence_level"] = evidence["source_type"]
+            payload["metadata"] = updated
+            self.ledger.upsert_external_evidence(
+                candidate_id, "PUBLISHED_REVIEW", record["source_record_id"],
+                source=record.get("source", ""), title=record.get("title", ""),
+                payload=payload,
+            )
+            found.append({
+                "source_record_id": record["source_record_id"],
+                "title": record.get("title", ""),
+                **evidence,
+            })
+        return found
 
     def _assess_records(
         self,
@@ -560,6 +612,11 @@ def published_review_update_audit(candidate, record: dict, primary_records: list
         "publication_year": pub_year,
         "publication_age_years_approx": review_age,
         "last_search_date": cutoff or None,
+        "search_date_evidence_quote": str(meta.get("search_date_evidence_quote") or "")[:230],
+        "search_date_evidence_url": str(meta.get("search_date_evidence_url") or ""),
+        "search_date_evidence_level": str(meta.get("search_date_evidence_level") or (
+            "STRUCTURED_RECORD_DATE_FIELD" if cutoff else "NOT_FOUND"
+        )),
         "classification": classification,
         "post_cutoff_bibliographic_leads": leads,
         "post_publication_bibliographic_leads": post_publication_leads,
