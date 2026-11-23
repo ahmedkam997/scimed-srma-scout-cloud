@@ -138,6 +138,7 @@ class CandidateDiscoveryService:
     def __init__(self, provider: AIProvider, ledger: SQLiteLedger):
         self.provider = provider
         self.ledger = ledger
+        self.generation_warnings: list[str] = []
 
     def generate_and_store(
         self,
@@ -177,6 +178,7 @@ class CandidateDiscoveryService:
         max_calls = min(8, len(batch_sizes) + 3)
         calls = 0
         failure_messages: list[str] = []
+        self.generation_warnings = []
         consecutive_provider_failures = 0
         stop_due_to_provider_outage = False
 
@@ -238,10 +240,20 @@ class CandidateDiscoveryService:
                         "Do not retry until provider access is restored."
                     ) from exc
                 if code in (402, 429):
-                    raise RuntimeError(
-                        f"{provider_name} has exhausted or limited its free AI requests "
-                        f"(HTTP {code}). Retry after quota reset or configure an independent provider."
-                    ) from exc
+                    if proposals_with_response:
+                        # Preserve complete candidates generated before a
+                        # free-tier quota expires; never discard valid work.
+                        self.generation_warnings.append(
+                            f"Provider limit HTTP {code}. Preserved "
+                            f"{len(proposals_with_response)} complete proposals; "
+                            "remaining ideas were not generated."
+                        )
+                        stop_due_to_provider_outage = True
+                    else:
+                        raise RuntimeError(
+                            f"{provider_name} has exhausted or limited its free AI requests "
+                            f"(HTTP {code}). Retry after quota reset or configure an independent provider."
+                        ) from exc
                 consecutive_provider_failures += 1
                 failure_messages.append(
                     f"Batch request failed: {provider_name}, {type(exc).__name__}, "
@@ -313,10 +325,18 @@ class CandidateDiscoveryService:
                         "Review account or model permissions before retrying."
                     ) from exc
                 if code in (402, 429):
-                    raise RuntimeError(
-                        f"{provider_name} free AI quota exhausted (HTTP {code}). "
-                        "Use a healthy independent provider or retry after quota reset."
-                    ) from exc
+                    if proposals_with_response:
+                        self.generation_warnings.append(
+                            f"Provider limit HTTP {code}. Preserved "
+                            f"{len(proposals_with_response)} complete proposals; "
+                            "remaining ideas were not generated."
+                        )
+                        stop_due_to_provider_outage = True
+                    else:
+                        raise RuntimeError(
+                            f"{provider_name} free AI quota exhausted (HTTP {code}). "
+                            "Use a healthy independent provider or retry after quota reset."
+                        ) from exc
                 consecutive_provider_failures += 1
                 failure_messages.append(
                     f"Short retry failed: {provider_name}, {type(exc).__name__}, "
