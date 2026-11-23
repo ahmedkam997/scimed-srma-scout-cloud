@@ -61,7 +61,53 @@ class OSFRegistrationsSource:
         if not focus:
             return SearchResult(self.name, query, SourceStatus.PARTIAL, message="No suitable OSF search terms")
         try:
-            return self._search_trove(query, focus, limit)
+            result = self._search_trove(query, focus, limit)
+            # Exact intervention+population phrases are often too narrow for
+            # public OSF registration titles. A focused zero must never be
+            # mistaken for proof that no competing review exists. Retry one
+            # broader intervention anchor before returning a provisional audit.
+            if (
+                result.status == SourceStatus.PARTIAL and not result.records
+                and "no indexed matches" in (result.message or "")
+                and len(focus.split()) > 2
+            ):
+                broad = " ".join(focus.split()[:2])
+                broad_result = self._search_trove(query, broad, limit)
+                if broad_result.status in (
+                    SourceStatus.SEARCHED_POSITIVE, SourceStatus.SEARCHED_NEGATIVE
+                ):
+                    return SearchResult(
+                        self.name, query, broad_result.status,
+                        broad_result.records, broad_result.total_count,
+                        message=(
+                            f"Focused phrase '{focus}' had no indexed matches; "
+                            f"broader intervention search '{broad}' was "
+                            f"{broad_result.status.value}. "
+                            "The broader query is a scoped registration audit, "
+                            "not independent PICO-overlap or novelty clearance. "
+                            + broad_result.message
+                        ),
+                    )
+                if broad_result.records:
+                    return SearchResult(
+                        self.name, query, SourceStatus.PARTIAL,
+                        broad_result.records, broad_result.total_count,
+                        message=(
+                            f"Focused phrase '{focus}' returned zero; "
+                            f"broader '{broad}' found partial results. "
+                            + broad_result.message
+                        ),
+                    )
+                return SearchResult(
+                    self.name, query, SourceStatus.PARTIAL, [],
+                    result.total_count,
+                    message=(
+                        f"Neither focused '{focus}' nor broad '{broad}' "
+                        "had independently confirmed registration index coverage. "
+                        "Do not infer a negative review-competition result."
+                    ),
+                )
+            return result
         except (RuntimeError, ValueError, TypeError, KeyError) as exc:
             try:
                 fallback = self._search_v2(query, focus, limit)
