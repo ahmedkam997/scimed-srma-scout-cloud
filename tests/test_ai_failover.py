@@ -160,3 +160,62 @@ def test_openrouter_free_does_not_receive_groq_specific_fields():
     provider.complete(AIRequest(system="system", prompt="candidate task"))
     assert "reasoning_effort" not in captured
     assert "response_format" not in captured
+
+
+def test_topic_generation_keeps_complete_proposals_after_free_quota_429(tmp_path):
+    from scimed_scout.ai.discovery import CandidateDiscoveryService
+    from scimed_scout.storage import ProjectRecord, SQLiteLedger
+
+    class StopsAfterOneBatch:
+        name = "mock-then-429"
+        model = "free-test"
+
+        def __init__(self):
+            self.calls = 0
+
+        def complete(self, request):
+            self.calls += 1
+            if self.calls > 1:
+                raise ProviderFailure("groq-free-backup", 429, "HTTP 429")
+            items = [
+                {
+                    "title": f"Review question {i}",
+                    "question_type": "EFFECTIVENESS",
+                    "review_question": f"Do interventions for phenotype {i} improve outcomes?",
+                    "specialty": "Cardiology",
+                    "population": f"Adults with phenotype {i}",
+                    "intervention_exposure_index_test": f"Intervention {i}",
+                    "comparator_reference": "Usual care",
+                    "outcomes": ["mortality"],
+                    "eligible_designs": ["RCT"],
+                    "search_terms": [f"phenotype {i}"],
+                }
+                for i in range(4)
+            ]
+            return AIResponse(json.dumps({"candidates": items}), self.name, self.model, {})
+
+    provider = StopsAfterOneBatch()
+    with SQLiteLedger(tmp_path / "retained.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("p1", "Cardiology"))
+        generator = CandidateDiscoveryService(provider, ledger)
+        candidates = generator.generate_and_store(
+            project_id="p1", specialty="Cardiology", count=8
+        )
+        assert len(candidates) == 4
+        assert provider.calls == 2
+        assert generator.generation_warnings
+        assert "HTTP 429" in generator.generation_warnings[0]
+        assert len(ledger.list_candidates("p1")) == 4
+
+
+def test_free_router_does_not_repeat_groq_requests_after_backup_429():
+    primary = FakeProvider(ProviderFailure("openrouter-free", 429, "HTTP 429"))
+    backup = FakeProvider(ProviderFailure("groq-free-backup", 429, "HTTP 429"))
+    router = FreeProviderFallback(primary, backup)
+    with pytest.raises(ProviderFailure):
+        router.complete(AIRequest(system="s", prompt="p"))
+    assert router.backup_quota_exhausted
+    with pytest.raises(ProviderFailure):
+        router.complete(AIRequest(system="s", prompt="p"))
+    assert len(primary.calls) == 1
+    assert len(backup.calls) == 1
