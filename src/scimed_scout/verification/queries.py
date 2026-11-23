@@ -58,19 +58,24 @@ def build_search_plan(candidate: CandidateRecord, *, max_queries: int = 4) -> Se
         _join(concept, "meta-analysis"),
     ])[:max_queries]
 
-    # Registries often favor shorter, broader natural-language phrases.
+    # Registration registries need multi-concept *focused* queries. A
+    # stand-alone cue such as "LDL cholesterol" or "vitamin D3" retrieves
+    # hundreds of protocols and exhausts free pagination without assessing
+    # the proposed PICO. Keep the intervention anchor on every search.
+    # Do not equate these exploratory queries with an exhaustive search.
+    registry_anchor = _registry_concept(concept)
     registry = _dedupe([
-        _join(concept, subject),
-        _join(concept, outcome),
-        *keywords[:2],
-        title,
+        _compact(_join(registry_anchor, _registry_concept(subject)), 105),
+        _compact(_join(registry_anchor, _registry_concept(outcome)), 105),
+        _compact(_join(registry_anchor, _registry_concept(comparator)), 105),
+        _compact(_join(registry_anchor, _registry_concept(title)), 105),
     ])[:max_queries] or primary
 
     pipeline = _dedupe([
-        _join(concept, subject),
-        _join(concept, comparator),
-        *keywords[:2],
-        title,
+        _compact(_join(registry_anchor, _registry_concept(subject)), 105),
+        _compact(_join(registry_anchor, _registry_concept(comparator)), 105),
+        _compact(_join(registry_anchor, _registry_concept(outcome)), 105),
+        _compact(_join(registry_anchor, _registry_concept(title)), 105),
     ])[:max_queries] or primary
 
     return SearchPlan(
@@ -109,3 +114,15 @@ def _dedupe(values: list[str]) -> list[str]:
             seen.add(key)
             out.append(normalized)
     return out
+
+
+def _registry_concept(value: str) -> str:
+    """Normalize punctuation and remove long numeric dose parentheticals.
+
+    PICO scope remains visible in the original query and proposal fields.
+    Exact dosing details still belong in manual protocol verification.
+    """
+    text = re.sub(r"\\([^)]*\\d[^)]*\\)", " ", str(value or ""))
+    text = text.replace("‑", " ").replace("–", " ").replace("—", " ")
+    text = re.sub(r"[^\\w\\s-]", " ", text, flags=re.UNICODE)
+    return " ".join(text.split()[:8])
