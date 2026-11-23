@@ -150,6 +150,13 @@ class ReviewDiscoveryOrchestrator:
             pending.append("TYPE-A: competing review registrations are not fully assessed")
         if bool(meta.get("discovery_semantic_scope_capped")):
             pending.append("TYPE-A: limited competitor assessment scope; not all records were verified")
+        potential_redundant_reviews = list(meta.get("discovery_potential_fatal_review_overlap_ids") or [])
+        if potential_redundant_reviews:
+            pending.append(
+                "TYPE-A: potentially redundant published review(s) require verified last "
+                "search dates, update assessment and human confirmation: "
+                + ", ".join(potential_redundant_reviews[:5])
+            )
 
         material_regs = list(meta.get("discovery_material_registration_overlap_ids") or [])
         if material_regs and not bool(meta.get("discovery_material_registration_overlap_resolved")):
