@@ -56,7 +56,14 @@ class OpenAICompatibleProvider:
         if not self.model:
             raise RuntimeError("SCIMED_AI_MODEL is not configured")
 
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        # Some gateways reject urllib's generic Python-urllib default UA.
+        # A stable, descriptive application UA was verified to return HTTP 200
+        # on Groq's model-list endpoint in GitHub Actions.
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "SciMed-Review-Scout/1.0",
+        }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
