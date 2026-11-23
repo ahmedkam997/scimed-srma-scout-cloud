@@ -269,7 +269,9 @@ function renderJobs() {
       ? `<div class="worker-help">
           <p>Your job is saved. If the worker has not claimed it, request a direct start.</p>
           <button class="secondary small" data-wake-job="${escapeHtml(job.id)}">Start queued worker now</button>
-          <p>One-time direct start requires a secure GitHub dispatch token in Supabase.</p>
+          <p>For one-tap automatic starts, create a fine-grained GitHub token limited to this repository with Actions: Read and write. Save it in Supabase Edge Function Secrets as SCIMED_GITHUB_DISPATCH_TOKEN. Never put the token in the browser or chat.</p>
+          <a class="worker-link" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Create GitHub dispatch token</a>
+          <a class="worker-link" href="https://supabase.com/dashboard/project/vskqiszpjxsmcayuaclo/functions" target="_blank" rel="noopener noreferrer">Open Supabase Edge Function Secrets</a>
           <a class="worker-link" href="https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/workflows/discovery-worker.yml"
              target="_blank" rel="noopener noreferrer">Manual GitHub worker controls</a>
           <p>Fallback: choose Run workflow, main, then Run workflow. Do not create another discovery job.</p>
