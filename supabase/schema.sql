@@ -77,6 +77,7 @@ create table if not exists public.discovery_jobs (
   max_verify integer not null default 10 check (max_verify between 2 and 30),
   limit_per_query integer not null default 20 check (limit_per_query between 5 and 100),
   revisit_days integer not null default 30 check (revisit_days between 0 and 180),
+  dispatch_requested_at timestamptz,
   result_json jsonb not null default '{}'::jsonb,
   error_text text not null default '',
   created_at timestamptz not null default now(),
@@ -87,6 +88,9 @@ create table if not exists public.discovery_jobs (
 
 alter table public.discovery_jobs
   alter column user_id drop not null;
+
+alter table public.discovery_jobs
+  add column if not exists dispatch_requested_at timestamptz;
 
 alter table public.discovery_jobs
   add column if not exists revisit_days integer not null default 30;
