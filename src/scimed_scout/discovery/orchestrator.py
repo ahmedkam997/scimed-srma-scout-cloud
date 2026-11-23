@@ -17,6 +17,7 @@ from .candidate_preflight import FocusedEvidencePreflight
 from .evidence import discovery_evidence_snapshot
 from .evidence_classification import (
     classify_review_search_hit, classify_registration_search_hit,
+    review_intervention_citation_signal,
 )
 from .gates import final_discovery_decision
 from .models import DiscoveryCandidateResult, DiscoveryRunResult
@@ -378,10 +379,24 @@ class ReviewDiscoveryOrchestrator:
                         if evidence_type == "PUBLISHED_REVIEW":
                             kind = classify_review_search_hit(record)
                             classification = kind
-                            if kind != "CONFIRMED_REVIEW_CUE":
-                                # SQLite's existing OTHER evidence bucket
-                                # retains every ambiguous or primary citation.
-                                # Such records are not competing review counts.
+                            if kind == "CONFIRMED_REVIEW_CUE":
+                                signal = review_intervention_citation_signal(
+                                    candidate, record,
+                                )
+                                classification = kind + ":" + signal
+                                if signal == (
+                                    "NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK"
+                                ):
+                                    # A broad bibliographic search can yield
+                                    # systematic reviews on green tea, carotenoids
+                                    # or oncology when investigating ketone esters.
+                                    # Keep them in OTHER for manual assessment;
+                                    # do not pretend they are excluded by a
+                                    # full-text/PICO review.
+                                    record_type = "OTHER"
+                            else:
+                                # Peer-review reports, unrelated primary studies
+                                # and unknown citation types remain auditable.
                                 record_type = "OTHER"
                         elif evidence_type == "REGISTRATION":
                             kind = classify_registration_search_hit(record)
