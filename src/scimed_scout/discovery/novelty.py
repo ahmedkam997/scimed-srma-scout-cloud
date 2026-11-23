@@ -601,7 +601,7 @@ def registration_age_audit(candidate, record: dict, primary_records: list[dict])
         }
     else:
         leads = _bibliographic_leads_after(candidate, primary_records, year)
-    age = datetime.now(timezone.utc).year - year if year is not None
+    age = datetime.now(timezone.utc).year - year if year is not None else None
     modified_year = _year_value(modified_at[:4]) if modified_at else None
     recent_metadata_activity = (
         modified_year is not None
