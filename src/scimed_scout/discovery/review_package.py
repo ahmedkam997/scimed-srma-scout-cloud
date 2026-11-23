@@ -100,12 +100,27 @@ def build_discovery_review_package(
     # scientifically qualified. Source gaps and all PICO details travel with
     # each provisional option for independent verification.
     provisional_options: list[dict[str, Any]] = []
+    unresolved = [
+        item for item in result.verified if item.candidate_status.value in
+        {"PROVISIONAL_BACKUP", "DEEP_VERIFYING"}
+    ]
+    # The preliminary ranking measures completeness of a PICO prompt, not
+    # whether matching clinical papers exist. Prioritize records with
+    # reproducible title-level intervention/population/comparator signals.
+    fit_by_id: dict[str, dict[str, Any]] = {}
+    for verified in unresolved:
+        record = ledger.get_candidate(verified.candidate_id)
+        if record:
+            fit_by_id[verified.candidate_id] = _pico_fit_signals(
+                record, ledger.list_external_evidence(verified.candidate_id, "PRIMARY_STUDY")
+            )
     ordered_unresolved = sorted(
-        (item for item in result.verified if item.candidate_status.value in
-         {"PROVISIONAL_BACKUP", "DEEP_VERIFYING"}),
+        unresolved,
         key=lambda item: (
+            fit_by_id.get(item.candidate_id, {}).get("intervention_comparator_title_matches", 0),
+            fit_by_id.get(item.candidate_id, {}).get("intervention_population_title_matches", 0),
+            fit_by_id.get(item.candidate_id, {}).get("intervention_title_matches", 0),
             (ranking_by_id.get(item.candidate_id).score if ranking_by_id.get(item.candidate_id) else 0),
-            item.evidence.unique_primary_study_candidates,
         ),
         reverse=True,
     )
@@ -166,9 +181,11 @@ def build_discovery_review_package(
                 "Title/PICO keyword ranking only; no full-text eligibility, "
                 "trial-family independence, or effect-data verification."
             ),
-            "bibliographic_pico_fit": _pico_fit_signals(
-                candidate,
-                ledger.list_external_evidence(verified.candidate_id, "PRIMARY_STUDY"),
+            "bibliographic_pico_fit": fit_by_id.get(verified.candidate_id, {}),
+            "triage_tier": (
+                "PICO_SIGNAL_FOR_MANUAL_AUDIT"
+                if fit_by_id.get(verified.candidate_id, {}).get("intervention_population_title_matches", 0) >= 4
+                else "INSUFFICIENT_PICO_TITLE_SIGNAL"
             ),
             "registration_examples": [
                 {
