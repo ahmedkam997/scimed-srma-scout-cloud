@@ -298,8 +298,16 @@ class ReviewDiscoveryOrchestrator:
                         )
                     )
                     for record in result.records:
-                        if evidence_type == "PRIMARY_STUDY" and _obvious_review(record):
-                            continue
+                        if evidence_type == "PRIMARY_STUDY":
+                            if _obvious_review(record):
+                                continue
+                            # Crossref title search covers books, chapters and
+                            # nonclinical citations without dependable study
+                            # design metadata. Keep Crossref for competitor
+                            # literature, but do not inflate primary-study
+                            # candidate availability from these loose matches.
+                            if record.source == "Crossref":
+                                continue
                         self._store_record(
                             candidate.candidate_id,
                             evidence_type,
