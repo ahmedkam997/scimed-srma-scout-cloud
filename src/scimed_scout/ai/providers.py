@@ -375,7 +375,15 @@ class FreeProviderFallback:
             self.last_provider = response.provider
             return response
         except (ProviderFailure, RuntimeError) as exc:
-            if isinstance(exc, ProviderFailure) and exc.status_code in (402, 429):
+            if isinstance(exc, ProviderFailure) and (
+                exc.status_code in (402, 429)
+                or (exc.status_code == 400 and exc.error_category in (
+                    "rate_limit", "context_window", "unsupported_parameter",
+                ))
+            ):
+                # A temporary Groq TPM HTTP 400 can repeat for every
+                # competitor/scoring request. Stop spending quota within this
+                # worker job; keep the scientific assessment unresolved.
                 self.backup_quota_exhausted = True
             if original is not None:
                 return original
