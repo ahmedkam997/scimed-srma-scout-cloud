@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from scimed_scout.ai import CandidateDiscoveryService, FreeProviderFallback
 from scimed_scout.competitors import SemanticCompetitorAssessor
 from scimed_scout.discovery.topic_memory import recent_topic_memory
+from scimed_scout.discovery.evidence_seed import recent_pubmed_cues, cue_prompt
 from scimed_scout.discovery import (
     DiscoveryNoveltyService,
     DiscoveryScoringService,
@@ -55,6 +56,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 message="Generating review-topic candidates",
             )
             generator = CandidateDiscoveryService(provider, ledger)
+            evidence_cues = recent_pubmed_cues(job.specialty, job.question_type)
 
             def generation_progress(found: int, target: int) -> None:
                 store.ensure_active(job.id)
@@ -71,6 +73,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 question_types=[] if job.question_type.strip().upper() == "ALL" else [job.question_type],
                 design_scope=[],
                 count=job.candidate_count,
+                additional_context=cue_prompt(evidence_cues),
                 progress_callback=generation_progress,
                 recent_topics=prior_topics,
                 skipped_recent=recently_skipped,
@@ -114,6 +117,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                         "verified": False,
                         "note": "AI-generated hypotheses. Novelty, eligibility and source coverage are not verified.",
                         "candidate_count": len(candidates),
+                        "recent_pubmed_cues": evidence_cues,
                         "candidates": [
                             {
                                 "candidate_id": candidate.candidate_id,
@@ -209,6 +213,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "desired_options": result.desired_options,
                     "status_counts": status_counts,
                     "candidate_audits": candidate_audits,
+                    "recent_pubmed_cues": evidence_cues,
                     "ai_failover_count": provider.failover_count,
                     "last_ai_provider": provider.last_provider,
                     "recent_topics_skipped": recently_skipped[:40],
