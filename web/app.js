@@ -275,6 +275,17 @@ function renderJobs() {
           <p>Fallback: choose Run workflow, main, then Run workflow. Do not create another discovery job.</p>
         </div>` : '';
     const draftCheckpoint = job.result_json?.checkpoint || {};
+    const evidenceLeads = Array.isArray(draftCheckpoint.recent_pubmed_cues)
+      ? draftCheckpoint.recent_pubmed_cues : [];
+    const evidenceHtml = evidenceLeads.length && ['RUNNING', 'FAILED'].includes(job.status)
+      ? `<details class="score-audit" ${job.status === 'FAILED' ? 'open' : ''}>
+          <summary>Saved PubMed evidence leads (${evidenceLeads.length})</summary>
+          <p class="help">Real PubMed records to explore. These are not screened included studies, validated PICO questions or confirmed novel systematic reviews.</p>
+          ${evidenceLeads.map(item => `<article class="score-item">
+            ${safeEvidenceLink({title:item.title, source:'PubMed', url:item.url, record_id:item.pmid})}
+            <p>Publication year: ${escapeHtml(item.year || 'Not available')}</p>
+          </article>`).join('')}
+        </details>` : '';
     const draftCandidates = Array.isArray(draftCheckpoint.candidates) ? draftCheckpoint.candidates : [];
     const draftHtml = draftCandidates.length && ['RUNNING', 'FAILED'].includes(job.status)
       ? `<details class="score-audit">
@@ -381,8 +392,8 @@ function renderJobs() {
       : '';
 
     const failureHint = job.status === 'FAILED'
-      ? /ProviderFailure|429|quota|Free AI request/.test(job.error_text || '')
-        ? 'The free AI provider quota or response failed. Configure the Groq backup or retry after its allowance resets.'
+      ? /ProviderFailure|429|quota|Free AI request|AI did not return any complete candidate JSON/.test(job.error_text || '')
+        ? 'The worker started but the free AI providers did not return usable proposals. Check your OpenRouter allowance and configure the Groq backup. Any preserved PubMed records are shown below. Avoid launching duplicate jobs.'
         : /JSONDecodeError|Unterminated string/.test(job.error_text || '')
           ? 'The model returned incomplete JSON. This is an AI response problem, not proof that no review topics exist.'
           : 'The worker stopped with an error. Expand details for the diagnostic trace.'
@@ -408,6 +419,7 @@ function renderJobs() {
         ${recentHtml}
         ${optionHtml}
         ${draftHtml}
+        ${evidenceHtml}
         ${provisionalHtml}
         ${auditHtml}
         ${workerHelp}
@@ -472,6 +484,8 @@ function reportPayload(job) {
     specialty: job.specialty,
     question_type: job.question_type,
     summary: job?.result_json?.run_summary || {},
+    checkpoint: job?.result_json?.checkpoint || null,
+    error_excerpt: (job.error_text || '').slice(-700),
     selection_policy: pkg.selection_policy || {},
     provisional_options: Array.isArray(pkg.provisional_options) ? pkg.provisional_options : [],
     explanation: 'No candidate cleared all mandatory checks. PROVISIONAL_BACKUP does not mean confirmed lack of novelty.',
