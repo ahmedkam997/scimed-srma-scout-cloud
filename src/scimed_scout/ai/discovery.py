@@ -159,7 +159,7 @@ class CandidateDiscoveryService:
         # short retries); no paid models or external JSON-repair service.
         # A short-lived historical guard prevents re-running source searches on
         # recently checked PICO questions without permanently blacklisting them.
-        from scimed_scout.discovery.topic_memory import is_recently_checked
+        from scimed_scout.discovery.topic_memory import is_recently_checked, _overlap
         from scimed_scout.discovery.topic_diversity import (
             same_clinical_question, same_discovery_family,
         )
@@ -191,6 +191,15 @@ class CandidateDiscoveryService:
                 if (
                     item.get("population")
                     and item.get("intervention_exposure_index_test")
+                    and item.get("comparator_reference")
+                    and proposal.comparator_reference
+                    # Different reference standards, placebo versus active
+                    # control or treatment sequences are legitimate questions.
+                    # The temporary family pause must preserve those PICOs.
+                    and _overlap(
+                        proposal.comparator_reference,
+                        item.get("comparator_reference"),
+                    ) >= 0.60
                     and same_discovery_family(proposal, item)
                 ):
                     return item, "RECENT_RELATED_CLINICAL_FAMILY_COOLDOWN"
