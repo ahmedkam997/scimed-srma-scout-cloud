@@ -98,3 +98,46 @@ def test_preflight_access_failure_does_not_imply_no_trials(tmp_path):
         assert info["status"] == "ACCESS_FAILED"
         assert info["eligible_independent_studies_confirmed"] is None
         assert info["priority_signal"] == 0
+
+
+def test_unrelated_disease_and_commentaries_do_not_gain_source_priority():
+    candidate = CandidateRecord(
+        candidate_id="C10",project_id="P1",title="Electroacupuncture in resistant hypertension",
+        specialty="Cardiology",population="Adults with resistant hypertension",
+        intervention_exposure_index_test="Electroacupuncture",comparator_reference="Sham",
+        outcomes=["Blood pressure variability"],eligible_designs=["RCTs"],
+    )
+    records=[
+        SearchRecord("PubMed","X1",
+          "Electroacupuncture for neuropathic pain in mice",year=2026),
+        SearchRecord("PubMed","X2",
+          "Commentary on electroacupuncture for essential hypertension",year=2026),
+        SearchRecord("PubMed","X3",
+          "Electroacupuncture for essential hypertension: a systematic review and meta-analysis",year=2025),
+        SearchRecord("PubMed","X4",
+          "Electroacupuncture for hypertension: a hypothesis-generating framework",year=2026),
+    ]
+    result=SearchResult("PubMed","electroacupuncture",SourceStatus.SEARCHED_POSITIVE,
+        records=records,total_count=3500)
+    signal=evaluate_preflight(candidate,result)
+    assert signal["intervention_title_matches"] == 4
+    assert signal["plausible_original_report_title_matches"] == 0
+    assert signal["priority_signal"] == 0
+    assert signal["eligible_independent_studies_confirmed"] is None
+
+
+def test_original_like_hypertension_trial_title_is_prioritized_without_confirming_eligibility():
+    candidate=CandidateRecord(
+        candidate_id="C11",project_id="P1",title="Electroacupuncture for resistant hypertension",
+        specialty="Cardiology",population="Adults with resistant hypertension",
+        intervention_exposure_index_test="Electroacupuncture",comparator_reference="Sham",
+    )
+    result=SearchResult("PubMed","electroacupuncture hypertension",SourceStatus.SEARCHED_POSITIVE,
+        records=[SearchRecord("PubMed","Y1",
+          "Electroacupuncture for resistant hypertension in adults: a randomized clinical trial",
+          year=2025,url="https://pubmed.ncbi.nlm.nih.gov/10/")],
+        total_count=1)
+    signal=evaluate_preflight(candidate,result)
+    assert signal["plausible_original_report_title_matches"] == 1
+    assert signal["priority_signal"] > 0
+    assert signal["evidence_leads"][0]["fulltext_eligibility"] == "NOT_CHECKED"
