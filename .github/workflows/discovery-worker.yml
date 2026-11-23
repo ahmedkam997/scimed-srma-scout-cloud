@@ -1,4 +1,5 @@
 name: discovery-worker
+# Trigger controlled verification of the queued Cardiology job after competitor/coverage fixes.
 # One controlled Cardiology follow-up after the live OSF index-response and source-ranked review fixes.
 
 on:
