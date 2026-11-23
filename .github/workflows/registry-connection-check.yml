@@ -33,9 +33,8 @@ jobs:
               with urllib.request.urlopen(req,timeout=12) as res: data=json.loads(res.read())
               items=data.get("data",[])
               print("CASE",list(params.keys()),"filter",params.get("cardSearchFilter[resourceType]"),"COUNT",len(items),"NEXT",bool(data.get("links",{}).get("next")),"META",str(data.get("meta"))[:100])
-              for item in items[:2]:
-                attrs=item.get("attributes",{})
-                print("FIRST",item.get("type"),str(item.get("id"))[:90],"ATTR",list(attrs.keys())[:10],"TITLE",str(attrs.get("resourceMetadata",{}).get("title",""))[:110],"META_TYPE",str(attrs.get("resourceMetadata",{}).get("@type",""))[:100])
+              print("DATA_TYPE",type(items).__name__,"DATA_KEYS",list(items.keys())[:15] if isinstance(items,dict) else [],"TOP_KEYS",list(data.keys())[:12])
+              print("DATA_HEAD",json.dumps(items,ensure_ascii=False)[:1200])
             except Exception as exc:
               print("ERROR",type(exc).__name__,str(exc)[:190])
           PY
