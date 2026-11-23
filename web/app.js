@@ -224,6 +224,9 @@ function renderJobs() {
     const rejected = Number(statusCounts.REJECTED || 0);
     const checked = Number(summary.verified_candidates || 0);
     const generated = Number(summary.generated_candidates || 0);
+    const generationShortfall = Number(summary.generation_shortfall || 0);
+    const generationWarnings = Array.isArray(summary.generation_warnings)
+      ? summary.generation_warnings : [];
     const failovers = Number(summary.ai_failover_count || 0);
     const recentSkipped = Number(summary.recent_topics_skipped_count || 0);
     const recentDetail = Array.isArray(summary.recent_topics_skipped) ? summary.recent_topics_skipped : [];
@@ -244,6 +247,10 @@ function renderJobs() {
           Qualified ${escapeHtml(options.length)}. Provisional ${escapeHtml(provisional)}.
           Rejected ${escapeHtml(rejected)}.
           AI fallback calls ${escapeHtml(failovers)}.</p>
+          ${generationShortfall > 0
+            ? `<p>AI quota interrupted generation. ${escapeHtml(generated)} fully parsed ideas were preserved. ${escapeHtml(generationShortfall)} planned proposals were not generated.</p>`
+            : ''}
+          ${generationWarnings.map(warning => `<p class="help">${escapeHtml(warning)}</p>`).join('')}
           ${provisional && !options.length
             ? '<p>Source verification is incomplete for the provisional topics. They are not confirmed to lack novelty or scientific value.</p>'
             : ''}
@@ -402,8 +409,10 @@ function renderJobs() {
       : '';
 
     const failureHint = job.status === 'FAILED'
-      ? /ProviderFailure|429|quota|Free AI request|AI did not return any complete candidate JSON/.test(job.error_text || '')
-        ? 'The worker started but the free AI providers did not return usable proposals. Check your OpenRouter allowance and configure the Groq backup. Any preserved PubMed records are shown below. Avoid launching duplicate jobs.'
+      ? /HTTP 429|Too Many Requests|free AI quota exhausted|rate-limited/i.test(job.error_text || '')
+        ? 'The free AI request or token rate limit was reached. Avoid repeated retries. The saved PubMed records remain available. Retry this same job once your provider allowance resets.'
+        : /ProviderFailure|quota|Free AI request|AI did not return any complete candidate JSON/.test(job.error_text || '')
+          ? 'The free AI providers did not return usable proposals. Check OpenRouter and Groq status. Do not create another identical job.'
         : /JSONDecodeError|Unterminated string/.test(job.error_text || '')
           ? 'The model returned incomplete JSON. This is an AI response problem, not proof that no review topics exist.'
           : 'The worker stopped with an error. Expand details for the diagnostic trace.'
