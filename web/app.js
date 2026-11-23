@@ -287,6 +287,9 @@ function renderJobs() {
             const blockers = (audit.coverage_blockers || []).map(x => escapeHtml(x)).join('; ');
             const sourceStatus = Object.entries(audit.source_statuses || {})
               .map(([name, status]) => `${escapeHtml(name)}: ${escapeHtml(status)}`).join('; ');
+            const diagnostics = (audit.source_diagnostics || []).slice(0, 8).map(item =>
+              `${escapeHtml(item.source || '')} [${escapeHtml(item.status || '')}]: ${escapeHtml(item.message || 'no error description')}`
+            ).join('; ');
             return `<article class="score-item">
               <b>${escapeHtml(audit.title)}</b>
               <div class="score-data">
@@ -300,6 +303,7 @@ function renderJobs() {
               ${pending ? `<p>Unresolved: ${pending}</p>` : ''}
               ${blockers ? `<p>Source coverage blockers: ${blockers}</p>` : ''}
               ${sourceStatus ? `<p>Source search statuses: ${sourceStatus}</p>` : ''}
+              ${diagnostics ? `<details><summary>Source failure details</summary><p>${diagnostics}</p></details>` : ''}
               <details><summary>Methods and score weights</summary>
                 <pre>${escapeHtml(JSON.stringify({
                   version: trace.method_version || '',
