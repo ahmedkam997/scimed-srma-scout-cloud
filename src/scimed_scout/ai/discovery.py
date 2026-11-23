@@ -141,10 +141,25 @@ class CandidateDiscoveryService:
         additional_context: str = "",
         allow_rejected_revisit: bool = False,
         progress_callback: Callable[[int, int], None] | None = None,
+        recent_topics: list[dict] | None = None,
+        skipped_recent: list[dict] | None = None,
     ) -> list[CandidateRecord]:
         # Small JSON batches avoid incomplete output from free reasoning models.
         # Maximum six model calls per job (three regular batches and up to three
         # short retries); no paid models or external JSON-repair service.
+        # A short-lived historical guard prevents re-running source searches on
+        # recently checked PICO questions without permanently blacklisting them.
+        from scimed_scout.discovery.topic_memory import is_recently_checked
+
+        recent = recent_topics or []
+        previous_titles = "; ".join(str(item.get("title") or "")[:100] for item in recent[:12])
+        if previous_titles:
+            additional_context = (
+                additional_context
+                + "\nThese questions were recently checked; generate different PICO questions: "
+                + previous_titles
+            ).strip()
+
         target = max(1, min(50, int(count)))
         proposals_with_response: list[tuple[CandidateProposal, object]] = []
         seen_titles: set[str] = set()
@@ -187,6 +202,17 @@ class CandidateDiscoveryService:
                     if key in seen_titles:
                         continue
                     seen_titles.add(key)
+                    old = next((item for item in recent if is_recently_checked(proposal, item)), None)
+                    if old is not None:
+                        if skipped_recent is not None:
+                            skipped_recent.append({
+                                "title": proposal.title,
+                                "matched_previous_title": old.get("title"),
+                                "last_checked_at": old.get("checked_at"),
+                                "recheck_after": old.get("recheck_at"),
+                                "reason": "RECENTLY_CHECKED_PICO",
+                            })
+                        continue
                     proposals_with_response.append((proposal, response))
                     if len(proposals_with_response) >= target:
                         break
@@ -226,6 +252,17 @@ class CandidateDiscoveryService:
                     if key in seen_titles:
                         continue
                     seen_titles.add(key)
+                    old = next((item for item in recent if is_recently_checked(proposal, item)), None)
+                    if old is not None:
+                        if skipped_recent is not None:
+                            skipped_recent.append({
+                                "title": proposal.title,
+                                "matched_previous_title": old.get("title"),
+                                "last_checked_at": old.get("checked_at"),
+                                "recheck_after": old.get("recheck_at"),
+                                "reason": "RECENTLY_CHECKED_PICO",
+                            })
+                        continue
                     proposals_with_response.append((proposal, response))
                     if len(proposals_with_response) >= target:
                         break
@@ -234,6 +271,8 @@ class CandidateDiscoveryService:
             if progress_callback is not None:
                 progress_callback(len(proposals_with_response), target)
 
+        if not proposals_with_response and skipped_recent:
+            return []
         if not proposals_with_response:
             raise RuntimeError(
                 f"AI did not return any complete candidate JSON after {calls} bounded requests; "
