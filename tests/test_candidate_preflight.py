@@ -141,3 +141,86 @@ def test_original_like_hypertension_trial_title_is_prioritized_without_confirmin
     assert signal["plausible_original_report_title_matches"] == 1
     assert signal["priority_signal"] > 0
     assert signal["evidence_leads"][0]["fulltext_eligibility"] == "NOT_CHECKED"
+
+
+
+def test_pubmed_review_risk_preflight_downranks_recent_synthesis_but_retains_old_update_leads(tmp_path):
+    from scimed_scout.discovery.candidate_preflight import review_search_query, review_competitor_risk
+
+    c = candidate("R", "Inclisiran")
+    q = review_search_query(c, current_year=2026)
+    assert '"inclisiran"[Title/Abstract]' in q
+    assert '"systematic review"[Publication Type]' in q
+    assert "2018/01/01" in q
+    recent = SearchRecord(
+        "PubMed", "SR2026",
+        "Inclisiran in heart failure: a systematic review and meta-analysis",
+        year=2026, url="https://pubmed.ncbi.nlm.nih.gov/SR2026/",
+    )
+    old = SearchRecord(
+        "PubMed", "SR2019",
+        "Inclisiran for heart failure: a systematic review",
+        year=2019,
+    )
+    experimental = SearchRecord(
+        "PubMed", "TRIAL",
+        "Inclisiran in heart failure: a randomized controlled trial",
+        year=2026,
+    )
+    risk = review_competitor_risk(c, SearchResult(
+        "PubMed", q, SourceStatus.SEARCHED_POSITIVE,
+        records=[recent, old, experimental], total_count=3,
+    ), current_year=2026)
+    assert risk["recent_review_overlap_risk_cues"] == 1
+    assert risk["older_review_possible_update_cues"] == 1
+    assert risk["review_overlap_priority_penalty"] == 5
+    assert len(risk["potential_competing_review_title_cues"]) == 2
+    assert risk["scientific_novelty_confirmed"] is False
+    assert risk["last_search_dates_verified"] is False
+
+    class SaturationPubmed(FakePubMed):
+        def search(self, query, *, limit=20):
+            self.queries.append((query, limit))
+            if '"systematic review"[Publication Type]' in query:
+                return SearchResult("PubMed", query, SourceStatus.SEARCHED_POSITIVE,
+                                    [recent, old], 2)
+            return SearchResult("PubMed", query, SourceStatus.SEARCHED_POSITIVE,
+                [SearchRecord("PubMed", "ORIGINAL",
+                     "Inclisiran trials for cardiovascular outcomes in adults with heart failure",
+                     year=2026)], 1)
+
+    with SQLiteLedger(tmp_path / "review_risk.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Cardiology"))
+        ledger.upsert_candidate(c)
+        src = SaturationPubmed()
+        outcome = FocusedEvidencePreflight(
+            src, review_risk_preflight=True, pause_seconds=0,
+        ).annotate(ledger, "P1")
+        signal = ledger.get_candidate("R").metadata["evidence_preflight"]
+        assert len(src.queries) == 2
+        assert outcome["candidates_checked"] == 1
+        assert signal["recent_review_overlap_risk_cues"] == 1
+        assert signal["older_review_possible_update_cues"] == 1
+        assert signal["priority_signal"] > 0
+        assert signal["review_overlap_priority_penalty"] == 5
+        assert signal["eligible_independent_studies_confirmed"] is None
+
+
+def test_pubmed_review_outage_does_not_suggest_no_competing_reviews(tmp_path):
+    class ReviewFailure(FakePubMed):
+        def search(self, query, *, limit=20):
+            if '"systematic review"[Publication Type]' in query:
+                raise TimeoutError("simulated review search timeout")
+            return super().search(query, limit=limit)
+
+    with SQLiteLedger(tmp_path / "review_failed.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Cardiology"))
+        ledger.upsert_candidate(candidate("Z", "Inclisiran"))
+        FocusedEvidencePreflight(
+            ReviewFailure(), review_risk_preflight=True,
+            pause_seconds=0,
+        ).annotate(ledger, "P1")
+        preflight = ledger.get_candidate("Z").metadata["evidence_preflight"]
+        assert preflight["review_preflight_status"] == "ACCESS_FAILED"
+        assert preflight["review_overlap_priority_penalty"] == 0
+        assert preflight["scientific_novelty_confirmed"] is False
