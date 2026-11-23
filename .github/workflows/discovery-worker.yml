@@ -1,5 +1,5 @@
 name: discovery-worker
-# Recovery run: use bounded JSON generation on existing queued Cardiology job.
+# Controlled source-ranked Cardiology regression run with conditional backup checks and free AI budget protection.
 
 on:
   push:
