@@ -315,3 +315,56 @@ def test_osf_exhausted_indexed_pages_with_duplicate_cards_is_complete_positive()
     assert len(result.records) == 1
     assert result.status == SourceStatus.SEARCHED_POSITIVE
     assert "2/2 indexed hits" in result.message
+
+
+def test_osf_two_independent_indexes_confirm_scoped_zero_only():
+    calls = []
+    def load(url):
+        calls.append(url)
+        if "share.osf.io" in url:
+            return {
+                "data": {
+                    "attributes": {"totalResultCount": 0},
+                    "relationships": {"searchResultPage": {"data": [], "links": {}}},
+                },
+                "included": [],
+            }
+        assert "api.osf.io" in url
+        return {"data": [], "meta": {"total": 0}, "links": {"next": None}}
+    result = OSFRegistrationsSource(JsonHttpClient(loader=load)).search("specific catheter ablation")
+    assert result.status == SourceStatus.SEARCHED_NEGATIVE
+    assert len(calls) == 2
+    assert "scoped query" in result.message
+    assert "unindexed registrations" in result.message
+
+
+def test_osf_trove_zero_without_proven_v2_count_remains_partial():
+    def load(url):
+        if "share.osf.io" in url:
+            return {
+                "data": {
+                    "attributes": {"totalResultCount": 0},
+                    "relationships": {"searchResultPage": {"data": [], "links": {}}},
+                },
+                "included": [],
+            }
+        return {"data": [], "links": {}}
+    result = OSFRegistrationsSource(JsonHttpClient(loader=load)).search("heart failure")
+    assert result.status == SourceStatus.PARTIAL
+
+
+def test_osf_discordant_v2_results_are_not_marked_negative():
+    def load(url):
+        if "share.osf.io" in url:
+            return {
+                "data": {
+                    "attributes": {"totalResultCount": 0},
+                    "relationships": {"searchResultPage": {"data": [], "links": {}}},
+                },
+                "included": [],
+            }
+        return {"data": [{"id": "abc123", "attributes": {"title": "Competing registered review"}}],
+                "meta": {"total": 1}, "links": {}}
+    result = OSFRegistrationsSource(JsonHttpClient(loader=load)).search("heart failure")
+    assert result.status == SourceStatus.PARTIAL
+    assert result.status != SourceStatus.SEARCHED_NEGATIVE
