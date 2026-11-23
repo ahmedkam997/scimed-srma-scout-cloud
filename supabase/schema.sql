@@ -165,28 +165,41 @@ create policy "worker_updates_discovery_jobs"
 -- The limited UPDATE policy allows only an owned active row; the trigger
 -- restores all fields except the status change, so clients cannot forge results.
 create or replace function private.scimed_cancel_guard()
-returns trigger
-language plpgsql
-security invoker
-set search_path = ''
+returns trigger language plpgsql security invoker set search_path = ''
 as $$
 begin
-  if current_user in ('postgres', 'service_role') or private.scimed_is_worker() then
+  if current_user in ('postgres','service_role') or private.scimed_is_worker() then
     return new;
   end if;
-  if old.client_token_hash is distinct from private.scimed_client_hash()
-     or old.status not in ('QUEUED','RUNNING')
-     or new.status is distinct from 'CANCELLED' then
+  if old.client_token_hash is distinct from private.scimed_client_hash() then
     raise exception 'Unauthorized discovery job status transition';
   end if;
-  new := old;
-  new.status := 'CANCELLED';
-  new.stage := 'CANCELLED';
-  new.message := 'Cancelled from this device. Worker stops at the next safe checkpoint.';
-  new.error_text := '';
-  new.completed_at := clock_timestamp();
-  new.updated_at := clock_timestamp();
-  return new;
+
+  if old.status in ('QUEUED','RUNNING') and new.status='CANCELLED' then
+    new := old;
+    new.status := 'CANCELLED';
+    new.stage := 'CANCELLED';
+    new.message := 'Cancelled from this device. Worker stops at the next safe checkpoint.';
+    new.error_text := '';
+    new.completed_at := clock_timestamp();
+    new.updated_at := clock_timestamp();
+    return new;
+  elsif old.status='FAILED' and new.status='QUEUED' then
+    new := old;
+    new.status := 'QUEUED';
+    new.stage := 'QUEUED';
+    new.progress := 0;
+    new.message := 'Retry queued from this device; awaiting a free AI provider and worker.';
+    new.error_text := '';
+    new.result_json := '{}'::jsonb;
+    new.started_at := null;
+    new.completed_at := null;
+    new.dispatch_requested_at := null;
+    new.updated_at := clock_timestamp();
+    return new;
+  end if;
+
+  raise exception 'Unauthorized discovery job status transition';
 end;
 $$;
 
@@ -232,3 +245,35 @@ $$;
 
 revoke all on function public.scimed_cancel_job(uuid) from public;
 grant execute on function public.scimed_cancel_job(uuid) to anon, authenticated;
+
+-- Strict device-owned retry for FAILED jobs only. No global update privileges.
+drop policy if exists "clients_retry_own_failed_discovery_jobs" on public.discovery_jobs;
+create policy "clients_retry_own_failed_discovery_jobs"
+on public.discovery_jobs for update to anon, authenticated
+using (
+  client_token_hash=private.scimed_client_hash() and status='FAILED'
+)
+with check (
+  client_token_hash=private.scimed_client_hash() and status='QUEUED'
+);
+
+create or replace function public.scimed_retry_job(p_job_id uuid)
+returns boolean language plpgsql security invoker set search_path=''
+as $$
+declare
+  v_client_hash text;
+  v_updated integer;
+begin
+  v_client_hash := private.scimed_client_hash();
+  if v_client_hash is null or length(v_client_hash) <> 64 then return false; end if;
+  update public.discovery_jobs set status='QUEUED'
+  where id=p_job_id
+    and client_token_hash=v_client_hash
+    and status='FAILED';
+  get diagnostics v_updated = row_count;
+  return v_updated=1;
+end;
+$$;
+
+revoke all on function public.scimed_retry_job(uuid) from public;
+grant execute on function public.scimed_retry_job(uuid) to anon, authenticated;
