@@ -308,6 +308,10 @@ function topicDetailHtml(job, topic) {
   const coverage = quality.source_statuses || topic.source_statuses || topic.coverage?.source_statuses || {};
   const reviews = dossier.published_review_evidence || topic.published_review_examples || [];
   const registrations = dossier.registration_evidence || topic.registration_examples || [];
+  const relatedRegistrations = registrations.filter(item =>
+    registrationDisplayRelevance(topic,item).kind !== 'BROAD_SEARCH_HIT');
+  const broadRegistrations = registrations.filter(item =>
+    registrationDisplayRelevance(topic,item).kind === 'BROAD_SEARCH_HIT');
   const leads = dossier.primary_study_screening_queue || topic.primary_study_screening_queue || [];
   const audit = dossier.evidence_search_audit || [];
   const age = dossier.registration_age_and_update_audit || topic.registration_age_audit || [];
@@ -364,9 +368,14 @@ function topicDetailHtml(job, topic) {
     <details><summary>Published competing reviews (${escapeHtml(reviews.length)})</summary>
       ${refs(reviews)}
     </details>
-    <details><summary>PROSPERO / OSF registrations (${escapeHtml(registrations.length)})</summary>
-      ${refs(registrations)}
-      ${age.slice(0, 12).map(row => `<p>
+    <details><summary>PROSPERO / OSF registry searches (${escapeHtml(registrations.length)} hits)</summary>
+      <p class="help">Search hits are not established competing reviews. The match grouping uses only intervention tokens, and no scientific evidence is discarded.</p>
+      <p>Potential intervention-matched or uncertain hits: ${escapeHtml(relatedRegistrations.length)}</p>
+      ${refs(relatedRegistrations)}
+      ${broadRegistrations.length ? `<details><summary>Other broad search hits (${escapeHtml(broadRegistrations.length)})</summary>
+        ${refs(broadRegistrations)}
+      </details>` : ''}
+      ${age.slice(0, 12).filter(row => registrationDisplayRelevance(topic,row).kind !== 'BROAD_SEARCH_HIT').map(row => `<p>
         ${escapeHtml(row.source)}: ${escapeHtml(row.title)}.
         Registered: ${escapeHtml(row.registered_at || 'unknown')}.
         Status: ${escapeHtml(row.registry_status || 'unknown')}.
@@ -472,6 +481,9 @@ function renderJobs() {
             <b>${escapeHtml(option.title || '')}</b>
             <p>${escapeHtml(option.review_question || '')}</p>
             <small>${escapeHtml((option.question_type || '').replaceAll('_',' '))}</small>
+            <div class="topic-quick-actions"><button class="secondary small"
+              data-copy-topic="${escapeHtml(job.id)}"
+              data-topic-id="${escapeHtml(option.candidate_id || '')}">Copy idea + ChatGPT prompt</button></div>
             ${topicDetailHtml(job, option)}
           </article>
         `).join('')}</div>`
@@ -510,6 +522,9 @@ function renderJobs() {
           ${draftCandidates.map(item => `<article class="score-item">
             <b>${escapeHtml(item.title || '')}</b>
             <p>${escapeHtml(item.review_question || '')}</p>
+            <div class="topic-quick-actions"><button class="secondary small"
+              data-copy-topic="${escapeHtml(job.id)}"
+              data-topic-id="${escapeHtml(item.candidate_id || '')}">Copy idea + ChatGPT prompt</button></div>
             ${topicDetailHtml(job, item)}
           </article>`).join('')}
         </details>` : '';
@@ -526,6 +541,9 @@ function renderJobs() {
           ${provisionalOptions.map(topic => `<article class="score-item">
             <b>${escapeHtml(topic.title || '')}</b>
             <p>${escapeHtml(topic.review_question || '')}</p>
+            <div class="topic-quick-actions"><button class="secondary small"
+              data-copy-topic="${escapeHtml(job.id)}"
+              data-topic-id="${escapeHtml(topic.candidate_id || '')}">Copy idea + ChatGPT prompt</button></div>
             ${topicDetailHtml(job, topic)}
             ${topic.triage_tier ? `<p class="help">Bibliographic preflight: ${topic.triage_tier === 'PICO_SIGNAL_FOR_MANUAL_AUDIT'
               ? 'At least four titles mention both the intervention and clinical population; full-text eligibility and novelty remain unverified.'
@@ -589,6 +607,9 @@ function renderJobs() {
           ${unverifiedGenerated.map(topic => `<article class="score-item">
             <b>${escapeHtml(topic.title || '')}</b>
             <p>${escapeHtml(topic.review_question || '')}</p>
+            <div class="topic-quick-actions"><button class="secondary small"
+              data-copy-topic="${escapeHtml(job.id)}"
+              data-topic-id="${escapeHtml(topic.candidate_id || '')}">Copy idea + ChatGPT prompt</button></div>
             ${topicDetailHtml(job, topic)}
           </article>`).join('')}
         </details>` : '';
