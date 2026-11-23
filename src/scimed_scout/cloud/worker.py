@@ -195,6 +195,16 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "failed_gates": failed_gates,
                     "coverage_blockers": list(verified.coverage.blockers),
                     "coverage_warnings": list(verified.coverage.warnings),
+                    "source_diagnostics": [
+                        {
+                            "source": log.source,
+                            "status": log.status.value,
+                            "query": log.query[:120],
+                            "message": log.message[:280],
+                        }
+                        for log in ledger.list_search_log(verified.candidate_id)
+                        if log.status.value in ("ACCESS_FAILED", "PARTIAL")
+                    ][:12],
                     "source_statuses": {
                         name: status.value
                         for name, status in verified.coverage.source_statuses.items()
