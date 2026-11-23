@@ -409,6 +409,11 @@ function renderJobs() {
                     <p>Age audit: ${escapeHtml(item.classification)}.
                       Potential newer PICO-related citations: ${escapeHtml(item.post_registration_bibliographic_leads?.count ?? 'unknown')}.
                       Eligible new trials: not verified.</p>
+                    <p>Published review linked by registry ID: ${escapeHtml(item.publication_status || 'NOT_VERIFIED')}</p>
+                    ${(item.linked_publication_candidates || []).map(review =>
+                      `<p>Possible linked review: ${safeEvidenceLink(review)}
+                      ${escapeHtml(review.year ?? 'unknown year')} (full text not yet checked)</p>`
+                    ).join('')}
                     <p class="help">${escapeHtml(item.next_action || '')}</p>
                   </article>`).join('')}
                 </details>` : ''}
