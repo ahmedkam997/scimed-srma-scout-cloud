@@ -419,6 +419,8 @@ function renderJobs() {
                     Publication year: ${escapeHtml(item.publication_year ?? 'unknown')}.
                     Documented last search: ${escapeHtml(item.last_search_date || 'unknown')}.
                     Update signal: ${escapeHtml(item.classification)}.
+                    Potential post-publication citations: ${escapeHtml(item.post_publication_bibliographic_leads?.count ?? 'unknown')}.
+                    Confirmed eligible new studies: 0.
                   </p>`).join('')}
                 </details>` : ''}
             <details><summary>Why provisional?</summary>
