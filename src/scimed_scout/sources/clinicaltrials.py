@@ -67,7 +67,7 @@ class ClinicalTrialsGovSource:
 def _plain_terms(value: str) -> str:
     """Avoid sending unbalanced or operator-like PICO punctuation to v2 search."""
     text = str(value or "").replace("‐", " ").replace("‑", " ").replace("–", " ").replace("—", " ")
-    text = re.sub(r"[^\\w\\s-]", " ", text, flags=re.UNICODE)
+    text = re.sub(r"[^\w\s-]", " ", text, flags=re.UNICODE)
     words = text.split()
     while words and words[-1].casefold() in {"or", "and", "not"}:
         words.pop()
