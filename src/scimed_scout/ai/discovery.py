@@ -177,6 +177,8 @@ class CandidateDiscoveryService:
         max_calls = min(8, len(batch_sizes) + 3)
         calls = 0
         failure_messages: list[str] = []
+        consecutive_provider_failures = 0
+        stop_due_to_provider_outage = False
 
         for requested in batch_sizes:
             if calls >= max_calls:
@@ -200,6 +202,7 @@ class CandidateDiscoveryService:
                 response = self.provider.complete(
                     AIRequest(system=SYSTEM_PROMPT, prompt=prompt, max_tokens=3200)
                 )
+                consecutive_provider_failures = 0
                 try:
                     batch = parse_candidate_proposals(response.text)
                 except (ValueError, json.JSONDecodeError) as exc:
@@ -239,16 +242,26 @@ class CandidateDiscoveryService:
                         f"{provider_name} has exhausted or limited its free AI requests "
                         f"(HTTP {code}). Retry after quota reset or configure an independent provider."
                     ) from exc
+                consecutive_provider_failures += 1
                 failure_messages.append(
-                    f"Batch request failed: {type(exc).__name__}"
-                    + (f" HTTP {code}" if code else "")
+                    f"Batch request failed: {provider_name}, {type(exc).__name__}, "
+                    f"HTTP {code if code is not None else 'unavailable'}"
                 )
+                # Two consecutive upstream failures with zero usable records
+                # signal an outage or exhausted free route. More immediate
+                # identical calls waste the limited daily API allowance.
+                if consecutive_provider_failures >= 2 and not proposals_with_response:
+                    stop_due_to_provider_outage = True
             if progress_callback is not None:
                 progress_callback(len(proposals_with_response), target)
+            if stop_due_to_provider_outage:
+                break
 
         # One short follow-up instead of retrying another long malformed array.
         # When zero candidates were returned, make two small independent attempts.
-        while len(proposals_with_response) < target and calls < max_calls:
+        while (len(proposals_with_response) < target
+               and calls < max_calls
+               and not stop_due_to_provider_outage):
             remaining = min(2, target - len(proposals_with_response))
             previous = "; ".join(sorted(seen_titles)[-10:])
             prompt = build_discovery_prompt(
@@ -267,6 +280,7 @@ class CandidateDiscoveryService:
                 response = self.provider.complete(
                     AIRequest(system=SYSTEM_PROMPT, prompt=prompt, max_tokens=2300)
                 )
+                consecutive_provider_failures = 0
                 try:
                     batch = parse_candidate_proposals(response.text)
                 except (ValueError, json.JSONDecodeError):
@@ -303,10 +317,13 @@ class CandidateDiscoveryService:
                         f"{provider_name} free AI quota exhausted (HTTP {code}). "
                         "Use a healthy independent provider or retry after quota reset."
                     ) from exc
+                consecutive_provider_failures += 1
                 failure_messages.append(
-                    f"Short retry failed: {type(exc).__name__}"
-                    + (f" HTTP {code}" if code else "")
+                    f"Short retry failed: {provider_name}, {type(exc).__name__}, "
+                    f"HTTP {code if code is not None else 'unavailable'}"
                 )
+                if consecutive_provider_failures >= 2 and not proposals_with_response:
+                    stop_due_to_provider_outage = True
             if progress_callback is not None:
                 progress_callback(len(proposals_with_response), target)
 
@@ -314,7 +331,10 @@ class CandidateDiscoveryService:
             return []
         if not proposals_with_response:
             raise RuntimeError(
-                f"AI did not return any complete candidate JSON after {calls} bounded requests; "
+                f"AI generation unavailable after {calls} bounded calls: no complete candidate JSON. "
+                + ("Repeated provider failures. " if stop_due_to_provider_outage else "")
+                + "Check OpenRouter status, quotas, and Groq backup configuration. "
+                + "Provider diagnostics: "
                 + "; ".join(failure_messages[:3])
             )
 
