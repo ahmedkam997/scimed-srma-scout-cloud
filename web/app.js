@@ -13,6 +13,7 @@ const els = {
   jobs: document.getElementById('jobs'),
   active: document.getElementById('activeCount'),
   qualified: document.getElementById('qualifiedCount'),
+  leads: document.getElementById('leadCount'),
   review: document.getElementById('reviewCount'),
 };
 
@@ -251,6 +252,11 @@ function uniqueProvisionalTopics(items) {
 function renderJobs() {
   const active = jobs.filter(job => ['QUEUED', 'RUNNING'].includes(job.status)).length;
   const qualified = jobs.reduce((sum, job) => sum + qualifiedOptions(job).length, 0);
+  const leadCount = jobs.reduce((sum, job) => sum + (
+    job.status === 'COMPLETED'
+      ? uniqueProvisionalTopics(job.result_json?.package?.provisional_options || []).length
+      : 0
+  ), 0);
   const needsReview = jobs.filter(job =>
     job.status === 'FAILED' ||
     (job.status === 'COMPLETED' && Number(job.result_json?.package?.selection_policy?.shortfall || 0) > 0)
@@ -258,6 +264,7 @@ function renderJobs() {
 
   els.active.textContent = String(active);
   els.qualified.textContent = String(qualified);
+  els.leads.textContent = String(leadCount);
   els.review.textContent = String(needsReview);
 
   if (!jobs.length) {
