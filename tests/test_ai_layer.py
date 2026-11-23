@@ -311,3 +311,26 @@ def test_discovery_preserves_different_clinical_comparator(tmp_path):
             recent_topics=[old],
         )
         assert len(found) == 1
+
+
+@pytest.mark.parametrize("status", [401, 403, 404, 429])
+def test_discovery_stops_after_first_auth_or_quota_error(tmp_path, status):
+    from scimed_scout.ai.providers import ProviderFailure
+
+    class DeniedProvider:
+        name = "groq-free-backup"
+        model = "openai/gpt-oss-20b"
+        calls = 0
+
+        def complete(self, request):
+            self.calls += 1
+            raise ProviderFailure(self.name, status, f"HTTP {status}")
+
+    provider = DeniedProvider()
+    with SQLiteLedger(tmp_path / "failed_provider.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Cardiology"))
+        with pytest.raises(RuntimeError, match=f"HTTP {status}"):
+            CandidateDiscoveryService(provider, ledger).generate_and_store(
+                project_id="P1", specialty="Cardiology", count=12
+            )
+        assert provider.calls == 1
