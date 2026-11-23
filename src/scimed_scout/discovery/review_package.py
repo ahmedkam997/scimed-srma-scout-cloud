@@ -10,7 +10,8 @@ from typing import Any
 from scimed_scout.storage import SQLiteLedger
 
 from .models import DiscoveryRunResult
-from .topic_diversity import same_clinical_question, _tokens
+from .topic_diversity import same_clinical_question
+from .triage import discovery_triage, _tokens
 
 
 CHATGPT_REVIEW_INSTRUCTIONS = """You are the independent final reviewer of systematic-review topic options.
@@ -87,6 +88,8 @@ def build_discovery_review_package(
             "rationale": candidate.rationale,
             "novelty_hypothesis": candidate.novelty_hypothesis,
             "search_terms": list(candidate.search_terms or []),
+            "preflight_bibliographic_evidence": dict((candidate.metadata or {}).get("evidence_preflight") or {}),
+            "triage": discovery_triage(verification),
             "research_dossier": _build_research_dossier(
                 ledger, candidate, verification,
                 "QUALIFIED_DISCOVERY_ONLY",
@@ -151,7 +154,7 @@ def build_discovery_review_package(
         ),
         reverse=True,
     )
-    for verified in ordered_unresolved[:6]:
+    for verified in ordered_unresolved[:12]:
         candidate = ledger.get_candidate(verified.candidate_id)
         if candidate is None:
             continue
@@ -175,6 +178,10 @@ def build_discovery_review_package(
             "rationale": candidate.rationale,
             "novelty_hypothesis": candidate.novelty_hypothesis,
             "search_terms": list(candidate.search_terms or []),
+            "preflight_bibliographic_evidence": dict(metadata.get("evidence_preflight") or {}),
+            "triage": discovery_triage(
+                verified, pico_fit=fit_by_id.get(verified.candidate_id, {}),
+            ),
             "research_dossier": _build_research_dossier(
                 ledger, candidate, verified,
                 "PROVISIONAL_NEEDS_VERIFICATION",
@@ -259,6 +266,9 @@ def build_discovery_review_package(
         "schema_version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "scope": "REVIEW_TOPIC_DISCOVERY_ONLY",
+        "bibliographic_preflight_summary": dict(result.bibliographic_preflight_summary),
+        "adaptive_deep_checks_used": result.adaptive_deep_checks_used,
+        "adaptive_checks_skipped_reason": result.adaptive_checks_skipped_reason,
         "project": {
             "project_id": project.project_id,
             "specialty": project.specialty,
@@ -329,6 +339,7 @@ def _build_research_dossier(
             "candidate_search_terms": list(candidate.search_terms or []),
         },
         "verification_and_quality": {
+            "bibliographic_preflight_priority": dict(meta.get("evidence_preflight") or {}),
             "source_statuses": {
                 name: status.value
                 for name, status in verification.coverage.source_statuses.items()
