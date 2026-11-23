@@ -63,6 +63,9 @@ async function init() {
       'Cloud queue connected',
       'Jobs continue in the background after you close this browser. Job history belongs to this browser profile.'
     );
+    const stale = jobs.find(row => row.status === 'QUEUED' &&
+      Date.now() - new Date(row.created_at).getTime() >= 120000);
+    if (stale) wakeWorker(stale.id, { silent: true }).catch(() => {});
     els.start.disabled = false;
     els.refresh.disabled = false;
     pollTimer = setInterval(loadJobs, 5000);
@@ -377,8 +380,16 @@ function renderJobs() {
         </details>`
       : '';
 
+    const failureHint = job.status === 'FAILED'
+      ? /ProviderFailure|429|quota|Free AI request/.test(job.error_text || '')
+        ? 'The free AI provider quota or response failed. Configure the Groq backup or retry after its allowance resets.'
+        : /JSONDecodeError|Unterminated string/.test(job.error_text || '')
+          ? 'The model returned incomplete JSON. This is an AI response problem, not proof that no review topics exist.'
+          : 'The worker stopped with an error. Expand details for the diagnostic trace.'
+      : '';
     const error = job.error_text
-      ? `<details class="error-details"><summary>Error details</summary><pre>${escapeHtml(job.error_text)}</pre></details>`
+      ? `<div class="job-failure-hint">${escapeHtml(failureHint)}</div>
+        <details class="error-details"><summary>Error details</summary><pre>${escapeHtml(job.error_text)}</pre></details>`
       : '';
 
     return `
