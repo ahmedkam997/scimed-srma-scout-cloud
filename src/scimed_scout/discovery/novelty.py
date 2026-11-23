@@ -61,6 +61,8 @@ class DiscoveryNoveltyService:
             published_review_update_audit(candidate, record, primary_records)
             for record in review_records
         ]
+        for item in registration_freshness:
+            _attach_publication_linkage(item, all_reviews)
 
         review_unresolved = sum(bool(item.get("unresolved")) for item in review_assessments)
         registration_unresolved = sum(bool(item.get("unresolved")) for item in registration_assessments)
@@ -586,3 +588,57 @@ def _freshness_summary(registrations: list[dict], reviews: list[dict]) -> str:
             "Publication date does not establish last search date."
         )
     return "\n".join(lines)
+
+
+def _attach_publication_linkage(registration: dict, published_records: list[dict]) -> None:
+    """Link a registry entry to bibliographic records only by exact ID or URL.
+
+    Similar titles are insufficient to assert publication, because unrelated
+    review teams routinely register near-identical questions. These references
+    still need a source-level manuscript/publication check.
+    """
+    rid = str(registration.get("record_id") or "").strip()
+    source = str(registration.get("source") or "")
+    if not rid or not published_records:
+        return
+    matches: list[dict] = []
+    if source == "PROSPERO" and re.fullmatch(r"CRD\\d{8,}", rid, flags=re.IGNORECASE):
+        pattern = re.compile(r"(?<![A-Z0-9])" + re.escape(rid) + r"(?![A-Z0-9])", re.IGNORECASE)
+    elif source == "OSF Registries" and re.fullmatch(r"[a-z0-9]{4,12}", rid, flags=re.IGNORECASE):
+        pattern = re.compile(r"(?:https?://)?(?:www\\.)?osf\\.io/" + re.escape(rid) + r"(?:/|\\b)", re.IGNORECASE)
+    else:
+        return
+    for review in _dedupe_records(published_records):
+        title = str(review.get("title") or "")
+        title_norm = title.casefold()
+        if not any(term in title_norm for term in (
+            "systematic review", "meta-analysis", "meta analysis", "scoping review",
+        )):
+            continue
+        meta = _metadata(review)
+        payload = review.get("payload") or {}
+        blob = " ".join([
+            _record_text(review),
+            str(meta.get("prospero_id") or ""),
+            str(meta.get("registration") or ""),
+            str(meta.get("registration_number") or ""),
+        ])
+        if not pattern.search(blob):
+            continue
+        matches.append({
+            "title": title,
+            "source": str(review.get("source") or ""),
+            "year": _year_value(payload.get("year")),
+            "doi": str(payload.get("doi") or ""),
+            "url": str(payload.get("url") or ""),
+            "linkage_evidence": "Exact public registration identifier in bibliographic review text",
+            "full_text_linkage_verified": False,
+        })
+    if matches:
+        registration["publication_status"] = "PUBLICATION_CANDIDATE_LINKED_BY_REGISTRY_ID"
+        registration["linked_publication_candidates"] = matches[:3]
+        registration["next_action"] = (
+            "A published-review bibliographic record mentions this exact registration ID. "
+            "Verify the linked article and its actual last literature search, then screen "
+            "newer eligible studies before planning an update."
+        )
