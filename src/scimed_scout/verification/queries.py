@@ -159,7 +159,12 @@ def _registry_focus(value: str) -> list[str]:
     tokens = re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", raw.casefold())
     return list(dict.fromkeys(
         token for token in tokens
-        if token not in _REGISTRY_NOISE and len(token) >= 3
+        if token not in _REGISTRY_NOISE
+        and (
+            len(token) >= 3
+            or (len(token) >= 2 and any(c.isdigit() for c in token)
+                and any(c.isalpha() for c in token))
+        )
         and not token.isdigit()
     ))
 
