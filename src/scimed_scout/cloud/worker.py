@@ -50,6 +50,7 @@ def _unverified_topic_options(candidates: list, checked_ids: set[str]) -> list[d
             "question_type": candidate.question_type,
             **question,
             "qualification_status": "AI_DRAFT_NOT_SOURCE_VERIFIED",
+            "preflight_bibliographic_evidence": dict((candidate.metadata or {}).get("evidence_preflight") or {}),
             "provisional_only": True,
             "research_dossier": {
                 "candidate_id": candidate.candidate_id,
@@ -59,6 +60,7 @@ def _unverified_topic_options(candidates: list, checked_ids: set[str]) -> list[d
                 "qualification_label": "AI_DRAFT_NOT_SOURCE_VERIFIED",
                 "qualification_decision": "NOT_CHECKED",
                 "scientific_question": question,
+                "evidence_preflight": dict((candidate.metadata or {}).get("evidence_preflight") or {}),
                 "verification_and_quality": {
                     "source_statuses": {
                         "PubMed": "NOT_SEARCHED",
@@ -306,6 +308,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "title": checked.title if checked else verified.candidate_id,
                     "status": verified.candidate_status.value,
                     "decision": verified.decision,
+                    "preflight": dict((checked.metadata or {}).get("evidence_preflight") or {}) if checked else {},
                     "pending": list(verified.pending)[:12],
                     "failed_gates": failed_gates,
                     "coverage_blockers": list(verified.coverage.blockers),
@@ -357,6 +360,10 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "desired_options": result.desired_options,
                     "status_counts": status_counts,
                     "candidate_audits": candidate_audits,
+                    "initial_deep_verify_budget": job.max_verify,
+                    "bibliographic_preflight": result.bibliographic_preflight_summary,
+                    "adaptive_deep_checks_used": result.adaptive_deep_checks_used,
+                    "adaptive_checks_skipped_reason": result.adaptive_checks_skipped_reason,
                     "duplicate_topics_skipped": result.duplicate_topics_skipped,
                     "duplicate_topics_skipped_count": len(result.duplicate_topics_skipped),
                     "recent_pubmed_cues": evidence_cues,
