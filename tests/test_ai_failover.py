@@ -101,3 +101,24 @@ def test_once_daily_openrouter_quota_is_exhausted_only_backup_is_called_later():
     assert len(primary.calls) == 1
     assert len(backup.calls) == 3
     assert router.failover_count == 3
+
+
+def test_http_client_uses_named_user_agent_instead_of_python_urllib():
+    requests = []
+
+    def respond(req, timeout):
+        requests.append(req)
+        return json.dumps({
+            "model": "openai/gpt-oss-20b",
+            "choices": [{"message": {"content": '{"ok":true}'}, "finish_reason": "stop"}],
+        }).encode("utf-8")
+
+    provider = OpenAICompatibleProvider(
+        endpoint="https://api.groq.com/openai/v1/chat/completions",
+        model="openai/gpt-oss-20b",
+        api_key="placeholder-never-log",
+        requester=respond,
+        empty_retries=1,
+    )
+    assert json.loads(provider.complete(AIRequest(system="s", prompt="p")).text)["ok"]
+    assert requests[0].get_header("User-agent") == "SciMed-Review-Scout/1.0"
