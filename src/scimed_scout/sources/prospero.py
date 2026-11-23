@@ -40,6 +40,7 @@ class ProsperoCliSource:
         max_pages = min(5, max(1, self.max_pages))
         all_records: dict[str, SearchRecord] = {}
         total: int | None = None
+        count_changed = False
         pages_fetched = 0
         for page in range(1, max_pages + 1):
             prefix = ["node", node_entry] if node_entry and os.path.isfile(node_entry) else [self.executable]
@@ -77,7 +78,10 @@ class ProsperoCliSource:
                 if total is None:
                     total = reported
                 elif total != reported:
-                    raise ValueError("PROSPERO total_hits changed while paginating")
+                    # A changing remote index must not discard earlier pages
+                    # or be declared an exhaustive successful search.
+                    count_changed = True
+                    total = max(total, reported)
                 hits = data.get("hits")
                 if not isinstance(hits, list):
                     raise ValueError("CLI missing PROSPERO hits list")
@@ -117,13 +121,14 @@ class ProsperoCliSource:
             if total is not None and len(all_records) >= total:
                 break
 
-        complete = (total is not None and len(all_records) >= total)
+        complete = (not count_changed and total is not None and len(all_records) >= total)
         status = SourceStatus.SEARCHED_POSITIVE if complete else SourceStatus.PARTIAL
         return SearchResult(
             self.name, query, status, list(all_records.values()), total,
             message=(
                 f"PROSPERO pages checked={pages_fetched}; retrieved={len(all_records)}; "
-                f"total={total}; {'complete response' if complete else 'additional matches not retrieved; manual verification required'}"
+                f"total={total}; count_changed={count_changed}; "
+                f"{'complete response' if complete else 'additional matches not retrieved or index changed; manual verification required'}"
             ),
         )
 
