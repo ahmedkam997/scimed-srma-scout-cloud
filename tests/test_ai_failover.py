@@ -29,7 +29,7 @@ def test_groq_fallback_when_openrouter_quota_expires():
     got = router.complete(AIRequest(system="s", prompt="p", max_tokens=4000))
     assert got.provider == "groq-free-backup"
     assert router.failover_count == 1
-    assert backup.calls[0].max_tokens == 2200
+    assert backup.calls[0].max_tokens == 4000
 
 
 def test_invalid_json_fails_over_to_independent_provider():
@@ -122,3 +122,41 @@ def test_http_client_uses_named_user_agent_instead_of_python_urllib():
     )
     assert json.loads(provider.complete(AIRequest(system="s", prompt="p")).text)["ok"]
     assert requests[0].get_header("User-agent") == "SciMed-Review-Scout/1.0"
+
+
+def test_groq_uses_low_reasoning_and_json_mode_for_complex_prompts():
+    captured = {}
+
+    def respond(req, timeout):
+        body = json.loads(req.data.decode("utf-8"))
+        captured.update(body)
+        return json.dumps({
+            "model": "openai/gpt-oss-20b",
+            "choices": [{"message": {"content": '{"candidates":[]}'}, "finish_reason": "stop"}],
+        }).encode("utf-8")
+
+    provider = OpenAICompatibleProvider(
+        endpoint="https://api.groq.com/openai/v1/chat/completions",
+        model="openai/gpt-oss-20b", requester=respond,
+        empty_retries=1, name="groq-free-backup"
+    )
+    provider.complete(AIRequest(system="Return JSON only", prompt="Generate clinical topics", max_tokens=3200))
+    assert captured["reasoning_effort"] == "low"
+    assert captured["response_format"] == {"type": "json_object"}
+    assert captured["max_tokens"] == 3200
+
+
+def test_openrouter_free_does_not_receive_groq_specific_fields():
+    captured = {}
+
+    def respond(req, timeout):
+        captured.update(json.loads(req.data.decode("utf-8")))
+        return json.dumps({"choices": [{"message": {"content": '{"candidates":[]}'}}]}).encode()
+
+    provider = OpenAICompatibleProvider(
+        endpoint="https://openrouter.ai/api/v1/chat/completions",
+        model="openrouter/free", requester=respond, empty_retries=1,
+    )
+    provider.complete(AIRequest(system="system", prompt="candidate task"))
+    assert "reasoning_effort" not in captured
+    assert "response_format" not in captured
