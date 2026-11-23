@@ -63,11 +63,11 @@ _GENERAL_POPULATION_TERMS = {
     "individuals", "human", "humans",
 }
 _NON_PRIMARY_TITLES = re.compile(
-    r"\\b(?:systematic review|meta.analysis|scoping review|umbrella review|"
+    r"\b(?:systematic review|meta.analysis|scoping review|umbrella review|"
     r"network meta.analysis|commentary|comment on|comments to|letter|"
     r"editorial|perspective|narrative review|study protocol|protocol for|"
     r"hypothesis.generating|case report|case series|in vitro|"
-    r"animal model|mouse|mice|rat|rats|bibliometric|guideline)\\b",
+    r"animal model|mouse|mice|rat|rats|bibliometric|guideline)\b",
     flags=re.IGNORECASE,
 )
 
