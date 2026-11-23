@@ -368,3 +368,29 @@ def test_osf_discordant_v2_results_are_not_marked_negative():
     result = OSFRegistrationsSource(JsonHttpClient(loader=load)).search("heart failure")
     assert result.status == SourceStatus.PARTIAL
     assert result.status != SourceStatus.SEARCHED_NEGATIVE
+
+
+def test_prospero_capped_broad_search_recovers_title_hits_but_stays_partial():
+    calls = []
+    def run(command):
+        calls.append(command)
+        is_title = "--field" in command and command[command.index("--field") + 1] == "TI"
+        page = int(command[command.index("--page") + 1])
+        if is_title:
+            hits = [{"record_id": "99", "accession_number": "CRD420260000099",
+                     "title": "Specific cardiac intervention review"}]
+            total = 1
+        else:
+            hits = [{"record_id": str(page), "accession_number": f"CRD4202600000{page:02d}",
+                     "title": f"Broad search record {page}"}]
+            total = 300
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps({
+            "ok": True, "data": {"total_hits": total, "hits": hits},
+        }), stderr="")
+    result = ProsperoCliSource(runner=run, max_pages=2).search("cardiac intervention")
+    assert len(result.records) == 3
+    assert result.status == SourceStatus.PARTIAL
+    assert "title_only_supplemental_records=1" in result.message
+    assert result.records[-1].metadata["search_scope"] == "TITLE_ONLY_SUPPLEMENT"
+    assert any("--field" in cmd for cmd in calls)
+    assert result.status != SourceStatus.SEARCHED_NEGATIVE
