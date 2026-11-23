@@ -28,6 +28,8 @@ class DiscoveryJob:
     min_verify: int = 3
     max_verify: int = 10
     limit_per_query: int = 20
+    revisit_days: int = 30
+    client_token_hash: str = ""
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> "DiscoveryJob":
@@ -40,6 +42,8 @@ class DiscoveryJob:
             min_verify=_bounded_int(row.get("min_verify"), 3, 1, 20),
             max_verify=_bounded_int(row.get("max_verify"), 10, 2, 30),
             limit_per_query=_bounded_int(row.get("limit_per_query"), 20, 5, 100),
+            revisit_days=_bounded_int(row.get("revisit_days"), 30, 0, 180),
+            client_token_hash=str(row.get("client_token_hash") or ""),
         )
 
 
@@ -106,6 +110,26 @@ class SupabaseJobStore:
             except JobCancelled:
                 continue
         return recovered
+
+    def recent_completed_jobs(
+        self, *, client_token_hash: str, revisit_days: int = 30
+    ) -> list[dict[str, Any]]:
+        """Query only this browser's completed topic decisions.
+
+        The worker credential can see the queue, so the explicit owner
+        predicate is essential. A missing owner token means no memory.
+        """
+        if len(client_token_hash) != 64 or revisit_days <= 0:
+            return []
+        cutoff = datetime.now(timezone.utc) - timedelta(days=min(180, revisit_days))
+        return self._select({
+            "select": "id,status,updated_at,completed_at,result_json",
+            "client_token_hash": f"eq.{client_token_hash}",
+            "status": "eq.COMPLETED",
+            "completed_at": f"gte.{cutoff.isoformat()}",
+            "order": "completed_at.desc",
+            "limit": "80",
+        })
 
     def claim_next(self) -> DiscoveryJob | None:
         rows = self._select(
