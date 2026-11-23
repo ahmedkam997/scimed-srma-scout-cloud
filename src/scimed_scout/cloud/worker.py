@@ -207,12 +207,18 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                             {
                                 "candidate_id": candidate.candidate_id,
                                 "title": candidate.title,
+                                "specialty": candidate.specialty,
                                 "question_type": candidate.question_type,
                                 "review_question": candidate.review_question,
                                 "population": candidate.population,
                                 "intervention_exposure_index_test": candidate.intervention_exposure_index_test,
                                 "comparator_reference": candidate.comparator_reference,
-                                "outcomes": candidate.outcomes,
+                                "outcomes": list(candidate.outcomes or []),
+                                "eligible_designs": list(candidate.eligible_designs or []),
+                                "rationale": candidate.rationale,
+                                "novelty_hypothesis": candidate.novelty_hypothesis,
+                                "search_terms": list(candidate.search_terms or []),
+                                "qualification_status": "AI_DRAFT_NOT_SOURCE_VERIFIED",
                             }
                             for candidate in candidates
                         ],
