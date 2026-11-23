@@ -183,3 +183,48 @@ def test_relevant_study_examples_do_not_prioritize_unrelated_fracture_citations(
     examples=_relevant_primary_examples(question, records)
     assert len(examples)==1
     assert examples[0]["source"]=="PubMed"
+
+
+def test_primary_screening_queue_contains_newer_pico_leads_but_no_claimed_eligible_trials():
+    from types import SimpleNamespace
+    from scimed_scout.discovery.review_package import _primary_screening_queue
+    candidate = SimpleNamespace(
+        intervention_exposure_index_test="Ketone monoester supplementation",
+        comparator_reference="Placebo",
+        population="Endurance athletes",
+    )
+    records = [
+        {"source":"PubMed","source_record_id":"1",
+         "title":"Ketone monoester supplementation versus placebo in endurance athletes NCT01234567",
+         "payload":{"year":2025,"doi":"10.1234/a","url":"https://pubmed.ncbi.nlm.nih.gov/1/",
+                    "metadata":{"abstract":"Randomized crossover trial with 30 athletes"}}},
+        {"source":"Europe PMC","source_record_id":"2",
+         "title":"Unrelated knee osteoarthritis surgical study",
+         "payload":{"year":2024,"doi":"10.1234/b","metadata":{}}},
+    ]
+    queue = _primary_screening_queue(
+        candidate, records,
+        [{"last_search_date":"January 2022"}],
+    )
+    assert queue[0]["registry_trial_ids"] == ["NCT01234567"]
+    assert queue[0]["post_search_flag"] == "POST_SEARCH_BIBLIOGRAPHIC_LEAD"
+    assert queue[0]["fulltext_eligibility"] == "NOT_CHECKED"
+    assert queue[0]["trial_family_independence"] == "NOT_CONFIRMED"
+    assert queue[0]["screening_decision"] == ""
+
+
+def test_screening_queue_unknown_prior_search_date_does_not_infer_update():
+    from types import SimpleNamespace
+    from scimed_scout.discovery.review_package import _primary_screening_queue
+    candidate = SimpleNamespace(
+        intervention_exposure_index_test="Inclisiran",
+        comparator_reference="Statins",
+        population="Adults with ASCVD",
+    )
+    q = _primary_screening_queue(candidate, [{
+        "source":"PubMed", "source_record_id":"1",
+        "title":"Inclisiran trial in ASCVD",
+        "payload":{"year":2025,"doi":"10.1234/x"},
+    }], [{"publication_year":2018,"last_search_date":None}])
+    assert q[0]["post_search_flag"] == "UNDETERMINED"
+    assert q[0]["latest_documented_review_search_year"] is None
