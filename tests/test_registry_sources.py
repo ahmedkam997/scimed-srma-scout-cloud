@@ -446,7 +446,7 @@ def test_live_osf_v2_version_only_meta_confirms_scoped_zero_without_total():
         "testosterone replacement major adverse", limit=12,
     )
     assert result.status == SourceStatus.SEARCHED_NEGATIVE
-    assert len(calls) == 2
+    assert len(calls) == 4  # exact and broad OSF queries, each verified in two indexes
     assert result.total_count == 0
     assert "scoped" in result.message
     assert "not global novelty clearance" in result.message
