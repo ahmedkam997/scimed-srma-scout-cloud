@@ -75,9 +75,18 @@ Keep every candidate compact. Use one focused clinical question per topic. Limit
 rationale and novelty_hypothesis to 20 words each; include 2 to 4 search terms
 and at most 3 outcomes and 2 eligible designs per candidate. Avoid
 long explanations, markdown or commentary outside JSON.
-Prefer a diverse mix of clinically meaningful gaps: recent interventions or
-diagnostic generations, underserved populations, head-to-head comparisons,
-patient-important outcomes, and feasible updates of older reviews.
+Use distinct clinical discovery strategies across the batch: (1) newly
+published therapeutic approaches or diagnostic generations, (2) narrow and
+understudied patient subgroups, (3) head-to-head comparisons or optimal
+treatment sequences, and (4) long-term harms or patient-important outcomes.
+Prefer questions informed by recent bibliographic cues when they exist.
+Avoid broad, historically saturated comparisons with many existing syntheses,
+such as an unspecified class of statins versus another class, and avoid
+generic "drug versus standard care" topics without a focused clinical niche.
+Every topic needs a clinically consequential uncertainty, a precise PICO, a
+realistic primary study design, and clear data-driven search terms.
+Never fabricate RCT availability or claim a specific niche is novel before
+the discovery stage checks published reviews and protocols.
 Do not assert novelty without a source search. Do not include verified study
 counts, source-search results, gate scores, publication score, or final decisions.
 """
