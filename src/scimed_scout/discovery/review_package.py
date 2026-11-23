@@ -314,6 +314,15 @@ def _build_research_dossier(
     registrations = ledger.list_external_evidence(candidate.candidate_id, "REGISTRATION")
     primary = ledger.list_external_evidence(candidate.candidate_id, "PRIMARY_STUDY")
     ongoing = ledger.list_external_evidence(candidate.candidate_id, "ONGOING_STUDY")
+    ambiguous = ledger.list_external_evidence(candidate.candidate_id, "OTHER")
+    unclassified_review_leads = [
+        row for row in ambiguous
+        if (row.get("payload") or {}).get("originally_requested_evidence_type") == "PUBLISHED_REVIEW"
+    ]
+    other_preregistrations = [
+        row for row in ambiguous
+        if (row.get("payload") or {}).get("originally_requested_evidence_type") == "REGISTRATION"
+    ]
     logs = ledger.list_search_log(candidate.candidate_id)
     scorecard = dict(meta.get("discovery_gate_inputs") or {})
     latest = ledger.list_decisions(candidate.candidate_id)
@@ -370,6 +379,8 @@ def _build_research_dossier(
         "bibliographic_counts_not_verified_eligible_studies": {
             "published_review_records": len(review_records),
             "registered_review_records": len(registrations),
+            "unclassified_review_search_hits": len(unclassified_review_leads),
+            "primary_or_unclassified_osf_preregistrations": len(other_preregistrations),
             "primary_bibliographic_records": len(primary),
             "ongoing_study_records": len(ongoing),
             "unique_primary_record_leads_as_reported": verification.evidence.unique_primary_study_candidates,
@@ -382,6 +393,22 @@ def _build_research_dossier(
         "registration_evidence": [
             _source_record_for_review(record)
             for record in registrations[:15]
+        ],
+        "unclassified_review_search_hits_not_competitor_counts": [
+            {
+                **_source_record_for_review(record),
+                "citation_classification": (record.get("payload") or {}).get("citation_classification", ""),
+                "fulltext_review_type": "NOT_CONFIRMED",
+            }
+            for record in unclassified_review_leads[:20]
+        ],
+        "other_osf_preregistrations_not_review_protocols": [
+            {
+                **_source_record_for_review(record),
+                "citation_classification": (record.get("payload") or {}).get("citation_classification", ""),
+                "registered_review_confirmed": False,
+            }
+            for record in other_preregistrations[:20]
         ],
         "ongoing_study_evidence": [
             _source_record_for_review(record)
