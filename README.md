@@ -104,21 +104,37 @@ The current source layer includes:
 
 The novelty layer compares the candidate question with competing reviews and registrations across population, intervention/exposure/index test, comparator/reference standard, outcomes, design scope, clinical decision, era, and likely study set/search cutoff.
 
-## AI provider
+## Free AI models
 
-Candidate generation, semantic competitor assessment and topic scoring use a vendor-neutral OpenAI-compatible chat-completions endpoint.
+Candidate generation, semantic competitor assessment and exploratory topic scoring use a vendor-neutral OpenAI-compatible chat-completions client. GitHub Actions keeps API keys server-side. The production worker routes requests through independent free-model providers sequentially:
 
-Environment variables:
+1. Gemini AI Studio free Flash-Lite `gemini-3.5-flash-lite` when `GEMINI_API_KEY` exists.
+2. OpenRouter `openrouter/free` when `SCIMED_AI_API_KEY` exists.
+3. Groq `openai/gpt-oss-20b` when `GROQ_API_KEY` exists.
 
-    SCIMED_AI_ENDPOINT=
-    SCIMED_AI_MODEL=
-    SCIMED_AI_API_KEY=
+The second or third provider is contacted only when a preceding provider is unavailable, rate-limited or returned malformed JSON. The route never selects paid models by default and Gemini model choices are restricted to the approved Flash-Lite allowlist. It is valid to configure Gemini alone. No service-role key or Gemini key is passed to the browser.
 
-Optional:
+GitHub Actions Secrets:
 
-    SEMANTIC_SCHOLAR_API_KEY=
+    GEMINI_API_KEY        # Primary, configured in Google AI Studio
+    SCIMED_AI_API_KEY    # Optional OpenRouter free fallback
+    GROQ_API_KEY         # Optional separate Groq free fallback
 
-AI does not control source status, deterministic study-candidate counts, fatal source failures, or the final inclusion of a topic into the qualified list.
+Default model and endpoint:
+
+    GEMINI_FREE_MODEL=gemini-3.5-flash-lite
+    SCIMED_AI_ENDPOINT=https://openrouter.ai/api/v1/chat/completions
+    SCIMED_AI_MODEL=openrouter/free
+
+Other optional secrets:
+
+    SEMANTIC_SCHOLAR_API_KEY
+
+The smoke workflow `.github/workflows/gemini-smoke.yml` verifies actual key/model access with one small JSON request without printing the secret. The GitHub Actions test suite runs mocked provider-quota tests without contacting Gemini.
+
+The free model on Google AI Studio may incur charges when accessed through a billable project tier. Keep the Google AI Studio project on Free Tier to maintain the intended zero-cost workflow. Free usage quotas are project-specific, may change, and should be checked in AI Studio.
+
+AI does not control registry source status, study eligibility, publication linkage, clinical evidence independence, source failures, or the final qualification gates. An old PROSPERO/OSF protocol is not equivalent to a published review; review updates require a verified last search date and independent new eligible studies.
 
 ## Persistent ledger
 
@@ -151,7 +167,7 @@ The browser workflow is:
 7. The Python engine generates candidates, runs discovery verification, novelty checks and gates.
 8. Progress is written back to Supabase.
 9. Closing Chrome does not stop the background job.
-10. When complete, the PWA shows only qualified FIRST-CHOICE topics and provides Copy for ChatGPT and Download JSON.
+10. When complete, the PWA shows qualified FIRST-CHOICE options, a separate provisional/unresolved evidence audit, and unverified generated drafts. Each topic provides a full PICO dossier and a ready-to-paste ChatGPT scientific-audit prompt.
 
 The browser never receives the Supabase service-role key, worker token, or AI credentials. The production worker does not use the service-role key at all.
 
@@ -159,10 +175,15 @@ The browser never receives the Supabase service-role key, worker token, or AI cr
 
 The production Supabase project and queue schema are already configured. Anonymous Auth is not required.
 
-Set these GitHub repository Secrets:
+Set the worker-token Secret and at least one free-provider Secret in the GitHub repository:
 
     SCIMED_WORKER_TOKEN
+    GEMINI_API_KEY
+
+For independent free fallbacks, also set:
+
     SCIMED_AI_API_KEY
+    GROQ_API_KEY
 
 The background worker defaults to:
 
