@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -101,7 +102,29 @@ class OpenAICompatibleProvider:
                 method="POST",
             )
             try:
-                raw_bytes = self._request_with_bounded_rate_wait(req)
+                try:
+                    raw_bytes = self._request_with_bounded_rate_wait(req)
+                except ProviderFailure as exc:
+                    # Groq JSON object mode can fail to validate generated JSON
+                    # with HTTP 400. A single plain-text retry is permissible
+                    # for this specific failure only. All later parsing and
+                    # scientific qualification checks remain mandatory.
+                    if not (
+                        payload.get("response_format")
+                        and exc.status_code == 400
+                        and exc.error_category == "json_mode_validation"
+                    ):
+                        raise
+                    fallback_payload = dict(payload)
+                    fallback_payload.pop("response_format", None)
+                    fallback_payload["max_tokens"] = min(token_limit, 2500)
+                    fallback_request = urllib.request.Request(
+                        self.endpoint,
+                        data=json.dumps(fallback_payload).encode("utf-8"),
+                        headers=headers,
+                        method="POST",
+                    )
+                    raw_bytes = self._request_with_bounded_rate_wait(fallback_request)
                 data = json.loads(raw_bytes.decode("utf-8"))
             except ProviderFailure:
                 raise
@@ -178,16 +201,44 @@ class OpenAICompatibleProvider:
                     waited = True
                     (self.rate_limit_sleeper or time.sleep)(retry_after + 0.5)
                     continue
+                kind = _http_error_category(exc)
                 raise ProviderFailure(
-                    self.name, int(exc.code), f"HTTP {exc.code}",
+                    self.name, int(exc.code), f"HTTP {exc.code} ({kind})",
                     retry_after_seconds=retry_after,
                     remaining_daily_requests=requests_left,
                     remaining_minute_tokens=tokens_left,
+                    error_category=kind,
                 ) from exc
 
     def _request(self, req: urllib.request.Request) -> bytes:
         with urllib.request.urlopen(req, timeout=self.timeout) as response:
             return response.read()
+
+
+def _http_error_category(exc: urllib.error.HTTPError) -> str:
+    """Return a strict, non-sensitive classification, never provider text."""
+    try:
+        payload = json.loads(exc.read(4096).decode("utf-8", errors="replace"))
+        item = payload.get("error", {}) if isinstance(payload, dict) else {}
+        if not isinstance(item, dict):
+            return "unspecified"
+        message = str(item.get("message") or "").casefold()
+        code = str(item.get("code") or "").casefold()
+        if "json" in message and any(token in message for token in (
+            "validat", "invalid", "format", "generat", "schema", "parse",
+        )):
+            return "json_mode_validation"
+        if "rate limit" in message or "tokens per minute" in message or "tpm" in message:
+            return "rate_limit"
+        if "context length" in message:
+            return "context_window"
+        if any(term in message for term in ("response_format", "reasoning_effort")):
+            return "unsupported_parameter"
+        if code in {"invalid_request_error", "model_not_found", "rate_limit_exceeded"}:
+            return code
+    except (ValueError, TypeError, OSError, UnicodeError):
+        pass
+    return "unspecified"
 
 
 def _positive_float(value: object) -> float | None:
@@ -218,9 +269,11 @@ class ProviderFailure(RuntimeError):
         retry_after_seconds: float | None = None,
         remaining_daily_requests: int | None = None,
         remaining_minute_tokens: int | None = None,
+        error_category: str = "unspecified",
     ):
         self.provider = provider
         self.status_code = status_code
+        self.error_category = error_category
         self.retry_after_seconds = retry_after_seconds
         self.remaining_daily_requests = remaining_daily_requests
         self.remaining_minute_tokens = remaining_minute_tokens
