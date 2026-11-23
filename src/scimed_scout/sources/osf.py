@@ -52,7 +52,7 @@ class OSFRegistrationsSource:
     trove = "https://share.osf.io/trove/index-card-search"
     endpoint = "https://api.osf.io/v2/registrations/"
 
-    def __init__(self, http: JsonHttpClient | None = None, *, max_pages: int = 2):
+    def __init__(self, http: JsonHttpClient | None = None, *, max_pages: int = 4):
         self.http = http or JsonHttpClient()
         self.max_pages = max(1, min(5, int(max_pages)))
 
@@ -79,7 +79,7 @@ class OSFRegistrationsSource:
             )
 
     def _search_trove(self, original: str, focus: str, limit: int) -> SearchResult:
-        size = min(15, max(1, int(limit)))
+        size = min(50, max(1, int(limit)))
         params = {
             "cardSearchText[title,description]": focus,
             "cardSearchFilter[resourceType]": "Registration",
