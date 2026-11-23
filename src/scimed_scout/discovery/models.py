@@ -36,3 +36,4 @@ class DiscoveryRunResult:
     final_option_candidate_ids: list[str] = field(default_factory=list)
     qualified_option_candidate_ids: list[str] = field(default_factory=list)
     desired_options: int = 3
+    duplicate_topics_skipped: list[dict[str, str]] = field(default_factory=list)
