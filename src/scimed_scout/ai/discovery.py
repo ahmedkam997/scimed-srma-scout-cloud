@@ -160,7 +160,9 @@ class CandidateDiscoveryService:
         # A short-lived historical guard prevents re-running source searches on
         # recently checked PICO questions without permanently blacklisting them.
         from scimed_scout.discovery.topic_memory import is_recently_checked
-        from scimed_scout.discovery.topic_diversity import same_clinical_question
+        from scimed_scout.discovery.topic_diversity import (
+            same_clinical_question, same_discovery_family,
+        )
 
         recent = recent_topics or []
         previous_titles = "; ".join(str(item.get("title") or "")[:100] for item in recent[:12])
@@ -191,9 +193,20 @@ class CandidateDiscoveryService:
             if remaining <= 0:
                 break
             additional = additional_context
-            if seen_titles:
-                previous = "; ".join(sorted(seen_titles)[-10:])
-                additional = (additional + "\nDo not repeat these prior topic titles: " + previous).strip()
+            if proposals_with_response:
+                # Intervention + condition + comparator are more informative
+                # diversity hints than merely spelling the title differently.
+                used_families = "; ".join(
+                    f"{p.intervention_exposure_index_test} / "
+                    f"{p.population} / {p.comparator_reference}"[:155]
+                    for p, _ in proposals_with_response[-6:]
+                )
+                additional = (
+                    additional
+                    + "\nAvoid repeating these intervention/population/comparator "
+                    "families, even with different endpoints or age ranges: "
+                    + used_families
+                ).strip()
             prompt = build_discovery_prompt(
                 specialty=specialty,
                 question_types=question_types,
@@ -229,7 +242,11 @@ class CandidateDiscoveryService:
                                 "reason": "RECENTLY_CHECKED_PICO",
                             })
                         continue
-                    if any(same_clinical_question(proposal, kept) for kept, _ in proposals_with_response):
+                    if any(
+                        same_clinical_question(proposal, kept)
+                        or same_discovery_family(proposal, kept)
+                        for kept, _ in proposals_with_response
+                    ):
                         skipped_near_duplicate_picos += 1
                         continue
                     proposals_with_response.append((proposal, response))
@@ -288,8 +305,9 @@ class CandidateDiscoveryService:
                 count=remaining,
                 additional_context=(
                     additional_context
-                    + "\nGenerate alternative focused questions; avoid previous titles: "
-                    + previous
+                    + "\nGenerate alternative clinical intervention and disease families; "
+                    "different outcome phrasing alone does not count as novelty. "
+                    "Avoid these previous topic titles: " + previous
                 ).strip(),
             )
             calls += 1
@@ -318,7 +336,11 @@ class CandidateDiscoveryService:
                                 "reason": "RECENTLY_CHECKED_PICO",
                             })
                         continue
-                    if any(same_clinical_question(proposal, kept) for kept, _ in proposals_with_response):
+                    if any(
+                        same_clinical_question(proposal, kept)
+                        or same_discovery_family(proposal, kept)
+                        for kept, _ in proposals_with_response
+                    ):
                         skipped_near_duplicate_picos += 1
                         continue
                     proposals_with_response.append((proposal, response))
