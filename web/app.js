@@ -9,6 +9,7 @@ const els = {
   refresh: document.getElementById('refresh'),
   specialty: document.getElementById('specialty'),
   questionType: document.getElementById('questionType'),
+  revisitDays: document.getElementById('revisitDays'),
   jobs: document.getElementById('jobs'),
   active: document.getElementById('activeCount'),
   qualified: document.getElementById('qualifiedCount'),
@@ -94,6 +95,7 @@ async function startDiscovery() {
         min_verify: 3,
         max_verify: 10,
         limit_per_query: 20,
+        revisit_days: Number(els.revisitDays.value),
       })
       .select()
       .single();
@@ -150,6 +152,18 @@ function renderJobs() {
     const rejected = Number(statusCounts.REJECTED || 0);
     const checked = Number(summary.verified_candidates || 0);
     const generated = Number(summary.generated_candidates || 0);
+    const recentSkipped = Number(summary.recent_topics_skipped_count || 0);
+    const recentDetail = Array.isArray(summary.recent_topics_skipped) ? summary.recent_topics_skipped : [];
+    const recentHtml = job.status === 'COMPLETED' && recentSkipped
+      ? `<details class="score-audit">
+          <summary>Recently checked topics skipped: ${recentSkipped}</summary>
+          <p class="help">These topics were already evaluated in this browser's recent jobs. Skipping them avoids repeating full source verification. They become eligible again after the selected interval.</p>
+          ${recentDetail.map(item => `<article class="score-item">
+            <b>${escapeHtml(item.title || '')}</b>
+            <p>Previous question: ${escapeHtml(item.matched_previous_title || '')}</p>
+            <p>Eligible for another check: ${escapeHtml(item.recheck_after ? new Date(item.recheck_after).toLocaleDateString() : 'unknown')}</p>
+          </article>`).join('')}
+        </details>` : '';
     const summaryHtml = job.status === 'COMPLETED' && checked
       ? `<div class="job-result-summary">
           <b>Discovery review summary</b>
@@ -295,6 +309,7 @@ function renderJobs() {
         <div class="job-meta"><span>${progress}%</span><span>${escapeHtml(job.stage || '')}</span></div>
         <p class="job-message">${escapeHtml(job.message || '')}</p>
         ${summaryHtml}
+        ${recentHtml}
         ${optionHtml}
         ${draftHtml}
         ${provisionalHtml}
