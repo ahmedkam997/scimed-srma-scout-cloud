@@ -312,3 +312,19 @@ def test_retry_after_is_strictly_bounded_and_never_loops():
             provider.complete(AIRequest(system="s", prompt="p"))
         assert len(calls) == 1
     assert sleeps == []
+
+
+def test_groq_http_400_token_throttle_is_not_repeated_across_competitor_calls():
+    primary = FakeProvider(ProviderFailure("openrouter-free", 429, "quota"))
+    backup = FakeProvider(ProviderFailure(
+        "groq-free-backup", 400, "HTTP 400 (rate_limit)",
+        error_category="rate_limit", remaining_minute_tokens=63,
+    ))
+    router = FreeProviderFallback(primary, backup)
+    with pytest.raises(ProviderFailure):
+        router.complete(AIRequest(system="s", prompt="first competitor"))
+    assert router.backup_quota_exhausted
+    with pytest.raises(ProviderFailure):
+        router.complete(AIRequest(system="s", prompt="another competitor"))
+    assert len(backup.calls) == 1
+    assert len(primary.calls) == 1
