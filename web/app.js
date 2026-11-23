@@ -249,6 +249,100 @@ function uniqueProvisionalTopics(items) {
   return unique;
 }
 
+function topicDetailHtml(job, topic) {
+  const dossier = topic.research_dossier || {};
+  const q = dossier.scientific_question || topic;
+  const quality = dossier.verification_and_quality || {};
+  const counts = dossier.bibliographic_counts_not_verified_eligible_studies || {};
+  const coverage = quality.source_statuses || topic.source_statuses || topic.coverage?.source_statuses || {};
+  const reviews = dossier.published_review_evidence || topic.published_review_examples || [];
+  const registrations = dossier.registration_evidence || topic.registration_examples || [];
+  const leads = dossier.primary_study_screening_queue || topic.primary_study_screening_queue || [];
+  const audit = dossier.evidence_search_audit || [];
+  const age = dossier.registration_age_and_update_audit || topic.registration_age_audit || [];
+  const updates = dossier.published_review_update_audit || topic.published_review_update_audit || [];
+  const blockers = quality.pending_verifications || topic.unresolved_checks || [];
+  const field = (label, value) => `<p><b>${escapeHtml(label)}:</b> ${escapeHtml(
+    Array.isArray(value) ? value.join('; ') : (value || 'Not specified')
+  )}</p>`;
+  const refs = items => items.slice(0, 12).map(item => `<p>
+    ${safeEvidenceLink(item)}
+    ${item.year ? ' (' + escapeHtml(item.year) + ')' : ''}
+    ${item.doi ? ' DOI: ' + escapeHtml(item.doi) : ''}
+    ${item.overlap_assessment?.overall_overlap ? ' Overlap: ' +
+      escapeHtml(item.overlap_assessment.overall_overlap) : ''}
+  </p>`).join('') || '<p class="help">No retrieved records preserved. This does not mean none exist.</p>';
+  return `<details class="topic-transfer">
+    <summary>Full topic details + ChatGPT review prompt</summary>
+    <p class="help">Source-backed discovery dossier. Unscreened records are not confirmed eligible studies. Copying sends nothing until you paste into ChatGPT.</p>
+    <div class="job-actions">
+      <button class="secondary small" data-copy-topic="${escapeHtml(job.id)}"
+        data-topic-id="${escapeHtml(topic.candidate_id || '')}">Copy topic + full prompt</button>
+      <button class="secondary small" data-download-topic="${escapeHtml(job.id)}"
+        data-topic-id="${escapeHtml(topic.candidate_id || '')}">Download detailed brief (.md)</button>
+    </div>
+    ${field('Research question', q.review_question)}
+    ${field('Population', q.population)}
+    ${field('Intervention / exposure / index test', q.intervention_exposure_index_test)}
+    ${field('Comparator / reference', q.comparator_reference)}
+    ${field('Outcomes', q.outcomes)}
+    ${field('Eligible study designs (proposed)', q.eligible_designs)}
+    ${field('Clinical rationale', q.rationale_hypothesis || topic.rationale)}
+    ${field('Novelty hypothesis (not proven)', q.novelty_hypothesis || topic.novelty_hypothesis)}
+    ${field('Suggested keywords (not validated search)', q.candidate_search_terms || topic.search_terms)}
+    ${field('Discovery decision', dossier.qualification_decision || topic.decision || topic.qualification_status)}
+    <div class="score-data">
+      <span>Published-review leads: ${escapeHtml(counts.published_review_records ?? reviews.length)}</span>
+      <span>PROSPERO/OSF leads: ${escapeHtml(counts.registered_review_records ?? registrations.length)}</span>
+      <span>Unscreened primary-record leads: ${escapeHtml(
+        counts.unique_primary_record_leads_as_reported ??
+        topic.discovered_primary_study_candidates ?? 'Not available'
+      )}</span>
+      <span>Eligible independent trials confirmed: not established</span>
+    </div>
+    <details><summary>Search coverage and queries (${escapeHtml(audit.length)})</summary>
+      <p>${Object.entries(coverage).map(([name,status]) =>
+        escapeHtml(name) + ': ' + escapeHtml(status)).join('; ') || 'Not recorded'}</p>
+      ${audit.slice(0, 35).map(row => `<p class="research-audit-row">
+        <b>${escapeHtml(row.database || '')} [${escapeHtml(row.status || '')}]</b>
+        ${escapeHtml(row.query_used || '')}
+        ${row.diagnostic ? ' | ' + escapeHtml(row.diagnostic) : ''}
+      </p>`).join('')}
+      ${audit.length > 35 ? '<p>Additional queries are preserved in the full downloaded brief.</p>' : ''}
+    </details>
+    <details><summary>Published competing reviews (${escapeHtml(reviews.length)})</summary>
+      ${refs(reviews)}
+    </details>
+    <details><summary>PROSPERO / OSF registrations (${escapeHtml(registrations.length)})</summary>
+      ${refs(registrations)}
+      ${age.slice(0, 12).map(row => `<p>
+        ${escapeHtml(row.source)}: ${escapeHtml(row.title)}.
+        Registered: ${escapeHtml(row.registered_at || 'unknown')}.
+        Status: ${escapeHtml(row.registry_status || 'unknown')}.
+        Update assessment: ${escapeHtml(row.classification || 'unresolved')}.
+      </p>`).join('')}
+    </details>
+    <details><summary>Previous review search dates and update opportunities</summary>
+      ${updates.slice(0, 12).map(row => `<p>${escapeHtml(row.title)}.
+        Last search: ${escapeHtml(row.last_search_date || 'not verified')}.
+        ${escapeHtml(row.classification || '')}
+      </p>`).join('') || '<p class="help">Not verified.</p>'}
+    </details>
+    <details><summary>Potential primary-study citations (${escapeHtml(leads.length)})</summary>
+      <p class="help">Bibliographic leads. Confirm full-text eligibility, comparison arms and unique study populations.</p>
+      ${leads.slice(0, 12).map(item => `<p>${safeEvidenceLink(item)}
+        ${escapeHtml(item.year || 'date unknown')}
+        ${item.post_search_flag ? ' | ' + escapeHtml(item.post_search_flag) : ''}
+      </p>`).join('') || '<p>No study queue saved.</p>'}
+    </details>
+    <details><summary>Unresolved scientific checks (${escapeHtml(blockers.length)})</summary>
+      ${(blockers || []).map(item => `<p>${escapeHtml(item)}</p>`).join('') ||
+        '<p>No pending checks listed in this discovery export.</p>'}
+    </details>
+    <p class="help">The copied prompt instructs ChatGPT to verify source dates, PICO overlap, independent eligible studies, update value, methods, and a GO/REFINE/NO-GO verdict with citations.</p>
+  </details>`;
+}
+
 function renderJobs() {
   const active = jobs.filter(job => ['QUEUED', 'RUNNING'].includes(job.status)).length;
   const qualified = jobs.reduce((sum, job) => sum + qualifiedOptions(job).length, 0);
@@ -327,6 +421,7 @@ function renderJobs() {
             <b>${escapeHtml(option.title || '')}</b>
             <p>${escapeHtml(option.review_question || '')}</p>
             <small>${escapeHtml((option.question_type || '').replaceAll('_',' '))}</small>
+            ${topicDetailHtml(job, option)}
           </article>
         `).join('')}</div>`
       : '';
@@ -379,6 +474,7 @@ function renderJobs() {
           ${provisionalOptions.map(topic => `<article class="score-item">
             <b>${escapeHtml(topic.title || '')}</b>
             <p>${escapeHtml(topic.review_question || '')}</p>
+            ${topicDetailHtml(job, topic)}
             ${topic.triage_tier ? `<p class="help">Bibliographic preflight: ${topic.triage_tier === 'PICO_SIGNAL_FOR_MANUAL_AUDIT'
               ? 'At least four titles mention both the intervention and clinical population; full-text eligibility and novelty remain unverified.'
               : 'Few titles match both the intervention and population. Recheck the search and comparator before accepting the PICO.'}</p>` : ''}
