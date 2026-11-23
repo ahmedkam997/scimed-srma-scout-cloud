@@ -74,6 +74,18 @@
       </select>
     </label>
 
+    <label>Do not repeat topics checked within
+      <select id="revisitDays">
+        <option value="7">7 days</option>
+        <option value="14">14 days</option>
+        <option value="30" selected>30 days (recommended default)</option>
+        <option value="60">60 days</option>
+        <option value="90">90 days</option>
+        <option value="0">Recheck recent topics now</option>
+      </select>
+    </label>
+    <p class="help">The same clinical PICO is skipped temporarily. Topics with incomplete source checks are eligible again after at most 7 days. This applies to previous jobs from this browser.</p>
+
     <button id="start" disabled>Start discovery</button>
     <p class="help">The job is saved in the cloud. You may close the browser after it enters the queue.</p>
   </section>
