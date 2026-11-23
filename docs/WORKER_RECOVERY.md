@@ -74,3 +74,29 @@ a completed deployment is claimed.
 
 Do not silently auto-retry failed jobs while the free AI accounts are
 unavailable, which would expend quota and obscure the root issue.
+
+
+## Verified on 2026-11-23: dispatch and Groq 403 repairs
+
+- The Edge Function wake-discovery-worker had an HTTP 403 from a privileged
+  REST PATCH before it could dispatch GitHub Actions.
+- Replaced the PATCH with a SECURITY INVOKER RPC, scimed_request_dispatch.
+  Existing device-token RLS restricts the update to an owned queued job.
+  The guarded trigger canonicalizes the update to the request timestamp only
+  and enforces a 120-second dispatch cooldown.
+- Edge Function version 4 was deployed. A live HTTP test with a nonexistent
+  job returned HTTP 202 without starting a worker. Transactional tests
+  confirmed owner success, wrong-device rejection, and throttling.
+- Groq initially returned HTTP 403 to the Python default User-Agent even
+  on the public models endpoint. The named SciMed-Review-Scout/1.0 User-Agent
+  returned HTTP 200 and an 11-model list. A real request to openai/gpt-oss-20b
+  then returned HTTP 200 with valid JSON. A regression test covers the UA.
+- Supabase security advisors found no issues.
+
+GitHub Actions verification:
+https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45159596498
+https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45159953103
+
+This verifies infrastructure and one tiny Groq completion, not an entire
+systematic-review discovery. The live smoke test intentionally used an
+invalid job ID and did not start the queued Cardiology task.
