@@ -89,3 +89,15 @@ def test_fallback_is_opt_in_and_primary_free_only(monkeypatch):
     monkeypatch.setenv("SCIMED_AI_MODEL", "some-model-that-costs-money")
     with pytest.raises(RuntimeError, match="Only OpenRouter free"):
         FreeProviderFallback.from_env()
+
+
+def test_once_daily_openrouter_quota_is_exhausted_only_backup_is_called_later():
+    primary = FakeProvider(ProviderFailure("openrouter-free", 429, "HTTP 429"))
+    backup = FakeProvider('{"candidates":[]}', "groq-free-backup", "openai/gpt-oss-20b")
+    router = FreeProviderFallback(primary, backup)
+    for _ in range(3):
+        assert router.complete(AIRequest(system="s", prompt="p")).provider == "groq-free-backup"
+    assert router.primary_quota_exhausted is True
+    assert len(primary.calls) == 1
+    assert len(backup.calls) == 3
+    assert router.failover_count == 3
