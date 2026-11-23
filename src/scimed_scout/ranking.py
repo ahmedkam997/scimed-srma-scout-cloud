@@ -70,7 +70,9 @@ class CandidateRankingService:
     def __init__(self, ledger: SQLiteLedger):
         self.ledger = ledger
 
-    def rank_project(self, project_id: str, *, top_n: int = 3) -> list[RankingResult]:
+    def rank_project(
+        self, project_id: str, *, top_n: int = 3, return_all: bool = False,
+    ) -> list[RankingResult]:
         candidates = [
             c for c in self.ledger.list_candidates(project_id)
             if c.status != CandidateStatus.REJECTED
@@ -115,4 +117,8 @@ class CandidateRankingService:
                 candidate.status = CandidateStatus.SHORTLISTED
             self.ledger.upsert_candidate(candidate)
 
-        return ranked
+        # Keep the original top_n shortlist state, but let the discovery
+        # scheduler backfill from lower-ranked different clinical families.
+        # Otherwise early repeated PICO variants reduce the real verification
+        # budget to fewer distinct candidates than the user requested.
+        return ranked if return_all else ranked[:max(0, top_n)]
