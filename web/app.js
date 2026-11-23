@@ -125,6 +125,26 @@ async function loadJobs() {
   renderJobs();
 }
 
+function safeEvidenceLink(record) {
+  const title = escapeHtml(record?.title || record?.record_id || 'Untitled record');
+  const source = escapeHtml(record?.source || 'External source');
+  try {
+    const url = new URL(record?.url || '');
+    if (url.protocol !== 'https:') return `${title} (${source})`;
+    const host = url.hostname.toLowerCase();
+    const allowed = [
+      'pubmed.ncbi.nlm.nih.gov', 'europepmc.org', 'www.ebi.ac.uk',
+      'doi.org', 'api.openalex.org', 'openalex.org',
+      'www.crd.york.ac.uk', 'osf.io', 'clinicaltrials.gov',
+      'www.semanticscholar.org', 'www.crossref.org'
+    ];
+    if (!allowed.includes(host)) return `${title} (${source})`;
+    return `<a href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">${title}</a> (${source})`;
+  } catch {
+    return `${title} (${source})`;
+  }
+}
+
 function renderJobs() {
   const active = jobs.filter(job => ['QUEUED', 'RUNNING'].includes(job.status)).length;
   const qualified = jobs.reduce((sum, job) => sum + qualifiedOptions(job).length, 0);
@@ -228,6 +248,12 @@ function renderJobs() {
               <span>Study candidates: ${escapeHtml(topic.discovered_primary_study_candidates ?? 'N/A')}</span>
               <span>Clinical area: ${escapeHtml(topic.specialty || 'Unknown')}</span>
             </div>
+            <details><summary>Found published reviews (verify overlap)</summary>
+              ${(topic.published_review_examples || []).map(item => `<p>${safeEvidenceLink(item)}</p>`).join('') || '<p>No review examples preserved</p>'}
+            </details>
+            <details><summary>Potential study records (not eligibility-screened)</summary>
+              ${(topic.primary_study_examples || []).map(item => `<p>${safeEvidenceLink(item)}</p>`).join('') || '<p>No examples preserved</p>'}
+            </details>
             <details><summary>Why provisional?</summary>
               <p>${(topic.source_blockers || []).map(escapeHtml).join('; ') || 'Manual source and methods checks remain'}</p>
               <p>${(topic.unresolved_checks || []).map(escapeHtml).join('; ')}</p>
