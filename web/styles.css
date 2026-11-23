@@ -32,3 +32,13 @@
 .topic-transfer .job-actions button{flex:1 1 155px;white-space:normal;line-height:1.35}
 .topic-transfer .research-audit-row{border-bottom:1px solid #f2f4f7;padding:7px 0;overflow-wrap:anywhere}
 .topic-transfer .score-data{margin-top:11px}
+
+.topic-quick-actions{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 5px}
+.topic-quick-actions button{margin:0;flex:1 1 170px;background:#eaf2ff;border:1px solid #b9d4ff;color:#175cd3;font-size:12px;padding:10px}
+.registry-audit-compact{margin-top:10px;border:1px solid #e5e7eb;border-radius:9px;padding:9px;background:#fff;font-size:12px}
+.registry-audit-compact>summary{cursor:pointer;font-weight:700;line-height:1.5}
+.registry-audit-compact p{font-size:11px;overflow-wrap:anywhere}
+.registry-audit-compact .registry-evidence{border-top:1px solid #eaecf0;padding:9px 0;margin-top:8px}
+.registry-audit-compact .registry-evidence>b{display:block;line-height:1.4;overflow-wrap:anywhere}
+.registry-audit-compact details{border-top:1px solid #eaecf0;margin-top:9px;padding-top:8px}
+.registry-audit-compact details>summary{cursor:pointer;font-weight:600}
