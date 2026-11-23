@@ -64,6 +64,13 @@ def same_clinical_question(a: Any, b: Any) -> bool:
         population_b & _YOUNG and population_a & _ADULT
     ):
         return False
+    # Numeric PICO qualifiers (e.g. different age cutoffs, stages or target
+    # disease identifiers) are clinically meaningful, not formatting noise.
+    for dimension in ("population", "intervention_exposure_index_test", "comparator_reference"):
+        a_nums = {x for x in _tokens(_field(a, dimension)) if x.isdigit()}
+        b_nums = {x for x in _tokens(_field(b, dimension)) if x.isdigit()}
+        if a_nums != b_nums:
+            return False
     intervention = _containment(
         _field(a, "intervention_exposure_index_test"),
         _field(b, "intervention_exposure_index_test"),
