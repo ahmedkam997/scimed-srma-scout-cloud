@@ -9,7 +9,7 @@ from typing import Any
 from scimed_scout.storage import SQLiteLedger
 
 from .models import DiscoveryRunResult
-from .topic_diversity import same_clinical_question
+from .topic_diversity import same_clinical_question, _tokens
 
 
 CHATGPT_REVIEW_INSTRUCTIONS = """You are the independent final reviewer of systematic-review topic options.
@@ -156,7 +156,24 @@ def build_discovery_review_package(
                     "url": str((record.get("payload") or {}).get("url") or ""),
                     "record_id": str(record.get("source_record_id") or ""),
                 }
-                for record in ledger.list_external_evidence(verified.candidate_id, "PRIMARY_STUDY")[:5]
+                for record in _relevant_primary_examples(
+                    candidate,
+                    ledger.list_external_evidence(verified.candidate_id, "PRIMARY_STUDY"),
+                    limit=5,
+                )
+            ],
+            "primary_examples_selection_note": (
+                "Title/PICO keyword ranking only; no full-text eligibility, "
+                "trial-family independence, or effect-data verification."
+            ),
+            "registration_examples": [
+                {
+                    "title": str(record.get("title") or ""),
+                    "source": str(record.get("source") or ""),
+                    "url": str((record.get("payload") or {}).get("url") or ""),
+                    "record_id": str(record.get("source_record_id") or ""),
+                }
+                for record in ledger.list_external_evidence(verified.candidate_id, "REGISTRATION")[:5]
             ],
             "preliminary_scoring": dict(metadata.get("discovery_gate_inputs") or {}),
             "decision": verified.decision,
@@ -211,3 +228,45 @@ def export_discovery_review_package(
         encoding="utf-8",
     )
     return target
+
+
+
+def _relevant_primary_examples(candidate: Any, records: list[dict], *, limit: int = 5) -> list[dict]:
+    """Rank bibliographic examples by title-level PICO overlap, not API return order.
+
+    These are unverified citations, NOT primary studies judged eligible after
+    screening. A missing title synonym must not count as proof of ineligibility.
+    """
+    intervention = _tokens(getattr(candidate, "intervention_exposure_index_test", ""))
+    population = _tokens(getattr(candidate, "population", ""))
+    comparator = _tokens(getattr(candidate, "comparator_reference", ""))
+    scored: list[tuple[float, str, dict]] = []
+    preferred_sources = {
+        "PubMed": 0.18,
+        "Europe PMC": 0.14,
+        "OpenAlex": 0.08,
+        "Semantic Scholar": 0.03,
+    }
+
+    for item in records:
+        title = str(item.get("title") or "")
+        words = _tokens(title)
+        if not title or not words or not intervention:
+            continue
+        intervention_match = len(words & intervention) / len(intervention)
+        population_match = len(words & population) / max(1, len(population))
+        comparator_match = len(words & comparator) / max(1, len(comparator))
+        if intervention_match < 0.50 or (
+            population_match < 0.18 and comparator_match < 0.40
+        ):
+            continue
+        score = (
+            3.0 * intervention_match
+            + 1.5 * population_match
+            + 0.7 * comparator_match
+            + preferred_sources.get(str(item.get("source") or ""), 0.0)
+        )
+        scored.append((score, title.casefold(), item))
+
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return [record for _, _, record in scored[:max(0, limit)]]
