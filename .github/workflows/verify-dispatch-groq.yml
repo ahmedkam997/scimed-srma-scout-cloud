@@ -123,3 +123,46 @@ jobs:
             print("GROQ_COMPLETION_ERROR",exc.status_code,flush=True)
             raise
           PY
+      - name: End-to-end GitHub dispatch smoke with immediately cancelled test job
+        run: |
+          python - <<'PY'
+          import json,re,secrets,urllib.request,urllib.error,pathlib
+          config=pathlib.Path("web/config.js").read_text()
+          public_key=re.search(r'supabaseAnonKey:\s*"([^"]+)"',config).group(1)
+          token=secrets.token_hex(32)
+          base="https://vskqiszpjxsmcayuaclo.supabase.co"
+          db_headers={
+            "apikey":public_key, "Authorization":"Bearer "+public_key,
+            "x-scimed-client-token":token, "Content-Type":"application/json",
+          }
+          job_id=None
+          def post(url, data, headers):
+            req=urllib.request.Request(url,data=json.dumps(data).encode(),headers=headers,method="POST")
+            try:
+              with urllib.request.urlopen(req,timeout=20) as response:
+                return response.status,json.load(response)
+            except urllib.error.HTTPError as err:
+              try: payload=json.loads(err.read(700))
+              except Exception: payload={}
+              return err.code,payload
+          try:
+            code,created=post(base+"/rest/v1/discovery_jobs",{
+              "specialty":"SCIMED_DISPATCH_TEST_ONLY",
+              "question_type":"ALL",
+            },{**db_headers,"Prefer":"return=representation"})
+            assert code in (200,201) and isinstance(created,list) and len(created)==1, "test insert failed"
+            job_id=created[0]["id"]
+            code,body=post(base+"/functions/v1/wake-discovery-worker",{
+              "job_id":job_id
+            },{**db_headers,"Origin":"https://ahmedkam997.github.io"})
+            print("EDGE_REAL_DISPATCH_HTTP",code,
+              "RESULT",str(body.get("status") or "")[:50],
+              "GITHUB_HTTP",str(body.get("github_status") or "")[:6],flush=True)
+            assert code==202 and body.get("status")=="dispatched", "GitHub did not accept the dispatch"
+          finally:
+            if job_id:
+              code,body=post(base+"/rest/v1/rpc/scimed_cancel_job",{
+                "p_job_id":job_id
+              },db_headers)
+              print("DISPATCH_TEST_JOB_CANCEL",code,"CANCELLED",body is True,flush=True)
+          PY
