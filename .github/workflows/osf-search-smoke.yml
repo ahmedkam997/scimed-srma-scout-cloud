@@ -1,0 +1,30 @@
+name: Live OSF scoped registry search smoke
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/osf-search-smoke.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e .
+      - name: Confirm OSF scoped zero using independent public indexes
+        run: |
+          python - <<'PY'
+          from scimed_scout.sources.osf import OSFRegistrationsSource
+          from scimed_scout.domain import SourceStatus
+          source=OSFRegistrationsSource(max_pages=2)
+          query="nonexistentxxyyzzscimed2026"
+          r=source.search(query,limit=10)
+          print(f"OSF scoped synthetic zero: status={r.status.value} matches={len(r.records)} reason={r.message[:250]}")
+          if r.status != SourceStatus.SEARCHED_NEGATIVE:
+              raise SystemExit("OSF v2/Trove scoped zero confirmation failed")
+          print("PASS: independent scoped-zero check complete. No global novelty claim.")
+          PY
