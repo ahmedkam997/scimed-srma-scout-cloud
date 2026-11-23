@@ -13,7 +13,10 @@ SYSTEM_PROMPT = """Assess overlap between a candidate systematic-review question
 Use only supplied evidence text. Do not infer facts absent from the evidence.
 Assess Population, Intervention/Exposure/Index test, Comparator/Reference standard, Outcomes,
 study-design scope, clinical decision, treatment/test era, and likely study set/search cutoff.
-Every non-empty dimension evidence field must be a short exact quote from the supplied evidence text. If evidence is insufficient, use UNRESOLVED. Return strict JSON only.
+Every non-empty dimension evidence field must be a short exact quote from the supplied evidence text.
+Keep quotes to <= 12 words and reasons to <= 8 words. If evidence is insufficient,
+use UNRESOLVED with empty evidence. Return short, complete, strict JSON.
+Never invent a competing review, paper, source excerpt, or last-search date.
 ESSENTIALLY_IDENTICAL is reserved for near-equivalent clinical questions and scope.
 Do not decide the final project verdict."""
 
@@ -66,7 +69,7 @@ def build_batch_overlap_prompt(candidate: CandidateRecord, records: list[dict]) 
                 "record_id": str(record.get("source_record_id") or ""),
                 "source": str(record.get("source") or ""),
                 "title": str(record.get("title") or ""),
-                "evidence_text": evidence_text[:4000],
+                "evidence_text": evidence_text[:1600],
             }
         )
 
@@ -153,7 +156,7 @@ class SemanticCompetitorAssessor:
                     system=SYSTEM_PROMPT + "\nAssess every supplied record independently and return one item for each record_id.",
                     prompt=build_batch_overlap_prompt(candidate, usable),
                     temperature=0.0,
-                    max_tokens=5000,
+                    max_tokens=2000,
                 )
             )
             provider_name = response.provider
