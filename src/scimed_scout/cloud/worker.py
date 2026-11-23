@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from scimed_scout.ai import CandidateDiscoveryService, FreeProviderFallback
 from scimed_scout.competitors import SemanticCompetitorAssessor
 from scimed_scout.discovery.topic_memory import recent_topic_memory
+from scimed_scout.discovery.open_access_dates import OpenAccessSearchDateResolver
 from scimed_scout.discovery.evidence_seed import recent_pubmed_cues, cue_prompt
 from scimed_scout.discovery import (
     DiscoveryNoveltyService,
@@ -162,7 +163,12 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 message=f"Generated {len(candidates)} topics; ranking them for verification",
             )
 
-            novelty = DiscoveryNoveltyService(ledger, SemanticCompetitorAssessor(provider))
+            novelty = DiscoveryNoveltyService(
+                ledger,
+                SemanticCompetitorAssessor(provider),
+                search_date_resolver=OpenAccessSearchDateResolver(),
+                max_fulltext_reviews=2,
+            )
             scoring = DiscoveryScoringService(provider)
 
             def progress_callback(progress: int, stage: str, message: str) -> None:
@@ -236,6 +242,9 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     ) if checked else [],
                     "published_review_update_audit": (
                         (checked.metadata or {}).get("discovery_published_review_update_audit") or []
+                    ) if checked else [],
+                    "fulltext_search_date_resolutions": (
+                        (checked.metadata or {}).get("discovery_fulltext_search_date_resolutions") or []
                     ) if checked else [],
                     "potential_fatal_review_overlap_ids": (
                         (checked.metadata or {}).get("discovery_potential_fatal_review_overlap_ids") or []
