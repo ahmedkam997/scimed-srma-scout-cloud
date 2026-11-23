@@ -1,0 +1,54 @@
+name: Gemini free API smoke test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/gemini-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gemini-free-connectivity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_FREE_MODEL: gemini-3.5-flash-lite
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e .
+      - name: Verify AI Studio key and free model using one short JSON request
+        run: |
+          python - <<'PY'
+          import json, os
+          from scimed_scout.ai import AIRequest
+          from scimed_scout.ai.providers import OpenAICompatibleProvider
+          if not os.getenv("GEMINI_API_KEY", "").strip():
+              raise SystemExit("GEMINI_API_KEY not available to this GitHub workflow. Check Actions secrets.")
+          provider = OpenAICompatibleProvider(
+              endpoint="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+              model="gemini-3.5-flash-lite",
+              api_key=os.environ["GEMINI_API_KEY"],
+              name="gemini-free-smoke",
+              timeout=30,
+              empty_retries=1,
+          )
+          answer = provider.complete(AIRequest(
+              system="Return only one valid JSON object, no markdown.",
+              prompt='Return exactly {"status":"ok"} as JSON.',
+              temperature=0.0,
+              max_tokens=180,
+          )).text.strip()
+          if answer.startswith("```"):
+              answer = answer.split("\n", 1)[-1].removesuffix("```").strip()
+          obj = json.loads(answer)
+          if obj != {"status": "ok"}:
+              raise SystemExit("Gemini responded but the short JSON smoke output did not match.")
+          print("Gemini free Flash-Lite connectivity: PASS. Short JSON verified; no secret printed.")
+          PY
