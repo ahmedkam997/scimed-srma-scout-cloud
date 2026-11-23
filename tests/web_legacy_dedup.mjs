@@ -58,3 +58,37 @@ test('A clinically different comparator remains a distinct PICO',()=>{
     'Adults with heart failure','Drug X','Standard therapy',['Mortality'],'Intervention');
   assert.equal(uniqueProvisionalTopics([base,changed]).length,2);
 });
+
+
+const registrationDisplayRelevance=runInNewContext(
+  source.slice(start,end)+'\nregistrationDisplayRelevance;', {}
+);
+
+test('Unrelated dental implant and breastfeeding PROSPERO hits are not presented as direct ketone competitors',()=>{
+  const topic={title:'Ketone monoester supplementation and cardiovascular heat stress',
+    intervention_exposure_index_test:'Ketone Monoester Supplementation',
+    population:'Endurance athletes'};
+  const unrelated=[
+    'Effect of Vitamin D Supplementation versus No Supplementation on Dental Implant Stability',
+    'In breastfeeding mothers what is the effect of herbal supplementation on milk supply',
+    'Effects of protein and amino acid supplementation in chronic heart failure',
+  ];
+  unrelated.forEach(title=>{
+    const match=registrationDisplayRelevance(topic,{title});
+    assert.equal(match.kind,'BROAD_SEARCH_HIT');
+    assert.ok(match.anchor.includes('ketone'));
+    assert.ok(match.anchor.includes('monoester'));
+  });
+  const related=registrationDisplayRelevance(topic,{
+    title:'Ketone monoester ingestion during heat stress exercise in endurance runners'
+  });
+  assert.equal(related.kind,'INTERVENTION_ANCHOR_MATCH');
+});
+
+test('Generic interventions remain uncertain rather than being excluded',()=>{
+  const topic={intervention_exposure_index_test:'Standard care'};
+  const match=registrationDisplayRelevance(topic,{
+    title:'Standard care in surgical randomized trials'
+  });
+  assert.equal(match.kind,'UNCERTAIN');
+});
