@@ -316,6 +316,7 @@ function topicDetailHtml(job, topic) {
   const quality = dossier.verification_and_quality || {};
   const preflight = topic.preflight_bibliographic_evidence || quality.bibliographic_preflight_priority || dossier.evidence_preflight || {};
   const triage = topic.triage || {};
+  const preliminary = topic.preliminary_scoring || {};
   const counts = dossier.bibliographic_counts_not_verified_eligible_studies || {};
   const coverage = quality.source_statuses || topic.source_statuses || topic.coverage?.source_statuses || {};
   const reviews = dossier.published_review_evidence || topic.published_review_examples || [];
@@ -359,6 +360,17 @@ function topicDetailHtml(job, topic) {
     ${field('Suggested keywords (not validated search)', q.candidate_search_terms || topic.search_terms)}
     ${field('Discovery decision', dossier.qualification_decision || topic.decision || topic.qualification_status)}
     ${triage.label ? field('Independent verification triage', triage.label + ': ' + (triage.reason || '')) : ''}
+    ${Object.keys(preliminary).length ? `<details><summary>Preliminary clinical feasibility (not a final GO)</summary>
+      <p class="help">Model judgments are initial prioritization signals. A candidate remains UNRESOLVED
+      while published-review overlap, registration checks or primary study eligibility are not verified.
+      ${escapeHtml(topic.preliminary_scoring_warning || '')}</p>
+      ${preliminary.clinical_importance != null ? field('Clinical importance, 0–5 (model assessment)', preliminary.clinical_importance) : ''}
+      ${preliminary.publication_potential != null ? field('Publication potential, 0–5 (model assessment)', preliminary.publication_potential) : ''}
+      ${preliminary.feasibility ? field('Feasibility judgment (preliminary)', preliminary.feasibility) : ''}
+      ${preliminary.overall_novelty != null ? field('Novelty evidence metric; unverified', preliminary.overall_novelty) : ''}
+      ${preliminary.scoring_trace?.novelty_status ? field('Novelty status', preliminary.scoring_trace.novelty_status) : ''}
+      ${preliminary.editorial_grade ? field('Editorial assessment (preliminary)', preliminary.editorial_grade) : ''}
+    </details>` : ''}
     ${preflight.query ? field('Focused PubMed preflight query', preflight.query) : ''}
     ${preflight.status ? field('PubMed preflight search status', preflight.status) : ''}
     ${preflight.intervention_title_matches != null ? field(
