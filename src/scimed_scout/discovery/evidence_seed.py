@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+import re
 
 from scimed_scout.domain import SourceStatus
 from scimed_scout.sources.pubmed import PubMedSource
@@ -74,6 +75,107 @@ def recent_pubmed_cues(
         if len(output) >= max_records:
             break
     return output
+
+
+
+_GAP_SIGNAL = re.compile(
+    r"\b(?:future research|further research|further studies|further trials|"
+    r"additional (?:randomized )?trials|more (?:randomized )?trials|"
+    r"more high.quality studies|low certainty|very low certainty|"
+    r"evidence (?:is|remains|was) (?:limited|insufficient|uncertain)|"
+    r"insufficient evidence|limited evidence|uncertainty remains|"
+    r"larger studies|larger trials|research is needed|"
+    r"lack of evidence|research gap|evidence gap)\b", re.I,
+)
+
+
+def recent_review_gap_cues(
+    specialty: str, question_type: str = "ALL", *,
+    client: Any | None = None,
+    now: datetime | None = None, max_records: int = 6,
+) -> list[dict[str, Any]]:
+    """Extract evidence gap *leads* directly from published review abstracts.
+
+    Uses the public Europe PMC core API and its review publication-type
+    query. These are not validated gap statements, guaranteed SRMAs, search
+    cutoffs, prospective novelty clearance or available independent studies.
+    """
+    from scimed_scout.sources.europe_pmc import EuropePMCSource
+    from scimed_scout.discovery.evidence_classification import classify_review_search_hit
+
+    specialty = str(specialty or "").strip()
+    if not specialty or specialty.upper() == "ALL":
+        return []
+    current_year = (now or datetime.now(timezone.utc)).year
+    subject = TERMS.get(specialty.casefold(), '"' + specialty.replace('"', '') + '"')
+    subject = re.sub(r"\[(?:Title/Abstract|MeSH Terms)\]", "", subject)
+    query = (
+        f"{subject} AND PUB_TYPE:review "
+        f"AND PUB_YEAR:[{current_year - 5} TO {current_year}]"
+    )
+    try:
+        result = (client or EuropePMCSource()).search(query, limit=32)
+    except Exception:
+        return []
+    if result.status != SourceStatus.SEARCHED_POSITIVE:
+        return []
+    output: list[dict[str, Any]] = []
+    seen = set()
+    for record in result.records:
+        if len(output) >= max(1, min(10, int(max_records))):
+            break
+        if classify_review_search_hit(record) != "CONFIRMED_REVIEW_CUE":
+            continue
+        metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        raw = str(metadata.get("abstractText") or metadata.get("abstract") or "")
+        plain = re.sub(r"<[^>]*>", " ", raw).replace("\r", " ").replace("\n", " ")
+        plain = re.sub(r"\s+", " ", plain).strip()
+        sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z])", plain)
+        gap = next((piece for piece in sentences if _GAP_SIGNAL.search(piece)), "")
+        if not gap:
+            continue
+        key = (record.doi or record.title).casefold()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        output.append({
+            "title": str(record.title or "")[:230],
+            "year": record.year,
+            "source": "Europe PMC",
+            "url": record.url or (f"https://doi.org/{record.doi}" if record.doi else ""),
+            "doi": record.doi or "",
+            "pmid": record.record_id,
+            "gap_sentence_from_abstract": gap[:330],
+            "last_literature_search_date": None,
+            "fulltext_gap_verified": False,
+            "new_independent_eligible_studies_confirmed": None,
+            "update_justified": False,
+            "role": "PUBLISHED_REVIEW_ABSTRACT_GAP_LEAD_ONLY",
+        })
+    return output
+
+
+def review_gap_prompt(gaps: list[dict[str, Any]]) -> str:
+    """Feed citations and quoted limitations as data, never as AI instructions."""
+    if not gaps:
+        return ""
+    rows = "\n".join(
+        f"- Review citation: {item['title']} ({item.get('year') or 'year unknown'}; "
+        f"DOI {item.get('doi') or 'unknown'}; {item.get('url') or 'no URL'}). "
+        f"Quoted abstract uncertainty: {item['gap_sentence_from_abstract']}"
+        for item in gaps[:6]
+    )
+    return (
+        "Published review abstracts with possible evidence-gap statements "
+        "(bibliographic leads only; do NOT assume these reviews are old or "
+        "that a meta-analysis is feasible):\n"
+        + rows
+        + "\nUse these to propose clinically important, precise update questions "
+        "ONLY when newer independent studies may exist. An insufficient-studies "
+        "gap may instead require NEW PRIMARY RESEARCH, not an SRMA. "
+        "Verify original search cutoffs, duplicate reviews, protocols, "
+        "eligible studies and evidence availability before declaring novelty."
+    )
 
 
 def cue_prompt(cues: list[dict[str, Any]]) -> str:
