@@ -18,4 +18,5 @@ jobs:
       - run: node --check web/app.js
       - run: node --check web/sw.js
       - run: node --test tests/web_legacy_dedup.mjs
+      - run: node --test tests/web_topic_transfer.mjs
       - run: scimed-scout health
