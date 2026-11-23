@@ -99,7 +99,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         signal: AbortSignal.timeout(12000),
       }
     );
-    if (response.status !== 204) {
+    if (![200, 201, 204].includes(response.status)) {
       // GitHub did not accept the dispatch; permit a new attempt.
       await fetch(endpoint.replace(/&or=[^&]*/, "") + "&dispatch_requested_at=eq." + encodeURIComponent(marker), {
         method: "PATCH", headers: dbHeaders, body: JSON.stringify({ dispatch_requested_at: null }),
