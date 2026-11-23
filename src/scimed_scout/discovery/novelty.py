@@ -410,7 +410,7 @@ def _date_from_metadata(metadata: dict, keys: tuple[str, ...]) -> tuple[int | No
             value = value[0] if value else None
         if isinstance(value, dict):
             value = value.get("@value") or value.get("value")
-        match = re.match(r"^((?:19|20)\\d{2})(?:-[01]\\d(?:-[0-3]\\d)?)?", str(value or "").strip())
+        match = re.match(r"^((?:19|20)\d{2})(?:-[01]\d(?:-[0-3]\d)?)?", str(value or "").strip())
         if match:
             year = int(match.group(1))
             if year <= datetime.now(timezone.utc).year:
@@ -566,4 +566,4 @@ def _freshness_summary(registrations: list[dict], reviews: list[dict]) -> str:
             f"last_search_date={item['last_search_date']}. "
             "Publication date does not establish last search date."
         )
-    return "\\n".join(lines)
+    return "\n".join(lines)
