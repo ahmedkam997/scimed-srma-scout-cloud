@@ -176,6 +176,7 @@ class FreeProviderFallback:
         self.failover_count = 0
         self.last_provider = primary.name
         self.primary_quota_exhausted = False
+        self.backup_quota_exhausted = False
 
     @classmethod
     def from_env(cls) -> "FreeProviderFallback":
@@ -226,6 +227,10 @@ class FreeProviderFallback:
     def _backup(self, request: AIRequest, original: AIResponse | None = None) -> AIResponse:
         if self.backup is None:
             raise RuntimeError("Backup provider not configured")
+        if self.backup_quota_exhausted:
+            if original is not None:
+                return original
+            raise ProviderFailure(self.backup.name, 429, "Free backup provider is rate-limited")
         try:
             # Groq free quotas count output tokens, so bound request sizes.
             capped = AIRequest(
@@ -242,7 +247,9 @@ class FreeProviderFallback:
             self.failover_count += 1
             self.last_provider = response.provider
             return response
-        except (ProviderFailure, RuntimeError):
+        except (ProviderFailure, RuntimeError) as exc:
+            if isinstance(exc, ProviderFailure) and exc.status_code in (402, 429):
+                self.backup_quota_exhausted = True
             if original is not None:
                 return original
             raise
