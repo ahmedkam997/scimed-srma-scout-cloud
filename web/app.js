@@ -410,7 +410,9 @@ function renderJobs() {
 
     const failureHint = job.status === 'FAILED'
       ? /HTTP 429|Too Many Requests|free AI quota exhausted|rate-limited/i.test(job.error_text || '')
-        ? 'The free AI request or token rate limit was reached. Avoid repeated retries. The saved PubMed records remain available. Retry this same job once your provider allowance resets.'
+        ? /remaining_daily_requests=0/.test(job.error_text || '')
+          ? 'The AI provider reported zero daily requests remaining. Scientific screening did not finish. Your saved PubMed records remain available; retry after the daily allowance resets.'
+          : 'The AI provider returned HTTP 429. This may be a temporary per-minute token limit or an exhausted daily allowance. A short bounded retry is built in for future runs. Avoid repeated manual retries until the provider allowance is available. The failure does not mean the research topic is unsuitable.'
         : /ProviderFailure|quota|Free AI request|AI did not return any complete candidate JSON/.test(job.error_text || '')
           ? 'The free AI providers did not return usable proposals. Check OpenRouter and Groq status. Do not create another identical job.'
         : /JSONDecodeError|Unterminated string/.test(job.error_text || '')
