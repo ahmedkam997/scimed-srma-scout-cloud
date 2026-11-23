@@ -115,3 +115,32 @@ def test_triage_explicitly_separates_go_refine_no_go_and_unresolved():
     })
     assert info["label"] == "REFINE"
     assert "NOT_SCIENTIFIC_REJECTION" in info["decision_scope"]
+
+
+
+def test_distinct_deep_check_backfills_after_similar_high_ranked_topics(tmp_path):
+    with _ledger(tmp_path / "backfill.sqlite3") as ledger:
+        dup_one = ledger.get_candidate("C0")
+        dup_two = ledger.get_candidate("C1")
+        dup_one.intervention_exposure_index_test = "Ketone monoester ingestion"
+        dup_two.intervention_exposure_index_test = "Ketone monoester supplementation"
+        dup_one.title = "Ketone monoester for heart failure and hospitalization"
+        dup_two.title = "Ketone monoester for adult heart failure and mortality"
+        dup_one.population = dup_two.population = "Adults with heart failure"
+        dup_one.comparator_reference = dup_two.comparator_reference = "Placebo"
+        dup_one.outcomes = dup_two.outcomes = ["hospitalization", "mortality"]
+        ledger.upsert_candidate(dup_one)
+        ledger.upsert_candidate(dup_two)
+        engine = ControlledOrchestrator(ledger)
+        result = engine.run("P1", min_verify=2, max_verify=3, final_options=2)
+        # C1 is still a distinct scientific draft for later manual analysis.
+        # Verification credits must cover three different clinical families.
+        assert len(result.ranked) == 8
+        assert len(engine.checked) == 3
+        assert len(set(engine.checked)) == 3
+        assert not ({"C0", "C1"} <= set(engine.checked))
+        assert any(
+            row["reason"] in ("NEAR_DUPLICATE_PICO_WITHIN_RUN", "SAME_CLINICAL_DISCOVERY_FAMILY_BUDGET_ONLY")
+            for row in result.duplicate_topics_skipped
+        )
+        assert ledger.get_candidate("C1") is not None
