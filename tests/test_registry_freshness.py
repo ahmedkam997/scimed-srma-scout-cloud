@@ -159,3 +159,53 @@ def test_osf_publication_link_requires_full_registration_url_not_short_id():
     }]
     _attach_publication_linkage(reg, published)
     assert reg["publication_status"] == "PUBLICATION_CANDIDATE_LINKED_BY_REGISTRY_ID"
+
+
+def test_unrelated_prospero_hit_does_not_claim_newer_evidence_for_another_pico():
+    from scimed_scout.discovery.novelty import registration_pico_preflight
+    registration = {
+        "source": "PROSPERO",
+        "source_record_id": "CRD420180000101",
+        "title": "Effect of vitamin D supplementation on dental implant stability",
+        "payload": {"year": 2018, "metadata": {"review_status": "Completed"}},
+    }
+    observed = registration_pico_preflight(question(), registration)
+    assert observed["status"] == "BROAD_SEARCH_HIT_NO_INTERVENTION_MATCH"
+    audit = registration_age_audit(
+        question(), registration,
+        [primary("Ketone monoester randomized trial in endurance athletes", 2025)],
+    )
+    assert audit["pico_relevance_preflight"]["status"] == "BROAD_SEARCH_HIT_NO_INTERVENTION_MATCH"
+    assert audit["post_registration_bibliographic_leads"]["count"] is None
+    assert audit["post_registration_bibliographic_leads"]["scope_note"] == "NOT_ESTIMABLE_FOR_UNMATCHED_REGISTRY_TOPIC"
+    assert audit["novelty_confirmed"] is False
+
+
+def test_intervention_matched_registered_review_retains_newer_study_leads():
+    from scimed_scout.discovery.novelty import registration_pico_preflight
+    registration = {
+        "source": "PROSPERO", "source_record_id": "CRD420190000102",
+        "title": "Ketone monoester supplementation during exercise: a review",
+        "payload": {"year": 2019, "metadata": {"review_status": "Ongoing"}},
+    }
+    preflight = registration_pico_preflight(question(), registration)
+    assert preflight["status"] == "POTENTIAL_INTERVENTION_MATCH"
+    assert set(preflight["matched_intervention_terms"]) == {"ketone", "monoester"}
+    audit = registration_age_audit(
+        question(), registration,
+        [primary("Ketone monoester randomized trial in endurance athletes", 2025)],
+    )
+    assert audit["post_registration_bibliographic_leads"]["count"] == 1
+    assert audit["novelty_confirmed"] is False
+
+
+def test_generic_intervention_requires_manual_relevance_check_not_false_exclusion():
+    from scimed_scout.discovery.novelty import registration_pico_preflight
+    candidate = SimpleNamespace(intervention_exposure_index_test="Standard care")
+    registration = {
+        "source": "OSF Registries", "source_record_id": "abc12",
+        "title": "A clinical trial review", "payload": {},
+    }
+    audit = registration_pico_preflight(candidate, registration)
+    assert audit["status"] == "UNKNOWN_INTERVENTION_TERMS"
+    assert audit["scientific_exclusion_confirmed"] is False
