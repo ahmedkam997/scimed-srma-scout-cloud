@@ -11,7 +11,8 @@ from scimed_scout.storage import SQLiteLedger
 
 from .models import DiscoveryRunResult
 from .topic_diversity import same_clinical_question
-from .triage import discovery_triage, _tokens
+from .triage import discovery_triage
+from .topic_diversity import _tokens
 
 
 CHATGPT_REVIEW_INSTRUCTIONS = """You are the independent final reviewer of systematic-review topic options.
