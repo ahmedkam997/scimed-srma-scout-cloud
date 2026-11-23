@@ -18,11 +18,6 @@ function isUuid(value: unknown): value is string {
   return typeof value === "string" &&
     /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 }
-async function hashToken(value: string): Promise<string> {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: HEADERS });
   if (req.method !== "POST") return reply(405, { status: "method_not_allowed" });
@@ -37,8 +32,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!isUuid(requestedId)) return reply(400, { status: "invalid_job_id" });
 
   const apiUrl = Deno.env.get("SUPABASE_URL") || "";
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-  if (!apiUrl || !serviceKey) return reply(503, { status: "server_configuration_required" });
+  // Use the owner's low-privilege browser token and Supabase RLS instead
+  // of a privileged service_role credential. Only a queued dispatch timestamp
+  // is mutable, and the DB trigger restores all other fields.
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+  if (!apiUrl || !anonKey) return reply(503, { status: "server_configuration_required" });
   const githubToken = Deno.env.get("SCIMED_GITHUB_DISPATCH_TOKEN") || "";
   if (!githubToken) return reply(503, {
     status: "configuration_required",
@@ -46,43 +44,37 @@ Deno.serve(async (req: Request): Promise<Response> => {
     manual_url: MANUAL_URL,
   });
 
-  const ownerHash = await hashToken(token);
-  const now = new Date();
-  const cutoff = new Date(now.getTime() - 120000).toISOString();
-  const query = new URLSearchParams({
-    id: "eq." + requestedId,
-    client_token_hash: "eq." + ownerHash,
-    status: "eq.QUEUED",
-    or: "(dispatch_requested_at.is.null,dispatch_requested_at.lt." + cutoff + ")",
-    select: "id,status,dispatch_requested_at",
-  });
-  const endpoint = apiUrl.replace(/\/$/, "") + "/rest/v1/discovery_jobs?" + query.toString();
-  const dbHeaders = {
-    apikey: serviceKey,
-    Authorization: "Bearer " + serviceKey,
-    "Content-Type": "application/json",
-    Prefer: "return=representation",
-  };
-  const marker = now.toISOString();
-  let claimed: unknown;
+  let reserved = false;
   try {
-    const res = await fetch(endpoint, {
-      method: "PATCH", headers: dbHeaders,
-      body: JSON.stringify({ dispatch_requested_at: marker }),
+    const res = await fetch(apiUrl.replace(/\\/$/, "") + "/rest/v1/rpc/scimed_request_dispatch", {
+      method: "POST",
+      headers: {
+        apikey: anonKey,
+        Authorization: "Bearer " + anonKey,
+        "x-scimed-client-token": token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_job_id: requestedId }),
       signal: AbortSignal.timeout(12000),
     });
-    if (!res.ok) return reply(502, { status: "queue_unavailable" });
-    claimed = await res.json();
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const code = String(body?.code || "");
+      return reply(502, {
+        status: "queue_unavailable",
+        db_http: res.status,
+        db_code: /^[A-Za-z0-9_]{1,20}$/.test(code) ? code : "unknown",
+      });
+    }
+    reserved = await res.json() === true;
   } catch {
     return reply(503, { status: "queue_unavailable" });
   }
-  if (!Array.isArray(claimed) || claimed.length !== 1) {
-    // Existing, already-running, or not-owned jobs all return a harmless response.
-    return reply(202, {
-      status: "already_requested_or_not_queued",
-      message: "This job was already submitted recently, started, or is no longer queued.",
-    });
-  }
+
+  if (!reserved) return reply(202, {
+    status: "already_requested_or_not_queued",
+    message: "This job was already submitted recently, started, or is no longer queued.",
+  });
 
   try {
     const response = await fetch(
@@ -100,10 +92,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
     );
     if (![200, 201, 204].includes(response.status)) {
-      // GitHub did not accept the dispatch; permit a new attempt.
-      await fetch(endpoint.replace(/&or=[^&]*/, "") + "&dispatch_requested_at=eq." + encodeURIComponent(marker), {
-        method: "PATCH", headers: dbHeaders, body: JSON.stringify({ dispatch_requested_at: null }),
-      }).catch(() => {});
+      // Database enforces a two-minute retry interval to prevent
+      // repeated API dispatch attempts and quota abuse.
       return reply(502, {
         status: "github_dispatch_failed",
         github_status: response.status,
