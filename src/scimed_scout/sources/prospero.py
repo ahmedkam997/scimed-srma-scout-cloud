@@ -39,7 +39,7 @@ class ProsperoCliSource:
         # A 50-record first page avoids needless page-turn requests on
         # focused clinical queries. PROSPERO can change result totals while
         # paginating; do not treat such changes as complete coverage.
-        page_size = min(50, max(40, int(limit)))
+        page_size = 50
         max_pages = min(5, max(1, self.max_pages))
         all_records: dict[str, SearchRecord] = {}
         total: int | None = None
