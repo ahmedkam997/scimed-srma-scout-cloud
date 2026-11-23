@@ -1,5 +1,5 @@
 name: discovery-worker
-# Controlled source-ranked Cardiology regression run with conditional backup checks and free AI budget protection.
+# SciMed free-only discovery worker, Gemini AI Studio plus independent free fallbacks.
 
 on:
   push:
@@ -30,7 +30,9 @@ jobs:
       SCIMED_AI_ENDPOINT: https://openrouter.ai/api/v1/chat/completions
       SCIMED_AI_MODEL: openrouter/free
       SCIMED_AI_API_KEY: ${{ secrets.SCIMED_AI_API_KEY }}
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }} # Optional, separate free-plan quota
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }} # Optional, independent free-plan quota
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} # Google AI Studio, kept in Actions secrets
+      GEMINI_FREE_MODEL: gemini-3.5-flash-lite # Free-only model allowlisted in code
       SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
       PROSPERO_NETWORK_MODE: online
 
@@ -38,9 +40,9 @@ jobs:
       - name: Check worker configuration
         id: config
         run: |
-          if [ -z "$SCIMED_WORKER_TOKEN" ] || [ -z "$SCIMED_AI_API_KEY" ]; then
+          if [ -z "$SCIMED_WORKER_TOKEN" ] || { [ -z "$SCIMED_AI_API_KEY" ] && [ -z "$GEMINI_API_KEY" ] && [ -z "$GROQ_API_KEY" ]; }; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Worker secrets are not configured yet."
+            echo "Worker token or all free AI provider keys are missing."
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
