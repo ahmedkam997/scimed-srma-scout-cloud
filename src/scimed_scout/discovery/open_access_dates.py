@@ -101,7 +101,11 @@ class OpenAccessSearchDateResolver:
             raw = self.fetcher(url)
             if not isinstance(raw, bytes) or len(raw) > 1_500_000:
                 return None
-            if b"<!DOCTYPE" in raw[:1024] or b"<!ENTITY" in raw[:1024]:
+            # JATS XML often declares a harmless external DTD. ElementTree
+            # does not fetch that DTD. Reject entity declarations, which
+            # could expand attacker-controlled text, but keep ordinary DTD
+            # declarations so genuine open-access Methods remain readable.
+            if b"<!ENTITY" in raw[:65536] or b"<!DOCTYPE" in raw[:65536] and b"[" in raw[:1024].split(b">", 1)[0]:
                 return None
             root = ET.fromstring(raw)
         except (OSError, ValueError, ET.ParseError, TimeoutError):
