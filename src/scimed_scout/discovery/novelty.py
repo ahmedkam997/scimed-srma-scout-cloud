@@ -21,9 +21,9 @@ class DiscoveryNoveltyService:
         ledger: SQLiteLedger,
         assessor: SemanticCompetitorAssessor,
         *,
-        max_reviews: int = 3,
-        max_registrations: int = 2,
-        batch_size: int = 1,
+        max_reviews: int = 5,
+        max_registrations: int = 4,
+        batch_size: int = 2,
     ):
         self.ledger = ledger
         self.assessor = assessor
@@ -148,6 +148,7 @@ class DiscoveryNoveltyService:
             if (
                 not force
                 and isinstance(existing, dict)
+                and existing.get("unresolved") is False
                 and payload.get("discovery_semantic_assessment_input_hash") == input_hash
             ):
                 results_by_id[_record_identity(record)] = existing
@@ -156,14 +157,32 @@ class DiscoveryNoveltyService:
 
         for start in range(0, len(pending), self.batch_size):
             batch = pending[start:start + self.batch_size]
-            assessments = self.assessor.assess_many(candidate, batch)
-            for record, assessment in zip(batch, assessments):
-                serialized = _serialize_assessment(record, assessment)
-                self._persist_assessment(
-                    candidate.candidate_id,
-                    record,
-                    serialized,
-                )
+            try:
+                assessments = self.assessor.assess_many(candidate, batch)
+            except Exception as exc:
+                # Do not erase successful batches or the registry age audit
+                # when a free AI endpoint is throttled or emits broken JSON.
+                # These unresolved records cannot satisfy novelty gates.
+                assessments = []
+                failure_reason = f"AI competitor analysis unavailable: {type(exc).__name__}"
+            else:
+                failure_reason = ""
+            for idx, record in enumerate(batch):
+                if idx < len(assessments):
+                    serialized = _serialize_assessment(record, assessments[idx])
+                else:
+                    serialized = {
+                        "record_id": record.get("source_record_id", ""),
+                        "source": record.get("source", ""),
+                        "title": record.get("title", ""),
+                        "overall_overlap": OverlapLevel.UNRESOLVED.value,
+                        "unresolved": True,
+                        "confidence": 0.0,
+                        "fatal_redundancy": False,
+                        "rationale": failure_reason or "No assessment returned by free AI provider",
+                        "dimensions": [],
+                    }
+                self._persist_assessment(candidate.candidate_id, record, serialized)
                 results_by_id[_record_identity(record)] = serialized
 
         return [
