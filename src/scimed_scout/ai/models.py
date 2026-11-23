@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from scimed_scout.designs import ReviewQuestionType
+
 
 FORBIDDEN_AI_FIELDS = {
     "verified_independent_studies",
@@ -63,7 +65,11 @@ class CandidateProposal:
             raise ValueError("Candidate proposal requires title, question_type, and review_question")
         return cls(
             title=title,
-            question_type=question_type,
+            question_type=normalize_question_type(
+                question_type,
+                title=title,
+                designs=_string_list(raw.get("eligible_designs")),
+            ),
             review_question=review_question,
             specialty=str(raw.get("specialty") or "").strip(),
             population=str(raw.get("population") or "").strip(),
@@ -81,3 +87,45 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(x).strip() for x in value if str(x).strip()]
+
+
+def normalize_question_type(value: str, *, title: str = "", designs: list[str] | None = None) -> str:
+    """Normalize model wording into the supported methodological question types.
+
+    'Systematic review' and 'meta-analysis' are publication formats, not
+    clinical PICO question types. An unclear question stays OTHER.
+    """
+    text = str(value or "").strip().upper().replace("-", "_").replace(" ", "_")
+    valid = {item.value for item in ReviewQuestionType}
+    if text in valid:
+        return text
+    if "DIAGNOS" in text or "TEST_ACCURACY" in text:
+        return ReviewQuestionType.DIAGNOSTIC_ACCURACY.value
+    if "PREDICT" in text:
+        return ReviewQuestionType.PREDICTION_MODEL.value
+    if "PROGNOS" in text:
+        return ReviewQuestionType.PROGNOSIS.value
+    if "PREVALEN" in text or "INCIDEN" in text:
+        return ReviewQuestionType.PREVALENCE_INCIDENCE.value
+    if "SAFETY" in text or "ADVERSE" in text or "HARM" in text:
+        return ReviewQuestionType.SAFETY_HARMS.value
+    if "ETIOLOG" in text or "RISK_FACTOR" in text:
+        return ReviewQuestionType.ETIOLOGY_RISK.value
+    if "QUALITATIVE" in text:
+        return ReviewQuestionType.QUALITATIVE.value
+    if "IMPLEMENT" in text:
+        return ReviewQuestionType.IMPLEMENTATION.value
+    if "ECONOMIC" in text or "COST_EFFECT" in text:
+        return ReviewQuestionType.ECONOMIC.value
+    if "ASSOCIATION" in text:
+        return ReviewQuestionType.ASSOCIATION.value
+    if "INTERVENTION" in text or "EFFICACY" in text or "EFFECTIVENESS" in text:
+        return ReviewQuestionType.EFFECTIVENESS.value
+    if "META" in text or "SYSTEMATIC_REVIEW" in text:
+        eligible = " ".join(designs or []).casefold()
+        heading = str(title or "").casefold()
+        if any(marker in eligible for marker in (
+            "randomiz", "randomis", "cross-over", "crossover", "intervention", "clinical trial"
+        )) or any(marker in heading for marker in (" versus ", " compared with ", " vs ")):
+            return ReviewQuestionType.EFFECTIVENESS.value
+    return ReviewQuestionType.OTHER.value
