@@ -1,0 +1,50 @@
+name: Public OSF registry API diagnostic
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/osf-api-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Inspect scoped OSF public API shapes
+        run: |
+          python - <<'PY'
+          import json, urllib.parse, urllib.request, urllib.error
+          endpoints = [
+              ("osf_v2_zero", "https://api.osf.io/v2/registrations/", {"filter[title]":"nonexistentxxyyzzscimed2026","page[size]":"5"}),
+              ("osf_v2_common", "https://api.osf.io/v2/registrations/", {"filter[title]":"ketone monoester","page[size]":"5"}),
+              ("osf_trove_zero", "https://share.osf.io/trove/index-card-search", {"cardSearchText[title,description]":"nonexistentxxyyzzscimed2026","cardSearchFilter[resourceType]":"Registration","page[size]":"5","acceptMediatype":"application/vnd.api+json"}),
+          ]
+          for name, url, params in endpoints:
+              request = urllib.request.Request(url+"?"+urllib.parse.urlencode(params),
+                  headers={"Accept":"application/vnd.api+json","User-Agent":"SciMed-Scout-Registry-ReadOnly-API-Probe/1.0"})
+              try:
+                  with urllib.request.urlopen(request,timeout=16) as resp:
+                      data=json.load(resp)
+                      meta=data.get("meta")
+                      raw=data.get("data")
+                      attrs=(raw.get("attributes") or {}) if isinstance(raw,dict) else {}
+                      rel=(raw.get("relationships") or {}) if isinstance(raw,dict) else {}
+                      page=(rel.get("searchResultPage") or {}) if isinstance(rel,dict) else {}
+                      result_page=page.get("data")
+                      links=data.get("links") or {}
+                      print(json.dumps({"probe":name,"http_status":resp.status,"root_keys":sorted(data.keys()),
+                          "meta_type":type(meta).__name__,"meta_keys":sorted(meta) if isinstance(meta,dict) else [],
+                          "meta_total":(meta or {}).get("total") if isinstance(meta,dict) else None,
+                          "data_type":type(raw).__name__,"data_count":len(raw) if isinstance(raw,list) else None,
+                          "total_result_count":attrs.get("totalResultCount"),
+                          "trove_page_count":len(result_page) if isinstance(result_page,list) else None,
+                          "links_next":bool(links.get("next") or (page.get("links") or {}).get("next"))}))
+              except urllib.error.HTTPError as e:
+                  print(json.dumps({"probe":name,"http_status":e.code,"error_type":"HTTPError",
+                                    "retry_after":e.headers.get("Retry-After")}))
+              except Exception as e:
+                  print(json.dumps({"probe":name,"error_type":type(e).__name__,
+                                    "error_message":str(e)[:180]}))
+          PY
