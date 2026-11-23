@@ -197,6 +197,72 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
             )
             store.ensure_active(job.id)
             package = build_discovery_review_package(ledger, result)
+            # Retain all fully parsed scientific PICO drafts even when the free
+            # verification budget checked only the top six. These other drafts
+            # are NOT novelty-cleared options and must never be counted as
+            # screened eligible studies or qualified recommendations.
+            checked_ids = {item.candidate_id for item in result.verified}
+            unverified_drafts = []
+            for candidate in candidates:
+                if candidate.candidate_id in checked_ids:
+                    continue
+                question = {
+                    "review_question": candidate.review_question,
+                    "population": candidate.population,
+                    "intervention_exposure_index_test": candidate.intervention_exposure_index_test,
+                    "comparator_reference": candidate.comparator_reference,
+                    "outcomes": list(candidate.outcomes or []),
+                    "eligible_designs": list(candidate.eligible_designs or []),
+                    "rationale_hypothesis": candidate.rationale or "NOT_PROVIDED",
+                    "novelty_hypothesis": candidate.novelty_hypothesis or "NOT_PROVIDED",
+                    "candidate_search_terms": list(candidate.search_terms or []),
+                }
+                unverified_drafts.append({
+                    "candidate_id": candidate.candidate_id,
+                    "title": candidate.title,
+                    "specialty": candidate.specialty,
+                    "question_type": candidate.question_type,
+                    **question,
+                    "qualification_status": "AI_DRAFT_NOT_SOURCE_VERIFIED",
+                    "provisional_only": True,
+                    "research_dossier": {
+                        "candidate_id": candidate.candidate_id,
+                        "title": candidate.title,
+                        "specialty": candidate.specialty,
+                        "question_type": candidate.question_type,
+                        "qualification_label": "AI_DRAFT_NOT_SOURCE_VERIFIED",
+                        "qualification_decision": "NOT_CHECKED",
+                        "scientific_question": question,
+                        "verification_and_quality": {
+                            "source_statuses": {
+                                "PubMed": "NOT_SEARCHED",
+                                "PROSPERO": "NOT_SEARCHED",
+                                "OSF Registries": "NOT_SEARCHED",
+                            },
+                            "source_blockers": [
+                                "Candidate was generated but no source verification was run."
+                            ],
+                            "pending_verifications": [
+                                "Independent published-review, registration, primary-study and trial-family audit required."
+                            ],
+                            "preliminary_scoring": {},
+                        },
+                        "evidence_search_audit": [],
+                        "published_review_evidence": [],
+                        "registration_evidence": [],
+                        "primary_study_screening_queue": [],
+                        "ongoing_study_evidence": [],
+                        "eligible_independent_studies_confirmed": None,
+                        "independent_literature_confirmation_required": True,
+                        "next_actions": [
+                            "Execute and document source searches before assessing novelty.",
+                            "Verify published reviews and PROSPERO/OSF registrations.",
+                            "Screen full texts and distinct eligible studies against the PICO.",
+                        ],
+                    },
+                })
+            package["unverified_generated_options"] = unverified_drafts
+            package["unverified_generated_options_are_not_qualified"] = True
 
             status_counts: dict[str, int] = {}
             for item in result.verified:
@@ -255,6 +321,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 "package": package,
                 "run_summary": {
                     "generated_candidates": len(candidates),
+                    "unverified_generated_candidates": len(unverified_drafts),
                     "requested_candidates": job.candidate_count,
                     "generation_shortfall": max(0, job.candidate_count - len(candidates)),
                     "generation_warnings": generator.generation_warnings[:5],
