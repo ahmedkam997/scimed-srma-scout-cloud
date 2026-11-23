@@ -97,7 +97,9 @@ def test_orchestrator_preserves_uncertain_article_but_avoids_false_competing_rev
                                evidence_type="PUBLISHED_REVIEW",
                                purpose="published review", limit_per_query=10)
         actual_reviews = ledger.list_external_evidence("C1", "PUBLISHED_REVIEW")
-        ambiguous = ledger.list_external_evidence("C1", "UNCLASSIFIED_REVIEW_LEAD")
+        ambiguous = ledger.list_external_evidence("C1", "OTHER")
         assert [r["title"] for r in actual_reviews] == [review.title]
         assert [r["title"] for r in ambiguous] == [study.title]
+        assert ambiguous[0]["payload"]["citation_classification"] == "NEEDS_BIBLIOGRAPHIC_CHECK"
+        assert ambiguous[0]["payload"]["originally_requested_evidence_type"] == "PUBLISHED_REVIEW"
         assert ledger.list_search_log("C1")[0].status == SourceStatus.SEARCHED_POSITIVE
