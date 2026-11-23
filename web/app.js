@@ -75,6 +75,13 @@ async function startDiscovery() {
   els.start.disabled = true;
   const specialty = els.specialty.value;
   const questionType = els.questionType.value;
+  if (jobs.some(job => job.specialty === specialty && job.question_type === questionType &&
+      ['QUEUED', 'RUNNING'].includes(job.status))) {
+    backendState('waiting', 'Discovery already active',
+      'A matching job is already queued or running. Refresh the existing job instead of starting a duplicate.');
+    els.start.disabled = false;
+    return;
+  }
 
   try {
     const { data, error } = await supabase
@@ -171,6 +178,15 @@ function renderJobs() {
         `).join('')}</div>`
       : '';
 
+    const queuedAgeMinutes = job.status === 'QUEUED'
+      ? (Date.now() - new Date(job.created_at).getTime()) / 60000 : 0;
+    const workerHelp = job.status === 'QUEUED' && queuedAgeMinutes >= 10
+      ? `<div class="worker-help">
+          <p>GitHub's automatic scheduler is delayed. Your job is safely queued.</p>
+          <a class="worker-link" href="https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/workflows/discovery-worker.yml"
+             target="_blank" rel="noopener noreferrer">Open GitHub worker controls</a>
+          <p>In GitHub: Run workflow, select main, then Run workflow.</p>
+        </div>` : '';
     const actions = ['QUEUED', 'RUNNING'].includes(job.status)
       ? `<div class="job-actions">
           <button class="secondary small cancel-button" data-cancel-job="${escapeHtml(job.id)}">Cancel job</button>
@@ -248,6 +264,7 @@ function renderJobs() {
         ${summaryHtml}
         ${optionHtml}
         ${auditHtml}
+        ${workerHelp}
         ${actions}
         ${error}
       </article>
