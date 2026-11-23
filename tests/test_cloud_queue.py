@@ -81,3 +81,33 @@ def test_supabase_job_store_returns_idle_when_queue_empty():
         requester=lambda req, timeout: b"[]",
     )
     assert store.claim_next() is None
+
+
+def test_temporary_topic_memory_queries_only_same_device_completed_jobs():
+    requested = []
+
+    def responder(req, timeout):
+        requested.append(req.full_url)
+        return b"[]"
+
+    store = SupabaseJobStore(
+        "https://example.supabase.co", "public-anon-jwt", "worker-token",
+        requester=responder,
+    )
+    assert store.recent_completed_jobs(
+        client_token_hash="a" * 64, revisit_days=30
+    ) == []
+    assert len(requested) == 1
+    assert "client_token_hash=eq." in requested[0]
+    assert "status=eq.COMPLETED" in requested[0]
+    assert "completed_at=gte." in requested[0]
+    assert store.recent_completed_jobs(client_token_hash="", revisit_days=30) == []
+    assert store.recent_completed_jobs(client_token_hash="a" * 64, revisit_days=0) == []
+    assert len(requested) == 1
+
+
+def test_topic_memory_window_is_bounded():
+    job = DiscoveryJob.from_row({"id": "J1", "revisit_days": 999})
+    assert job.revisit_days == 180
+    job = DiscoveryJob.from_row({"id": "J2", "revisit_days": 0})
+    assert job.revisit_days == 0
