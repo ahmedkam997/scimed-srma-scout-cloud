@@ -394,6 +394,15 @@ function renderJobs() {
             <details><summary>Potential study records (not eligibility-screened)</summary>
               ${(topic.primary_study_examples || []).map(item => `<p>${safeEvidenceLink(item)}</p>`).join('') || '<p>No examples preserved</p>'}
             </details>
+            ${(topic.primary_study_screening_queue || []).length ? `<details>
+              <summary>Screening queue (${escapeHtml(topic.primary_study_screening_queue.length)} references)</summary>
+              <p class="help">These are unscreened bibliography records, not proven eligible or independent trials. Download the CSV for full-text decisions, trial-family adjudication, and team screening.</p>
+              ${topic.primary_study_screening_queue.slice(0, 6).map(item => `<p>
+                ${safeEvidenceLink(item)} (${escapeHtml(item.year ?? 'year unknown')})
+                ${item.registry_trial_ids?.length ? ' Trial ID: ' + escapeHtml(item.registry_trial_ids.join(', ')) : ''}
+                - ${escapeHtml(item.post_search_flag)}
+              </p>`).join('')}
+            </details>` : ''}
             ${topic.bibliographic_pico_fit ? `<p class="help">${escapeHtml(topic.bibliographic_pico_fit.warning || '')}</p>` : ''}
             <details><summary>Relevant registration records (not cleared)</summary>
               ${(topic.registration_examples || []).map(item => `<p>${safeEvidenceLink(item)}</p>`).join('') || '<p>No registry examples preserved</p>'}
@@ -441,6 +450,10 @@ function renderJobs() {
           </article>`).join('')}
         </details>` : '';
 
+    const hasScreeningQueue = originalProvisionalOptions.some(
+      topic => Array.isArray(topic.primary_study_screening_queue) &&
+        topic.primary_study_screening_queue.length > 0
+    );
     const actions = ['QUEUED', 'RUNNING'].includes(job.status)
       ? `<div class="job-actions">
           <button class="secondary small cancel-button" data-cancel-job="${escapeHtml(job.id)}">Cancel job</button>
@@ -449,6 +462,7 @@ function renderJobs() {
         ? `<div class="job-actions">
             <button class="secondary small" data-copy-job="${escapeHtml(job.id)}">${options.length ? 'Copy for ChatGPT' : 'Copy diagnostic report'}</button>
             <button class="secondary small" data-download-job="${escapeHtml(job.id)}">${options.length ? 'Download JSON' : 'Download report JSON'}</button>
+            ${hasScreeningQueue ? `<button class="secondary small" data-screening-csv="${escapeHtml(job.id)}">Download study-screening CSV</button>` : ''}
           </div>`
         : job.status === 'FAILED'
           ? `<div class="job-actions">
@@ -677,6 +691,50 @@ function downloadJob(jobId) {
   URL.revokeObjectURL(url);
 }
 
+function downloadScreeningCsv(jobId) {
+  const job = jobs.find(item => item.id === jobId);
+  if (!job) return;
+  const pkg = job.result_json?.package || {};
+  const topics = pkg.provisional_options || [];
+  const columns = [
+    'candidate_id','topic','source','record_id','title','year','doi','url',
+    'trial_ids','abstract_excerpt','latest_documented_review_search_year',
+    'post_search_flag','fulltext_eligibility','trial_family_independence',
+    'include_exclude_maybe','exclusion_reason','independent_study_id',
+    'reviewer_1','reviewer_2','manual_search_cutoff_verified','comments'
+  ];
+  const csvCell = value => {
+    const raw = Array.isArray(value) ? value.join(' | ') : String(value ?? '');
+    const safe = /^[=+@\\-]/.test(raw.trim()) ? "'" + raw : raw;
+    return '"' + safe.replaceAll('"', '""') + '"';
+  };
+  const rows = [columns.map(csvCell).join(',')];
+  for (const topic of topics) {
+    for (const item of topic.primary_study_screening_queue || []) {
+      const record = {
+        ...item,
+        candidate_id: topic.candidate_id || '',
+        topic: topic.title || '',
+        trial_ids: (item.registry_trial_ids || []).join(' | '),
+        include_exclude_maybe: '', exclusion_reason: '',
+        independent_study_id: '', reviewer_1: '', reviewer_2: '',
+        manual_search_cutoff_verified: '', comments: '',
+      };
+      rows.push(columns.map(column => csvCell(record[column])).join(','));
+    }
+  }
+  if (rows.length <= 1) return;
+  const blob = new Blob(['\\ufeff' + rows.join('\\r\\n')], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = jobId + '_evidence_screening.csv';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -714,6 +772,8 @@ els.jobs.addEventListener('click', event => {
   if (copy) copyJob(copy.dataset.copyJob);
   const download = event.target.closest('[data-download-job]');
   if (download) downloadJob(download.dataset.downloadJob);
+  const screening = event.target.closest('[data-screening-csv]');
+  if (screening) downloadScreeningCsv(screening.dataset.screeningCsv);
 });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
