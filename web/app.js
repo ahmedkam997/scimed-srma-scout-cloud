@@ -314,6 +314,8 @@ function topicDetailHtml(job, topic) {
   const dossier = topic.research_dossier || {};
   const q = dossier.scientific_question || topic;
   const quality = dossier.verification_and_quality || {};
+  const preflight = topic.preflight_bibliographic_evidence || quality.bibliographic_preflight_priority || dossier.evidence_preflight || {};
+  const triage = topic.triage || {};
   const counts = dossier.bibliographic_counts_not_verified_eligible_studies || {};
   const coverage = quality.source_statuses || topic.source_statuses || topic.coverage?.source_statuses || {};
   const reviews = dossier.published_review_evidence || topic.published_review_examples || [];
@@ -356,6 +358,13 @@ function topicDetailHtml(job, topic) {
     ${field('Novelty hypothesis (not proven)', q.novelty_hypothesis || topic.novelty_hypothesis)}
     ${field('Suggested keywords (not validated search)', q.candidate_search_terms || topic.search_terms)}
     ${field('Discovery decision', dossier.qualification_decision || topic.decision || topic.qualification_status)}
+    ${triage.label ? field('Independent verification triage', triage.label + ': ' + (triage.reason || '')) : ''}
+    ${preflight.query ? field('Focused PubMed preflight query', preflight.query) : ''}
+    ${preflight.status ? field('PubMed preflight search status', preflight.status) : ''}
+    ${preflight.intervention_title_matches != null ? field(
+      'Recent intervention-title record leads, not screened studies',
+      preflight.intervention_title_matches
+    ) : ''}
     <div class="score-data">
       <span>Published-review leads: ${escapeHtml(counts.published_review_records ?? reviews.length)}</span>
       <span>PROSPERO/OSF leads: ${escapeHtml(counts.registered_review_records ?? registrations.length)}</span>
@@ -469,6 +478,14 @@ function renderJobs() {
           Qualified ${escapeHtml(options.length)}. Provisional ${escapeHtml(provisional)}.
           Rejected ${escapeHtml(rejected)}.
           AI fallback calls ${escapeHtml(failovers)}.</p>
+          ${summary.bibliographic_preflight ? `<p>Source-informed PubMed preflight:
+            ${escapeHtml(summary.bibliographic_preflight.candidates_checked ?? 0)} questions searched;
+            ${escapeHtml(summary.bibliographic_preflight.topics_with_title_signals ?? 0)} with intervention-title signals.
+            These are bibliographic leads, not verified independent studies.</p>` : ''}
+          ${summary.adaptive_deep_checks_used ? `<p>Conditional backup deep checks:
+            ${escapeHtml(summary.adaptive_deep_checks_used)} additional topic(s) examined.</p>` : ''}
+          ${summary.adaptive_checks_skipped_reason ? `<p>Why additional checks stopped:
+            ${escapeHtml(summary.adaptive_checks_skipped_reason)}</p>` : ''}
           ${generationShortfall > 0
             ? `<p>AI quota interrupted generation. ${escapeHtml(generated)} fully parsed ideas were preserved. ${escapeHtml(generationShortfall)} planned proposals were not generated.</p>`
             : ''}
@@ -490,6 +507,8 @@ function renderJobs() {
             </div>
             <b>${escapeHtml(option.title || '')}</b>
             <p>${escapeHtml(option.review_question || '')}</p>
+            ${option.triage?.label ? `<p class="help">Discovery triage: ${escapeHtml(option.triage.label)}
+              (independent clinical verification still required)</p>` : ''}
             <small>${escapeHtml((option.question_type || '').replaceAll('_',' '))}</small>
             <div class="topic-quick-actions"><button class="secondary small"
               data-copy-topic="${escapeHtml(job.id)}"
@@ -551,6 +570,12 @@ function renderJobs() {
           ${provisionalOptions.map(topic => `<article class="score-item">
             <b>${escapeHtml(topic.title || '')}</b>
             <p>${escapeHtml(topic.review_question || '')}</p>
+            ${topic.triage?.label ? `<p class="help">Discovery triage: ${escapeHtml(topic.triage.label)}.
+              ${escapeHtml(topic.triage.reason || '')}</p>` : ''}
+            ${topic.preflight_bibliographic_evidence?.status ? `<p class="help">
+              Focused PubMed preflight: ${escapeHtml(topic.preflight_bibliographic_evidence.status)}.
+              Intervention-title leads: ${escapeHtml(topic.preflight_bibliographic_evidence.intervention_title_matches ?? 'unknown')}.
+              No full-text eligibility confirmed.</p>` : ''}
             <div class="topic-quick-actions"><button class="secondary small"
               data-copy-topic="${escapeHtml(job.id)}"
               data-topic-id="${escapeHtml(topic.candidate_id || '')}">Copy idea + ChatGPT prompt</button></div>
