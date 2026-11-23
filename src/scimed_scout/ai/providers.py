@@ -189,13 +189,18 @@ class OpenAICompatibleProvider:
                 tokens_left = _nonnegative_int(
                     header.get("x-ratelimit-remaining-tokens") if header else None
                 )
+                is_gemini = self.endpoint.startswith(
+                    "https://generativelanguage.googleapis.com/"
+                )
                 is_short_throttle = (
                     int(exc.code) == 429
                     and not waited
                     and retry_after is not None
-                    and 0 < retry_after <= 60
-                    and requests_left is not None
-                    and requests_left > 0
+                    and 0 < retry_after <= (12 if is_gemini else 60)
+                    and (
+                        (requests_left is not None and requests_left > 0)
+                        or (is_gemini and requests_left is None)
+                    )
                 )
                 if is_short_throttle:
                     waited = True
