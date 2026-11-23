@@ -24,7 +24,7 @@ class DiscoveryNoveltyService:
         *,
         max_reviews: int = 5,
         max_registrations: int = 4,
-        batch_size: int = 2,
+        batch_size: int = 3,
         search_date_resolver: OpenAccessSearchDateResolver | None = None,
         max_fulltext_reviews: int = 2,
     ):
@@ -36,7 +36,9 @@ class DiscoveryNoveltyService:
         self.search_date_resolver = search_date_resolver
         self.max_fulltext_reviews = max(0, min(4, int(max_fulltext_reviews)))
 
-    def assess_candidate(self, candidate_id: str, *, force: bool = False) -> dict[str, Any]:
+    def assess_candidate(
+        self, candidate_id: str, *, force: bool = False, allow_ai: bool = True,
+    ) -> dict[str, Any]:
         candidate = self.ledger.get_candidate(candidate_id)
         if candidate is None:
             raise ValueError(f"Candidate not found: {candidate_id}")
@@ -55,12 +57,19 @@ class DiscoveryNoveltyService:
         if resolved_dates:
             all_reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
             review_records = _select_records(candidate, all_reviews, self.max_reviews)
-        review_assessments = self._assess_records(candidate, review_records, force=force)
-        registration_assessments = self._assess_records(
-            candidate,
-            registration_records,
-            force=force,
-        )
+        if allow_ai:
+            review_assessments = self._assess_records(candidate, review_records, force=force)
+            registration_assessments = self._assess_records(
+                candidate, registration_records, force=force,
+            )
+        else:
+            # No amount of AI scoring repairs incomplete mandatory registry
+            # searches. Preserve dated competitor evidence but defer expensive
+            # semantic inference until source coverage is available.
+            review_assessments = [_deferred_competitor(item) for item in review_records]
+            registration_assessments = [
+                _deferred_competitor(item) for item in registration_records
+            ]
         primary_records = self.ledger.list_external_evidence(candidate_id, "PRIMARY_STUDY")
         registration_freshness = [
             registration_age_audit(candidate, record, primary_records)
@@ -96,8 +105,9 @@ class DiscoveryNoveltyService:
 
         metadata = dict(candidate.metadata or {})
         metadata.update({
-            "discovery_competitor_assessment_complete": review_unresolved == 0,
-            "discovery_registration_assessment_complete": registration_unresolved == 0,
+            "discovery_ai_competitor_analysis_deferred": not allow_ai,
+            "discovery_competitor_assessment_complete": allow_ai and review_unresolved == 0,
+            "discovery_registration_assessment_complete": allow_ai and registration_unresolved == 0,
             "discovery_fatal_redundancy": fatal_redundancy,
             "discovery_potential_fatal_review_overlap_ids": potential_fatal_review_ids,
             "discovery_registration_age_audit": registration_freshness,
@@ -287,6 +297,24 @@ def _serialize_assessment(record: dict, assessment) -> dict[str, Any]:
         "reviewer": assessment.reviewer,
         "unresolved": assessment.unresolved,
         "fatal_redundancy": assessment.fatal_redundancy,
+    }
+
+
+def _deferred_competitor(record: dict) -> dict:
+    return {
+        "record_id": str(record.get("source_record_id") or ""),
+        "title": str(record.get("title") or ""),
+        "source": str(record.get("source") or ""),
+        "overall_overlap": OverlapLevel.UNRESOLVED.value,
+        "unresolved": True,
+        "confidence": 0.0,
+        "fatal_redundancy": False,
+        "dimensions": [],
+        "rationale": (
+            "AI overlap comparison deferred because required source searches "
+            "were incomplete. Registration age and linked publications remain "
+            "available for independent manual review."
+        ),
     }
 
 
