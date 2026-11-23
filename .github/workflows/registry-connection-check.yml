@@ -34,7 +34,11 @@ jobs:
               items=data.get("data",[])
               print("CASE",list(params.keys()),"filter",params.get("cardSearchFilter[resourceType]"),"COUNT",len(items),"NEXT",bool(data.get("links",{}).get("next")),"META",str(data.get("meta"))[:100])
               print("DATA_TYPE",type(items).__name__,"DATA_KEYS",list(items.keys())[:15] if isinstance(items,dict) else [],"TOP_KEYS",list(data.keys())[:12])
-              print("DATA_HEAD",json.dumps(items,ensure_ascii=False)[:1200])
+              print("DATA_HEAD",json.dumps(items,ensure_ascii=False)[:350])
+              sample=data.get("included",[])[:5]
+              print("INCLUDED_TYPES",[(item.get("type"),list(item.get("attributes",{}).keys())[:8]) for item in sample])
+              for item in sample[:2]:
+                print("INCLUDED_ITEM",json.dumps(item,ensure_ascii=False)[:1600])
             except Exception as exc:
               print("ERROR",type(exc).__name__,str(exc)[:190])
           PY
