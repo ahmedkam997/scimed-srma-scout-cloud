@@ -249,6 +249,57 @@ function uniqueProvisionalTopics(items) {
   return unique;
 }
 
+
+function registrationDisplayRelevance(topic, record) {
+  // Conservative display-only intervention keyword check, NOT exclusion.
+  const q = topic?.research_dossier?.scientific_question || topic || {};
+  const generic = new Set([
+    'supplementation','supplement','supplements','administration','intervention',
+    'interventions','treatment','treatments','therapy','therapies','clinical',
+    'efficacy','safety','standard','comparison','compared','inhibitor','inhibitors',
+    'agonist','agonists','receptor','receptors','cardiovascular','cardiac',
+    'disease','diseases','management','high','low','dose','doses','intensity',
+    'use','oral','adjunctive','versus','placebo','physical','during','response',
+    'drug','drugs','medication','medications','care','routine'
+  ]);
+  const anchor = [...clinicalWords(q.intervention_exposure_index_test || topic?.intervention_exposure_index_test || '')]
+    .filter(x => !generic.has(x) && x.length >= 2 && !/^\d+$/.test(x));
+  if (!anchor.length) return {kind:'UNCERTAIN', matching:[], anchor};
+  const recordText = [record?.title, record?.source_abstract_excerpt,
+    record?.abstract_excerpt, record?.abstract].filter(x=>typeof x === 'string').join(' ');
+  if (!recordText) return {kind:'UNCERTAIN', matching:[], anchor};
+  const recordTokens = clinicalWords(recordText);
+  const matching = anchor.filter(x=>recordTokens.has(x));
+  return {kind:matching.length ? 'INTERVENTION_ANCHOR_MATCH' : 'BROAD_SEARCH_HIT', matching, anchor};
+}
+
+function registrationAgeSummaryHtml(topic) {
+  const entries = topic?.registration_age_audit ||
+    topic?.research_dossier?.registration_age_and_update_audit || [];
+  if (!entries.length) return '';
+  const related = entries.filter(x=>registrationDisplayRelevance(topic,x).kind !== 'BROAD_SEARCH_HIT');
+  const broad = entries.filter(x=>registrationDisplayRelevance(topic,x).kind === 'BROAD_SEARCH_HIT');
+  const row = item=>`<article class="registry-evidence">
+    <b>${escapeHtml(item.source || 'Registry')}: ${escapeHtml(item.title || '')}</b>
+    <p>Registered: ${escapeHtml(item.registered_at || 'unknown')};
+      status: ${escapeHtml(item.registry_status || 'unknown')};
+      metadata modified: ${escapeHtml(item.registry_metadata_modified_at || 'unknown')}</p>
+    <p>Registration age: ${escapeHtml(item.classification || 'unknown')};
+      post-registration citation leads: ${escapeHtml(item.post_registration_bibliographic_leads?.count ?? 'unknown')};
+      eligible new studies: not checked</p>
+    <p>Review publication linked by registration ID: ${escapeHtml(item.publication_status || 'NOT_VERIFIED')}</p>
+    <p class="help">${escapeHtml(item.next_action || '')}</p>
+  </article>`;
+  return `<details class="registry-audit-compact">
+    <summary>PROSPERO / OSF: ${related.length} potential matches, ${broad.length} broad search hits</summary>
+    <p class="help">This is a title/abstract keyword grouping, not an exclusion or complete PICO-overlap assessment. All original records remain in the detailed export.</p>
+    ${related.length ? related.map(row).join('') : '<p class="help">No exact intervention term appeared in these captured registration titles or snippets.</p>'}
+    ${broad.length ? `<details><summary>Other search results without intervention terms (${broad.length})</summary>
+      ${broad.map(item=>`<p>${safeEvidenceLink(item)} (registered ${escapeHtml(item.registered_at || 'unknown')})</p>`).join('')}
+    </details>` : ''}
+  </details>`;
+}
+
 function topicDetailHtml(job, topic) {
   const dossier = topic.research_dossier || {};
   const q = dossier.scientific_question || topic;
@@ -504,25 +555,7 @@ function renderJobs() {
             <details><summary>Relevant registration records (not cleared)</summary>
               ${(topic.registration_examples || []).map(item => `<p>${safeEvidenceLink(item)}</p>`).join('') || '<p>No registry examples preserved</p>'}
             </details>
-            ${(topic.registration_age_audit || []).length
-              ? `<details open><summary>PROSPERO / OSF age and update check</summary>
-                  <p class="help">Registration is not journal publication. An old protocol does not automatically block a new evidence update. All classifications require source verification.</p>
-                  ${topic.registration_age_audit.map(item => `<article class="score-item">
-                    <b>${escapeHtml(item.source)}: ${escapeHtml(item.title)}</b>
-                    <p>Registered: ${escapeHtml(item.registered_at || 'unknown')}.
-                      Registry status: ${escapeHtml(item.registry_status || 'unknown')}.
-                      Metadata changed: ${escapeHtml(item.registry_metadata_modified_at || 'unknown')}.</p>
-                    <p>Age audit: ${escapeHtml(item.classification)}.
-                      Potential newer PICO-related citations: ${escapeHtml(item.post_registration_bibliographic_leads?.count ?? 'unknown')}.
-                      Eligible new trials: not verified.</p>
-                    <p>Published review linked by registry ID: ${escapeHtml(item.publication_status || 'NOT_VERIFIED')}</p>
-                    ${(item.linked_publication_candidates || []).map(review =>
-                      `<p>Possible linked review: ${safeEvidenceLink(review)}
-                      ${escapeHtml(review.year ?? 'unknown year')} (full text not yet checked)</p>`
-                    ).join('')}
-                    <p class="help">${escapeHtml(item.next_action || '')}</p>
-                  </article>`).join('')}
-                </details>` : ''}
+            ${registrationAgeSummaryHtml(topic)}
             ${(topic.published_review_update_audit || []).length
               ? `<details><summary>Published review currency check</summary>
                   ${topic.published_review_update_audit.map(item => `<p>
