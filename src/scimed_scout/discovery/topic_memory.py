@@ -58,6 +58,7 @@ def is_recently_checked(proposal: Any, historical: dict[str, Any]) -> bool:
     )
     comparator = _overlap(_field(proposal, "comparator_reference"), historical.get("comparator_reference"))
     outcome = _overlap(_field(proposal, "outcomes"), historical.get("outcomes"))
+    designs = _overlap(_field(proposal, "eligible_designs"), historical.get("eligible_designs"))
 
     # Older reports stored a title without the PICO. Restrict them to an exact
     # normalized title match, rather than guessing that two topics are identical.
@@ -68,16 +69,23 @@ def is_recently_checked(proposal: Any, historical: dict[str, Any]) -> bool:
         return False
 
     # A changed comparator or clinical outcome often changes the review question.
-    if historical.get("comparator_reference") and _field(proposal, "comparator_reference") and comparator < 0.70:
-        return False
-    if historical.get("outcomes") and _field(proposal, "outcomes") and outcome < 0.70:
-        return False
+    for dim in ("comparator_reference", "outcomes", "eligible_designs"):
+        old_value = historical.get(dim)
+        new_value = _field(proposal, dim)
+        old_present = bool(_tokens(old_value))
+        new_present = bool(_tokens(new_value))
+        # Unspecified is not equivalent to a specified clinical dimension.
+        if old_present != new_present:
+            return False
+        if old_present and _overlap(old_value, new_value) < 0.70:
+            return False
 
     return title_match >= 0.80 or (
         population >= 0.85
         and intervention >= 0.85
         and (not historical.get("comparator_reference") or comparator >= 0.85)
         and (not historical.get("outcomes") or outcome >= 0.85)
+        and (not historical.get("eligible_designs") or designs >= 0.85)
     )
 
 
