@@ -237,6 +237,9 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 "package": package,
                 "run_summary": {
                     "generated_candidates": len(candidates),
+                    "requested_candidates": job.candidate_count,
+                    "generation_shortfall": max(0, job.candidate_count - len(candidates)),
+                    "generation_warnings": generator.generation_warnings[:5],
                     "verified_candidates": len(result.verified),
                     "qualified_candidate_ids": result.qualified_option_candidate_ids,
                     "final_option_candidate_ids": result.final_option_candidate_ids,
