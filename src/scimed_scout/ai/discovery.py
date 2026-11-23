@@ -226,13 +226,23 @@ class CandidateDiscoveryService:
                     if len(proposals_with_response) >= target:
                         break
             except (ValueError, RuntimeError) as exc:
-                if getattr(exc, "status_code", None) in (402, 429):
+                code = getattr(exc, "status_code", None)
+                provider_name = str(getattr(exc, "provider", "AI provider"))
+                if code in (401, 403, 404):
                     raise RuntimeError(
-                        "Free AI request quota is exhausted. Add the GROQ_API_KEY GitHub "
-                        "Secret for independent free-plan fallback, or retry when the "
-                        "provider resets its allowance."
+                        f"{provider_name} rejected the AI request (HTTP {code}). "
+                        "Check the account, API key, region and model permissions. "
+                        "Do not retry until provider access is restored."
                     ) from exc
-                failure_messages.append(f"Batch request failed: {type(exc).__name__}")
+                if code in (402, 429):
+                    raise RuntimeError(
+                        f"{provider_name} has exhausted or limited its free AI requests "
+                        f"(HTTP {code}). Retry after quota reset or configure an independent provider."
+                    ) from exc
+                failure_messages.append(
+                    f"Batch request failed: {type(exc).__name__}"
+                    + (f" HTTP {code}" if code else "")
+                )
             if progress_callback is not None:
                 progress_callback(len(proposals_with_response), target)
 
@@ -281,12 +291,22 @@ class CandidateDiscoveryService:
                     if len(proposals_with_response) >= target:
                         break
             except (ValueError, RuntimeError) as exc:
-                if getattr(exc, "status_code", None) in (402, 429):
+                code = getattr(exc, "status_code", None)
+                provider_name = str(getattr(exc, "provider", "AI provider"))
+                if code in (401, 403, 404):
                     raise RuntimeError(
-                        "Free AI request quota is exhausted. Configure GROQ_API_KEY "
-                        "or retry after the free allowance resets."
+                        f"{provider_name} rejected the AI request (HTTP {code}). "
+                        "Review account or model permissions before retrying."
                     ) from exc
-                failure_messages.append(f"Short retry failed: {type(exc).__name__}")
+                if code in (402, 429):
+                    raise RuntimeError(
+                        f"{provider_name} free AI quota exhausted (HTTP {code}). "
+                        "Use a healthy independent provider or retry after quota reset."
+                    ) from exc
+                failure_messages.append(
+                    f"Short retry failed: {type(exc).__name__}"
+                    + (f" HTTP {code}" if code else "")
+                )
             if progress_callback is not None:
                 progress_callback(len(proposals_with_response), target)
 
