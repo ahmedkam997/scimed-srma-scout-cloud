@@ -165,13 +165,36 @@ class CandidateDiscoveryService:
         )
 
         recent = recent_topics or []
-        previous_titles = "; ".join(str(item.get("title") or "")[:100] for item in recent[:12])
-        if previous_titles:
+        previous_families = "; ".join(
+            (
+                str(item.get("intervention_exposure_index_test") or "")[:43] + " / "
+                + str(item.get("population") or "")[:43] + " / "
+                + str(item.get("comparator_reference") or "")[:43]
+            )
+            for item in recent[:8]
+            if item.get("population") and item.get("intervention_exposure_index_test")
+        )
+        if previous_families:
             additional_context = (
                 additional_context
-                + "\nThese questions were recently checked; generate different PICO questions: "
-                + previous_titles
+                + "\nRecently checked clinical intervention/population/comparator "
+                "families: " + previous_families
+                + "\nPrefer different intervention and patient-condition "
+                "families in this run. These are a short operational cooldown, "
+                "not a claim that different outcomes are identical reviews."
             ).strip()
+
+        def recently_checked_or_family(proposal):
+            for item in recent:
+                if is_recently_checked(proposal, item):
+                    return item, "RECENTLY_CHECKED_PICO"
+                if (
+                    item.get("population")
+                    and item.get("intervention_exposure_index_test")
+                    and same_discovery_family(proposal, item)
+                ):
+                    return item, "RECENT_RELATED_CLINICAL_FAMILY_COOLDOWN"
+            return None, ""
 
         target = max(1, min(50, int(count)))
         proposals_with_response: list[tuple[CandidateProposal, object]] = []
@@ -231,7 +254,7 @@ class CandidateDiscoveryService:
                     if key in seen_titles:
                         continue
                     seen_titles.add(key)
-                    old = next((item for item in recent if is_recently_checked(proposal, item)), None)
+                    old, recent_reason = recently_checked_or_family(proposal)
                     if old is not None:
                         if skipped_recent is not None:
                             skipped_recent.append({
@@ -239,7 +262,7 @@ class CandidateDiscoveryService:
                                 "matched_previous_title": old.get("title"),
                                 "last_checked_at": old.get("checked_at"),
                                 "recheck_after": old.get("recheck_at"),
-                                "reason": "RECENTLY_CHECKED_PICO",
+                                "reason": recent_reason,
                             })
                         continue
                     if any(
@@ -325,7 +348,7 @@ class CandidateDiscoveryService:
                     if key in seen_titles:
                         continue
                     seen_titles.add(key)
-                    old = next((item for item in recent if is_recently_checked(proposal, item)), None)
+                    old, recent_reason = recently_checked_or_family(proposal)
                     if old is not None:
                         if skipped_recent is not None:
                             skipped_recent.append({
@@ -333,7 +356,7 @@ class CandidateDiscoveryService:
                                 "matched_previous_title": old.get("title"),
                                 "last_checked_at": old.get("checked_at"),
                                 "recheck_after": old.get("recheck_at"),
-                                "reason": "RECENTLY_CHECKED_PICO",
+                                "reason": recent_reason,
                             })
                         continue
                     if any(
