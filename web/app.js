@@ -251,7 +251,17 @@ function uniqueProvisionalTopics(items) {
 
 
 function registrationDisplayRelevance(topic, record) {
-  // Conservative display-only intervention keyword check, NOT exclusion.
+  // Preserve the original server preflight when it searched full abstracts.
+  // Legacy jobs without a preflight receive a conservative title-only check.
+  const serverStatus = record?.pico_relevance_preflight?.status;
+  if (serverStatus === 'BROAD_SEARCH_HIT_NO_INTERVENTION_MATCH') {
+    return {kind:'BROAD_SEARCH_HIT', matching:[], anchor:[]};
+  }
+  if (serverStatus === 'POTENTIAL_INTERVENTION_MATCH') {
+    return {kind:'INTERVENTION_ANCHOR_MATCH',
+      matching:record.pico_relevance_preflight.matched_intervention_terms || [],
+      anchor:record.pico_relevance_preflight.intervention_terms || []};
+  }
   const q = topic?.research_dossier?.scientific_question || topic || {};
   const generic = new Set([
     'supplementation','supplement','supplements','administration','intervention',
@@ -291,7 +301,7 @@ function registrationAgeSummaryHtml(topic) {
     <p class="help">${escapeHtml(item.next_action || '')}</p>
   </article>`;
   return `<details class="registry-audit-compact">
-    <summary>PROSPERO / OSF: ${related.length} potential matches, ${broad.length} broad search hits</summary>
+    <summary>PROSPERO / OSF: ${related.length} intervention-related or uncertain hits, ${broad.length} broad keyword hits</summary>
     <p class="help">This is a title/abstract keyword grouping, not an exclusion or complete PICO-overlap assessment. All original records remain in the detailed export.</p>
     ${related.length ? related.map(row).join('') : '<p class="help">No exact intervention term appeared in these captured registration titles or snippets.</p>'}
     ${broad.length ? `<details><summary>Other search results without intervention terms (${broad.length})</summary>
@@ -570,7 +580,7 @@ function renderJobs() {
               </p>`).join('')}
             </details>` : ''}
             ${topic.bibliographic_pico_fit ? `<p class="help">${escapeHtml(topic.bibliographic_pico_fit.warning || '')}</p>` : ''}
-            <details><summary>Relevant registration records (not cleared)</summary>
+            <details><summary>Retrieved registry search hits (not all are competing reviews)</summary>
               ${(topic.registration_examples || []).map(item => `<p>${safeEvidenceLink(item)}</p>`).join('') || '<p>No registry examples preserved</p>'}
             </details>
             ${registrationAgeSummaryHtml(topic)}
