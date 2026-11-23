@@ -457,6 +457,11 @@ function renderJobs() {
     const rejected = Number(statusCounts.REJECTED || 0);
     const checked = Number(summary.verified_candidates || 0);
     const generated = Number(summary.generated_candidates || 0);
+    const sourceLinkedOptions = uniqueProvisionalTopics(
+      job.result_json?.package?.provisional_options || []
+    ).filter(item => Number(
+      item.bibliographic_pico_fit?.abstract_or_title_full_pico_signals || 0
+    ) > 0).length;
     const generationShortfall = Number(summary.generation_shortfall || 0);
     const generationWarnings = Array.isArray(summary.generation_warnings)
       ? summary.generation_warnings : [];
@@ -482,6 +487,10 @@ function renderJobs() {
           ${incompleteFromLegacy ? '(including ' + escapeHtml(incompleteFromLegacy) + ' earlier runs left in DEEP_VERIFYING)' : ''}.
           Rejected ${escapeHtml(rejected)}.
           AI fallback calls ${escapeHtml(failovers)}.</p>
+          ${sourceLinkedOptions ? `<p><b>${escapeHtml(sourceLinkedOptions)} source-linked research question(s)
+            for manual verification.</b> These have bibliographic title/abstract
+            PICO clues. They are NOT novelty-cleared or eligibility-screened
+            systematic review topics. Each has a full ChatGPT audit export.</p>` : ''}
           ${Array.isArray(summary.configured_free_ai_route) && summary.configured_free_ai_route.length
             ? `<p>Free AI route: ${escapeHtml(summary.configured_free_ai_route.join(' → '))}.
               Last responding model provider: ${escapeHtml(summary.last_ai_provider || 'unknown')}.</p>`
@@ -576,7 +585,7 @@ function renderJobs() {
     const groupedCount = originalProvisionalOptions.length - provisionalOptions.length;
     const provisionalHtml = job.status === 'COMPLETED' && provisionalOptions.length
       ? `<details class="score-audit" open>
-          <summary>Distinct provisional topics (${provisionalOptions.length}) - verification required</summary>
+          <summary>Research ideas with source audit (${provisionalOptions.length}) - independent verification needed</summary>
           ${groupedCount ? `<p class="help">Grouped ${groupedCount} near-duplicate clinical PICO questions; original source audit remains intact.</p>` : ''}
           <p class="help">These are research hypotheses, not qualified or novelty-confirmed topics. Source access and eligibility require manual review.</p>
           ${provisionalOptions.map(topic => `<article class="score-item">
@@ -599,7 +608,11 @@ function renderJobs() {
               <span>Unscreened bibliography records: ${escapeHtml(topic.discovered_primary_study_candidates ?? 'N/A')}</span>
               <span>Clinical area: ${escapeHtml(topic.specialty || 'Unknown')}</span>
               ${topic.bibliographic_pico_fit ? `<span>Intervention title matches: ${escapeHtml(topic.bibliographic_pico_fit.intervention_title_matches)}</span>
-              <span>Titles mentioning comparator: ${escapeHtml(topic.bibliographic_pico_fit.intervention_comparator_title_matches)}</span>` : ''}
+              <span>Titles mentioning comparator: ${escapeHtml(topic.bibliographic_pico_fit.intervention_comparator_title_matches)}</span>
+              ${topic.bibliographic_pico_fit.abstract_or_title_full_pico_signals != null
+                 ? `<span>Title/abstract PICO clues: ${escapeHtml(topic.bibliographic_pico_fit.abstract_or_title_full_pico_signals)}</span>
+                    <span>Intervention and outcome text clues: ${escapeHtml(topic.bibliographic_pico_fit.intervention_outcome_text_matches)}</span>`
+                 : ''}` : ''}
             </div>
             <details><summary>Found published reviews (verify overlap)</summary>
               ${(topic.published_review_examples || []).map(item => `<p>${safeEvidenceLink(item)}</p>`).join('') || '<p>No review examples preserved</p>'}
