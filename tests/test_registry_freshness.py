@@ -86,3 +86,27 @@ def test_explicit_search_cutoff_supports_bibliographic_update_signal_only():
     assert audit["last_search_date"] == "2020-08-31"
     assert audit["post_cutoff_bibliographic_leads"]["count"] == 1
     assert audit["novelty_confirmed"] is False
+
+
+def test_old_registration_with_recent_metadata_edit_needs_recheck_not_auto_stale():
+    audit = registration_age_audit(
+        question(),
+        register("OSF Registries", 2018, date_modified="2026-11-01",
+                 registry_status="accepted"),
+        [primary("Ketone monoester randomized clinical trial", 2025)],
+    )
+    assert audit["classification"] == "OLD_REGISTRATION_WITH_RECENT_METADATA_ACTIVITY"
+    assert audit["recent_metadata_activity"] is True
+    assert audit["post_registration_bibliographic_leads"]["count"] == 1
+    assert audit["novelty_confirmed"] is False
+
+
+def test_old_completed_prospero_record_still_needs_publication_lookup():
+    audit = registration_age_audit(
+        question(),
+        register("PROSPERO", 2017, review_status="Completed and published"),
+        [primary("Ketone monoester study", 2025)],
+    )
+    assert audit["classification"] == "OLDER_COMPLETED_REGISTRATION_CHECK_PUBLISHED_REVIEW"
+    assert audit["publication_status"] == "NOT_VERIFIED"
+    assert audit["review_last_search_date"] == "NOT_VERIFIED"
