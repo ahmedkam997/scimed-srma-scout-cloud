@@ -451,16 +451,10 @@ class ReviewDiscoveryOrchestrator:
 
 
 def _obvious_review(record: SearchRecord) -> bool:
-    title = " ".join(str(record.title or "").casefold().split())
-    if any(marker in title for marker in ("systematic review", "meta-analysis", "meta analysis", "scoping review", "umbrella review", "narrative review", "review protocol")):
-        return True
-    metadata = record.metadata if isinstance(record.metadata, dict) else {}
-    publication_types = metadata.get("publicationTypes") or metadata.get("pubtype") or []
-    if isinstance(publication_types, str):
-        publication_types = [publication_types]
-    joined = " ".join(str(x).casefold() for x in publication_types)
-    return "review" in joined or "meta-analysis" in joined or "meta analysis" in joined
-
+    # Share the evidence classifier across both source-search purposes.
+    # A confirmed review cue belongs in PUBLISHED_REVIEW, never the
+    # PRIMARY_STUDY bibliographic feasibility pool.
+    return classify_review_search_hit(record) == "CONFIRMED_REVIEW_CUE"
 
 def _run_source_queries(
     client: SourceClient,
