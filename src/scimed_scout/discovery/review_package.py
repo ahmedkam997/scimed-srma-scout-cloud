@@ -9,6 +9,7 @@ from typing import Any
 from scimed_scout.storage import SQLiteLedger
 
 from .models import DiscoveryRunResult
+from .topic_diversity import same_clinical_question
 
 
 CHATGPT_REVIEW_INSTRUCTIONS = """You are the independent final reviewer of systematic-review topic options.
@@ -112,6 +113,11 @@ def build_discovery_review_package(
         candidate = ledger.get_candidate(verified.candidate_id)
         if candidate is None:
             continue
+        # A second safety layer: never present near-identical provisional
+        # topics as two independent research opportunities in the export.
+        if any(same_clinical_question(candidate, prior)
+               for prior in provisional_options):
+            continue
         metadata = candidate.metadata or {}
         provisional_options.append({
             "candidate_id": verified.candidate_id,
@@ -182,6 +188,9 @@ def build_discovery_review_package(
         "options": options,
         "provisional_options": provisional_options,
         "provisional_options_are_not_qualified": True,
+        "duplicate_topics_skipped": result.duplicate_topics_skipped,
+        "duplicate_topics_skipped_count": len(result.duplicate_topics_skipped),
+        "provisional_leads_are_not_validated_novelty": True,
     }
 
 
