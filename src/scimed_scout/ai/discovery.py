@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Iterable
+from typing import Callable, Iterable
 
 from scimed_scout.domain import CandidateStatus
 from scimed_scout.storage import CandidateRecord, SQLiteLedger
@@ -140,6 +140,7 @@ class CandidateDiscoveryService:
         count: int = 10,
         additional_context: str = "",
         allow_rejected_revisit: bool = False,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> list[CandidateRecord]:
         # Small JSON batches avoid incomplete output from free reasoning models.
         # Maximum six model calls per job (three regular batches and up to three
@@ -189,6 +190,8 @@ class CandidateDiscoveryService:
                     proposals_with_response.append((proposal, response))
                     if len(proposals_with_response) >= target:
                         break
+                if progress_callback is not None:
+                    progress_callback(len(proposals_with_response), target)
             except (ValueError, RuntimeError) as exc:
                 # Providers fail independently. Continue with a smaller request.
                 failure_messages.append(f"Batch request failed: {type(exc).__name__}")
@@ -226,6 +229,8 @@ class CandidateDiscoveryService:
                     proposals_with_response.append((proposal, response))
                     if len(proposals_with_response) >= target:
                         break
+                if progress_callback is not None:
+                    progress_callback(len(proposals_with_response), target)
             except (ValueError, RuntimeError) as exc:
                 failure_messages.append(f"Short retry failed: {type(exc).__name__}")
 
