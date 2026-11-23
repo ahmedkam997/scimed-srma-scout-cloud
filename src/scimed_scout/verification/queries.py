@@ -146,6 +146,9 @@ _REGISTRY_NOISE = {
     "comparator", "followup", "follow", "time", "primary",
     "efficacy", "safety", "effects", "effect", "acute",
     "no", "or", "vs", "versus", "outcomes",
+    "before", "after", "min", "minute", "minutes", "daily", "weekly",
+    "monthly", "biannually", "at", "on", "high", "low", "inhibitor",
+    "inhibitors", "agonist", "agonists", "receiving", "prior",
 }
 
 
@@ -163,7 +166,7 @@ def _registry_focus(value: str) -> list[str]:
 
 def _registry_anchor(intervention: str) -> list[str]:
     terms = _registry_focus(intervention)
-    return terms[:3]
+    return terms[:2]
 
 
 def _registry_phrase(words: list[str]) -> str:
