@@ -187,6 +187,27 @@ function renderJobs() {
              target="_blank" rel="noopener noreferrer">Open GitHub worker controls</a>
           <p>In GitHub: Run workflow, select main, then Run workflow.</p>
         </div>` : '';
+    const provisionalOptions = Array.isArray(job.result_json?.package?.provisional_options)
+      ? job.result_json.package.provisional_options : [];
+    const provisionalHtml = job.status === 'COMPLETED' && provisionalOptions.length
+      ? `<details class="score-audit" open>
+          <summary>Provisional review topics (${provisionalOptions.length}) - verification required</summary>
+          <p class="help">These are research hypotheses, not qualified or novelty-confirmed topics. Source access and eligibility require manual review.</p>
+          ${provisionalOptions.map(topic => `<article class="score-item">
+            <b>${escapeHtml(topic.title || '')}</b>
+            <p>${escapeHtml(topic.review_question || '')}</p>
+            <div class="score-data">
+              <span>Study candidates: ${escapeHtml(topic.discovered_primary_study_candidates ?? 'N/A')}</span>
+              <span>Clinical area: ${escapeHtml(topic.specialty || 'Unknown')}</span>
+            </div>
+            <details><summary>Why provisional?</summary>
+              <p>${(topic.source_blockers || []).map(escapeHtml).join('; ') || 'Manual source and methods checks remain'}</p>
+              <p>${(topic.unresolved_checks || []).map(escapeHtml).join('; ')}</p>
+              <p>${Object.entries(topic.source_statuses || {}).map(([key,value]) => escapeHtml(key) + ': ' + escapeHtml(value)).join('; ')}</p>
+            </details>
+          </article>`).join('')}
+        </details>` : '';
+
     const actions = ['QUEUED', 'RUNNING'].includes(job.status)
       ? `<div class="job-actions">
           <button class="secondary small cancel-button" data-cancel-job="${escapeHtml(job.id)}">Cancel job</button>
@@ -263,6 +284,7 @@ function renderJobs() {
         <p class="job-message">${escapeHtml(job.message || '')}</p>
         ${summaryHtml}
         ${optionHtml}
+        ${provisionalHtml}
         ${auditHtml}
         ${workerHelp}
         ${actions}
@@ -327,6 +349,7 @@ function reportPayload(job) {
     question_type: job.question_type,
     summary: job?.result_json?.run_summary || {},
     selection_policy: pkg.selection_policy || {},
+    provisional_options: Array.isArray(pkg.provisional_options) ? pkg.provisional_options : [],
     explanation: 'No candidate cleared all mandatory checks. PROVISIONAL_BACKUP does not mean confirmed lack of novelty.',
     missing_detail: Array.isArray(job?.result_json?.run_summary?.candidate_audits)
       ? null
