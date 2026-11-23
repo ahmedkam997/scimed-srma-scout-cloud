@@ -25,6 +25,9 @@ jobs:
             ('openrouter','https://openrouter.ai/api/v1/chat/completions','openrouter/free',os.getenv('SCIMED_AI_API_KEY')),
             ('groq','https://api.groq.com/openai/v1/chat/completions','openai/gpt-oss-20b',os.getenv('GROQ_API_KEY')),
           ]
+          # A 403 on one Groq model can mean it is disabled for this project.
+          providers.append(('groq-alternate','https://api.groq.com/openai/v1/chat/completions',
+            'llama-3.1-8b-instant',os.getenv('GROQ_API_KEY')))
           for name,url,model,key in providers:
             if not key:
               print('PROVIDER',name,'NOT_CONFIGURED',flush=True)
@@ -41,7 +44,16 @@ jobs:
                 print('PROVIDER',name,'HTTP',response.status,
                   'TEXT_AVAILABLE',bool(str(answer).strip()),'FINISH_REASON',choices[0].get('finish_reason'),flush=True)
             except urllib.error.HTTPError as e:
-              print('PROVIDER',name,'HTTP',e.code,'NO_CONTENT_LOGGED',flush=True)
+              # Print only known-safe error codes, never request bodies or credentials.
+              code=''
+              try:
+                details=json.loads(e.read(700))
+                raw=str((details.get('error') or {}).get('code') or '')
+                if raw.isascii() and all(c.isalnum() or c in '-_' for c in raw):
+                  code=raw[:64]
+              except Exception:
+                pass
+              print('PROVIDER',name,'HTTP',e.code,'ERROR_CODE',code or 'unspecified',flush=True)
             except Exception as e:
               print('PROVIDER',name,'EXCEPTION',type(e).__name__,flush=True)
           PY
