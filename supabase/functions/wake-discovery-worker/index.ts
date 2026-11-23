@@ -92,11 +92,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
     );
     if (![200, 201, 204].includes(response.status)) {
-      // Database enforces a two-minute retry interval to prevent
-      // repeated API dispatch attempts and quota abuse.
+      // Do not return GitHub's raw response, which may contain private details.
+      const error = await response.json().catch(() => ({}));
+      const message = String(error?.message || "").toLowerCase();
+      const reason = message.includes("resource not accessible")
+        ? "insufficient_token_permissions"
+        : message.includes("bad credentials")
+          ? "invalid_github_token"
+          : response.status === 403
+            ? "github_actions_permission_or_owner_restriction"
+            : "github_rejected_dispatch";
+      // Database enforces a two-minute cooldown before the next attempt.
       return reply(502, {
         status: "github_dispatch_failed",
         github_status: response.status,
+        github_reason: reason,
+        required_permission: "Actions: Read and write on ahmedkam997/scimed-srma-scout-cloud",
         manual_url: MANUAL_URL,
       });
     }
