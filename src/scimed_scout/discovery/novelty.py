@@ -541,19 +541,26 @@ def published_review_update_audit(candidate, record: dict, primary_records: list
     ))
     leads = _bibliographic_leads_after(candidate, primary_records, year)
     pub_year = _year_value((record.get("payload") or {}).get("year"))
+    post_publication_leads = _bibliographic_leads_after(candidate, primary_records, pub_year)
+    review_age = datetime.now(timezone.utc).year - pub_year if pub_year else None
+    if year is not None and leads["count"] and leads["count"] > 0:
+        classification = "POTENTIAL_UPDATE_VERIFY_NEW_STUDY_ELIGIBILITY"
+    elif year is None and review_age is not None and review_age >= 3 and post_publication_leads["count"]:
+        classification = "OLD_REVIEW_POTENTIAL_UPDATE_SEARCH_DATE_UNVERIFIED"
+    elif year is None:
+        classification = "SEARCH_DATE_MISSING_MANUAL_CHECK"
+    else:
+        classification = "NO_POST_SEARCH_TITLE_LEADS_FOUND_IN_SCOUT"
     return {
         "source": str(record.get("source") or ""),
         "record_id": str(record.get("source_record_id") or ""),
         "title": str(record.get("title") or ""),
         "publication_year": pub_year,
+        "publication_age_years_approx": review_age,
         "last_search_date": cutoff or None,
-        "classification": (
-            "POTENTIAL_UPDATE_VERIFY_NEW_STUDY_ELIGIBILITY"
-            if year is not None and leads["count"] and leads["count"] > 0
-            else "SEARCH_DATE_MISSING_MANUAL_CHECK" if year is None
-            else "NO_POST_SEARCH_TITLE_LEADS_FOUND_IN_SCOUT"
-        ),
+        "classification": classification,
         "post_cutoff_bibliographic_leads": leads,
+        "post_publication_bibliographic_leads": post_publication_leads,
         "novelty_confirmed": False,
         "next_action": (
             "Confirm the original review's actual literature-search cutoff, "
