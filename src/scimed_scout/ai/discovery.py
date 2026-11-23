@@ -190,11 +190,11 @@ class CandidateDiscoveryService:
                     proposals_with_response.append((proposal, response))
                     if len(proposals_with_response) >= target:
                         break
-                if progress_callback is not None:
-                    progress_callback(len(proposals_with_response), target)
             except (ValueError, RuntimeError) as exc:
                 # Providers fail independently. Continue with a smaller request.
                 failure_messages.append(f"Batch request failed: {type(exc).__name__}")
+            if progress_callback is not None:
+                progress_callback(len(proposals_with_response), target)
 
         # One short follow-up instead of retrying another long malformed array.
         # When zero candidates were returned, make two small independent attempts.
@@ -229,10 +229,10 @@ class CandidateDiscoveryService:
                     proposals_with_response.append((proposal, response))
                     if len(proposals_with_response) >= target:
                         break
-                if progress_callback is not None:
-                    progress_callback(len(proposals_with_response), target)
             except (ValueError, RuntimeError) as exc:
                 failure_messages.append(f"Short retry failed: {type(exc).__name__}")
+            if progress_callback is not None:
+                progress_callback(len(proposals_with_response), target)
 
         if not proposals_with_response:
             raise RuntimeError(
