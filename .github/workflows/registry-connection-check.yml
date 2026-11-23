@@ -36,3 +36,27 @@ jobs:
           echo "HEALTH_STATUS=$?"; head -c 900 /tmp/prospero_health.log; echo
           timeout 35s node /tmp/prospero-mcp/dist/cli.js search "heart failure" --page-size 2 > /tmp/prospero_search.log 2>&1
           echo "SEARCH_STATUS=$?"; head -c 2200 /tmp/prospero_search.log; echo
+      - name: Inspect open OSF Trove index-card search parameters
+        run: |
+          python - <<'PY'
+          import json,urllib.request,urllib.parse
+          url="https://share.osf.io/trove/docs/openapi.json"
+          try:
+            with urllib.request.urlopen(urllib.request.Request(url,headers={"Accept":"application/json"}),timeout=15) as r:
+              schema=json.load(r)
+            for path in schema.get("paths",{}):
+              if "index-card-search" not in path: continue
+              op=schema["paths"][path].get("get",{})
+              params=[(p.get("name"),p.get("in")) for p in op.get("parameters",[]) if isinstance(p,dict)]
+              print("TROVE_PATH",path,"PARAMS",params[:30])
+          except Exception as e:
+            print("TROVE_SCHEMA_ERROR",type(e).__name__,str(e)[:200])
+          for params in ({"cardSearchText":"heart failure","acceptMediatype":"application/vnd.api+json"},{"searchText":"heart failure","acceptMediatype":"application/vnd.api+json"}):
+            try:
+              u="https://share.osf.io/trove/index-card-search?"+urllib.parse.urlencode(params)
+              with urllib.request.urlopen(urllib.request.Request(u,headers={"Accept":"application/vnd.api+json"}),timeout=12) as r:
+                raw=r.read(200000)
+                print("TROVE_HTTP",r.status,"BYTES",len(raw),"HEAD",raw[:370].decode("utf-8","replace"))
+            except Exception as e:
+              print("TROVE_QUERY_ERROR",type(e).__name__,str(e)[:160])
+          PY
