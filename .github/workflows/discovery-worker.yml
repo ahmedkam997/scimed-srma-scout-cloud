@@ -1,5 +1,5 @@
 name: discovery-worker
-# SciMed free-only discovery worker, Gemini AI Studio plus independent free fallbacks.
+# Controlled single Gemini free API pilot launched from existing SciMed queue with fallbacks.
 
 on:
   push:
