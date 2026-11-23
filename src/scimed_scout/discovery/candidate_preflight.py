@@ -57,6 +57,86 @@ def search_query(candidate: CandidateRecord, *, current_year: int | None = None)
     )
 
 
+
+def review_search_query(
+    candidate: CandidateRecord, *, current_year: int | None = None,
+) -> str:
+    """A second FREE PubMed query for potential competing published reviews.
+
+    Year range uses publication dates, NOT the last literature search date.
+    Search results are risk cues, not a novelty-clearance certificate.
+    """
+    terms = _anchor(candidate)
+    if not terms:
+        return ""
+    year = current_year or datetime.now(timezone.utc).year
+    intervention = " ".join(terms[:2]).replace('"', "")
+    return (
+        f'"{intervention}"[Title/Abstract] AND '
+        f'("systematic review"[Publication Type] OR '
+        f'"meta-analysis"[Publication Type]) AND '
+        f'("{year - 8}/01/01"[Date - Publication] : '
+        f'"{year}/12/31"[Date - Publication])'
+    )
+
+
+def review_competitor_risk(
+    candidate: CandidateRecord, result: Any, *, current_year: int | None = None,
+) -> dict[str, Any]:
+    """Title-level review overlap risk for RANKING, not scientific exclusion."""
+    from scimed_scout.discovery.evidence_classification import classify_review_search_hit
+
+    year = current_year or datetime.now(timezone.utc).year
+    anchor = set(_anchor(candidate)[:2])
+    population = set(_tokens(candidate.population)) - _GENERAL_POPULATION_TERMS
+    outcomes = set(_tokens(" ".join(candidate.outcomes or [])))
+    matches = []
+    recent = 0
+    old = 0
+    for row in list(getattr(result, "records", []) or []):
+        # PubMed publication type is present on most but not all indexed
+        # citations. A true systematic-review cue is required.
+        if classify_review_search_hit(row) != "CONFIRMED_REVIEW_CUE":
+            continue
+        words = set(_tokens(getattr(row, "title", "") or ""))
+        if not words or not anchor or len(words & anchor) / len(anchor) < 0.5:
+            continue
+        relation = bool(words & (population | outcomes))
+        pub_year = _year(getattr(row, "year", None))
+        if not relation:
+            continue
+        if pub_year is not None and pub_year >= year - 2:
+            recent += 1
+        elif pub_year is not None and pub_year <= year - 4:
+            old += 1
+        if len(matches) < 8:
+            matches.append({
+                "title": getattr(row, "title", ""),
+                "year": pub_year,
+                "url": str(getattr(row, "url", "") or ""),
+                "record_id": str(getattr(row, "record_id", "") or ""),
+                "review_type_source": "PubMed publication type or title",
+                "actual_last_literature_search_date": None,
+                "pico_overlap": "NOT_VERIFIED",
+            })
+    status = getattr(getattr(result, "status", None), "value", "NOT_SEARCHED")
+    # A recently published overlapping review warrants checking before
+    # spending deep verification credits, but an old one may be updatable.
+    # Never let review absence imply confirmed novelty.
+    penalty = min(12, 5 * min(recent, 2))
+    return {
+        "review_preflight_status": status,
+        "review_preflight_query": str(getattr(result, "query", "") or ""),
+        "potential_competing_review_title_cues": matches,
+        "recent_review_overlap_risk_cues": recent,
+        "older_review_possible_update_cues": old,
+        "review_overlap_priority_penalty": penalty,
+        "last_search_dates_verified": False,
+        "review_publication_date_is_not_search_date": True,
+        "scientific_novelty_confirmed": False,
+    }
+
+
 _GENERAL_POPULATION_TERMS = {
     "adult", "adults", "patient", "patients", "aged", "age", "years",
     "year", "male", "female", "women", "men", "person", "people",
@@ -147,11 +227,13 @@ class FocusedEvidencePreflight:
     def __init__(
         self, source: Any, *, max_candidates: int = 24,
         per_query: int = 12, pause_seconds: float = 0.7,
+        review_risk_preflight: bool = False,
     ):
         self.source = source
         self.max_candidates = max(0, min(50, int(max_candidates)))
         self.per_query = max(1, min(20, int(per_query)))
         self.pause_seconds = max(0.0, min(2.0, float(pause_seconds)))
+        self.review_risk_preflight = bool(review_risk_preflight)
 
     def annotate(
         self,
@@ -177,6 +259,32 @@ class FocusedEvidencePreflight:
             try:
                 result = self.source.search(query, limit=self.per_query)
                 signal = evaluate_preflight(candidate, result)
+                if self.review_risk_preflight:
+                    # Separate review search adds a source-backed indication
+                    # of heavily synthesized questions before deep checks.
+                    # Respect the anonymous NCBI three-requests/sec budget.
+                    if self.pause_seconds:
+                        time.sleep(self.pause_seconds)
+                    review_query = review_search_query(candidate)
+                    try:
+                        reviewed = self.source.search(
+                            review_query, limit=self.per_query,
+                        )
+                        risk = review_competitor_risk(candidate, reviewed)
+                        signal.update(risk)
+                        if risk["review_preflight_status"] == SourceStatus.SEARCHED_POSITIVE.value:
+                            signal["priority_signal"] = max(
+                                0, signal["priority_signal"] -
+                                risk["review_overlap_priority_penalty"]
+                            )
+                    except Exception as review_exc:
+                        signal.update({
+                            "review_preflight_status": SourceStatus.ACCESS_FAILED.value,
+                            "review_preflight_query": review_query,
+                            "review_preflight_error_type": type(review_exc).__name__,
+                            "review_overlap_priority_penalty": 0,
+                            "scientific_novelty_confirmed": False,
+                        })
             except Exception as exc:
                 # Connectivity failures are not zero-evidence conclusions.
                 signal = {
