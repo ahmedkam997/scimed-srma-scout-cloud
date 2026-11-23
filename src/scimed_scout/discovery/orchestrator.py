@@ -215,10 +215,14 @@ class ReviewDiscoveryOrchestrator:
 
         complete_literature = sum(coverage.source_statuses.get(name) in DEFINITIVE for name in policy.literature_sources)
         gate_inputs = dict(meta.get("discovery_gate_inputs") or {})
-        # Scientific qualification is impossible while a mandatory source
-        # is partial or semantic overlap is unresolved. Save free AI tokens
-        # instead of scoring an already blocked candidate.
-        if self.scoring_service is not None and not pending:
+        # Preliminary clinical importance, feasibility and editorial
+        # judgments remain useful when mandatory source coverage is complete
+        # but competitor semantic assessment is still unresolved. Computing
+        # these does NOT remove unresolved blockers or permit a final GO.
+        # Keep AI calls deferred for incomplete mandatory registry/pipeline
+        # searches, when the source-based context is insufficient.
+        scoring_preliminary = bool(pending)
+        if self.scoring_service is not None and coverage.complete:
             try:
                 gate_inputs = self.scoring_service.score(
                     candidate,
@@ -231,16 +235,30 @@ class ReviewDiscoveryOrchestrator:
                     primary_records=self.ledger.list_external_evidence(candidate_id, "PRIMARY_STUDY"),
                     semantically_capped=bool(meta.get("discovery_semantic_scope_capped")),
                 )
-                candidate.metadata = {**(candidate.metadata or {}), "discovery_gate_inputs": gate_inputs}
+                candidate.metadata = {
+                    **(candidate.metadata or {}),
+                    "discovery_gate_inputs": gate_inputs,
+                    "discovery_scoring_preliminary_only": scoring_preliminary,
+                    "discovery_scoring_preliminary_reason": (
+                        "Competitor overlap and review registration still require "
+                        "independent adjudication; AI scores are not novelty clearance."
+                        if scoring_preliminary else ""
+                    ),
+                    "discovery_scoring_deferred": False,
+                }
                 self.ledger.upsert_candidate(candidate)
             except Exception as exc:
                 pending.append(f"TYPE-A: discovery scoring failed: {exc}")
 
-        if self.scoring_service is not None and pending:
+        if self.scoring_service is not None and (not coverage.complete or not gate_inputs):
             candidate.metadata = {
                 **(candidate.metadata or {}),
                 "discovery_scoring_deferred": True,
-                "discovery_scoring_deferred_reason": "Pending source, competitor or registration verification",
+                "discovery_scoring_deferred_reason": (
+                    "Mandatory source coverage unavailable"
+                    if not coverage.complete else
+                    "Preliminary free AI scoring did not finish"
+                ),
             }
             self.ledger.upsert_candidate(candidate)
 
