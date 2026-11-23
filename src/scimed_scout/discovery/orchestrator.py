@@ -181,7 +181,9 @@ class ReviewDiscoveryOrchestrator:
         novelty = None
         if self.novelty_service is not None:
             try:
-                novelty = self.novelty_service.assess_candidate(candidate_id)
+                novelty = self.novelty_service.assess_candidate(
+                    candidate_id, allow_ai=coverage.complete,
+                )
             except Exception as exc:
                 pending.append(f"TYPE-A: novelty assessment failed: {exc}")
             candidate = self.ledger.get_candidate(candidate_id) or candidate
@@ -207,7 +209,10 @@ class ReviewDiscoveryOrchestrator:
 
         complete_literature = sum(coverage.source_statuses.get(name) in DEFINITIVE for name in policy.literature_sources)
         gate_inputs = dict(meta.get("discovery_gate_inputs") or {})
-        if self.scoring_service is not None:
+        # Scientific qualification is impossible while a mandatory source
+        # is partial or semantic overlap is unresolved. Save free AI tokens
+        # instead of scoring an already blocked candidate.
+        if self.scoring_service is not None and not pending:
             try:
                 gate_inputs = self.scoring_service.score(
                     candidate,
@@ -224,6 +229,14 @@ class ReviewDiscoveryOrchestrator:
                 self.ledger.upsert_candidate(candidate)
             except Exception as exc:
                 pending.append(f"TYPE-A: discovery scoring failed: {exc}")
+
+        if self.scoring_service is not None and pending:
+            candidate.metadata = {
+                **(candidate.metadata or {}),
+                "discovery_scoring_deferred": True,
+                "discovery_scoring_deferred_reason": "Pending source, competitor or registration verification",
+            }
+            self.ledger.upsert_candidate(candidate)
 
         required_scoring = {
             "design_framework_defined", "meaningful_synthesis_plausible", "clinical_question_novelty",
