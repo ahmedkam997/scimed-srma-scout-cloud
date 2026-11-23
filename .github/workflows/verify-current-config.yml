@@ -33,11 +33,28 @@ jobs:
                           isinstance(v,dict) and v.get("id")=="openai/gpt-oss-20b"
                           for v in obj.get("data",[])),flush=True)
               except urllib.error.HTTPError as e:
-                  print("GROQ_HTTP",e.code,flush=True)
+                  safe_type="UNCLASSIFIED"
+                  safe_code="unspecified"
+                  try:
+                      data=json.loads(e.read(2200))
+                      error=data.get("error") or {}
+                      msg=str(error.get("message") or "").casefold()
+                      raw_code=str(error.get("code") or "")
+                      if raw_code.isascii() and all(c.isalnum() or c in "_-" for c in raw_code):
+                          safe_code=raw_code[:64]
+                      if any(w in msg for w in ("country","region","territory","geographic")): safe_type="REGION_LIMIT"
+                      elif any(w in msg for w in ("token","api key","unauthorized","invalid key")): safe_type="AUTH_LIMIT"
+                      elif any(w in msg for w in ("model","decommissioned","not found")): safe_type="MODEL_LIMIT"
+                      elif any(w in msg for w in ("permission","access denied","not allowed","forbidden")): safe_type="PERMISSION_LIMIT"
+                      elif any(w in msg for w in ("quota","rate limit","limit reached")): safe_type="QUOTA_LIMIT"
+                      elif msg: safe_type="OTHER_PROVIDER_RESTRICTION"
+                  except Exception:
+                      safe_type="NON_JSON_HTTP_REJECTION"
+                  print("GROQ_HTTP",e.code,"ERROR_CLASS",safe_type,"ERROR_CODE",safe_code,flush=True)
               except Exception as exc:
                   print("GROQ_EXCEPTION",type(exc).__name__,flush=True)
           yaml=open(".github/workflows/discovery-worker.yml",encoding="utf-8").read()
-          match=re.search(r"SUPABASE_ANON_KEY:\\s*(eyJ[A-Za-z0-9_.-]+)",yaml)
+          match=re.search(r"SUPABASE_ANON_KEY:\s*(eyJ[A-Za-z0-9_.-]+)",yaml)
           if not match:
               print("SUPABASE_PROBE","ANON_KEY_NOT_FOUND",flush=True)
           else:
