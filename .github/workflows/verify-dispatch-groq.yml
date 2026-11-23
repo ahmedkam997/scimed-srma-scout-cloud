@@ -143,7 +143,7 @@ jobs:
           prompt=build_discovery_prompt(specialty="Cardiology",count=4,
             additional_context="Recent study evidence indicates subgroups of heart failure and cardiovascular therapeutics, with heterogeneous populations. Identify narrow clinically meaningful PICO alternatives.")
           try:
-            response=provider.complete(AIRequest(system=SYSTEM_PROMPT,prompt=prompt,max_tokens=2200))
+            response=provider.complete(AIRequest(system=SYSTEM_PROMPT,prompt=prompt,max_tokens=3200))
             data=response.raw
             usage=data.get("usage") or {}
             details=usage.get("completion_tokens_details") or {}
