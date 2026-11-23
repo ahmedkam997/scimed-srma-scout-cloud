@@ -91,6 +91,64 @@ def same_clinical_question(a: Any, b: Any) -> bool:
     )
 
 
+_FAMILY_STOP = frozenset({
+    "adult", "adults", "patient", "patients", "year", "years",
+    "aged", "age", "therapy", "therapies", "intervention",
+    "treatment", "treatments", "inhibitor", "inhibitors", "standard",
+    "usual", "routine", "care", "oral", "administration", "ingestion",
+    "supplement", "supplements", "supplementation", "medicine",
+    "clinical", "women", "men", "male", "female", "people", "human",
+    "no", "sham", "versus", "alone", "and", "the", "not",
+})
+
+
+def _clinical_focus(value: Any) -> set[str]:
+    return {word for word in _tokens(value)
+            if word not in _FAMILY_STOP and not word.isdigit() and len(word) >= 2}
+
+
+def same_discovery_family(a: Any, b: Any) -> bool:
+    """Group high-overlap clinical opportunity families for source-audit budgets.
+
+    This is strictly a scheduling rule. Differing subgroups, outcomes and
+    designs stay in the generated drafts and remain distinct scientific PICOs.
+    Do not use this to assert full clinical equivalence or manuscript redundancy.
+    """
+    if str(_field(a, "question_type") or "").upper() != str(
+        _field(b, "question_type") or ""
+    ).upper():
+        return False
+    pa, pb = _tokens(_field(a, "population")), _tokens(_field(b, "population"))
+    if (pa & _YOUNG and pb & _ADULT) or (pb & _YOUNG and pa & _ADULT):
+        return False
+    # Keep genuinely different dose or device variants as independent
+    # opportunities rather than merging clinically meaningful interventions.
+    ia, ib = _field(a, "intervention_exposure_index_test"), _field(
+        b, "intervention_exposure_index_test"
+    )
+    ia_nums = {x for x in _tokens(ia) if x.isdigit()}
+    ib_nums = {x for x in _tokens(ib) if x.isdigit()}
+    if ia_nums != ib_nums:
+        return False
+    ia_terms, ib_terms = _clinical_focus(ia), _clinical_focus(ib)
+    pa_terms, pb_terms = _clinical_focus(_field(a, "population")), _clinical_focus(
+        _field(b, "population")
+    )
+    ca_terms, cb_terms = _clinical_focus(_field(a, "comparator_reference")), _clinical_focus(
+        _field(b, "comparator_reference")
+    )
+    if not ia_terms or not ib_terms or not pa_terms or not pb_terms:
+        return False
+    intervention = len(ia_terms & ib_terms) / min(len(ia_terms), len(ib_terms))
+    population_shared = bool(pa_terms & pb_terms)
+    comparator_match = (
+        (not ca_terms and not cb_terms)
+        or (bool(ca_terms and cb_terms)
+            and len(ca_terms & cb_terms) / min(len(ca_terms), len(cb_terms)) >= 0.5)
+    )
+    return intervention >= 0.75 and population_shared and comparator_match
+
+
 def select_diverse_ranked(
     ranked: list[Any],
     by_id: dict[str, Any],
@@ -106,7 +164,8 @@ def select_diverse_ranked(
             continue
         matching = next(
             (chosen for chosen in kept
-             if same_clinical_question(candidate, by_id[chosen.candidate_id])),
+             if same_clinical_question(candidate, by_id[chosen.candidate_id])
+             or same_discovery_family(candidate, by_id[chosen.candidate_id])),
             None,
         )
         if matching is not None:
@@ -115,7 +174,11 @@ def select_diverse_ranked(
                 "title": str(_field(candidate, "title") or ""),
                 "matched_candidate_id": matching.candidate_id,
                 "matched_title": str(_field(by_id[matching.candidate_id], "title") or ""),
-                "reason": "NEAR_DUPLICATE_PICO_WITHIN_RUN",
+                "reason": (
+                    "NEAR_DUPLICATE_PICO_WITHIN_RUN"
+                    if same_clinical_question(candidate, by_id[matching.candidate_id])
+                    else "SAME_CLINICAL_DISCOVERY_FAMILY_BUDGET_ONLY"
+                ),
             })
             continue
         if len(kept) < max(0, limit):
