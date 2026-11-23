@@ -269,7 +269,10 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 (source for source in source_clients if source.name == "PubMed"), None
             )
             preflight = (
-                FocusedEvidencePreflight(pubmed_client, max_candidates=24, per_query=10)
+                FocusedEvidencePreflight(
+                    pubmed_client, max_candidates=20, per_query=10,
+                    pause_seconds=1.0, review_risk_preflight=True,
+                )
                 if pubmed_client is not None else None
             )
             orchestrator = ReviewDiscoveryOrchestrator(
