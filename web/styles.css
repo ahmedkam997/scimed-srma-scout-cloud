@@ -13,3 +13,7 @@
 .job-result-summary{border:1px solid #fed7aa;background:#fffaf0;border-radius:12px;padding:12px;margin:12px 0;color:#7c2d12}
 .job-result-summary b{font-size:13px}
 .job-result-summary p{font-size:12px;line-height:1.5;margin:7px 0 0}
+
+.worker-help{margin-top:12px;border:1px solid #f5d58d;border-radius:10px;background:#fffbeb;padding:10px;font-size:12px;color:#854d0e}
+.worker-help p{margin:6px 0;line-height:1.45}
+.worker-link{font-weight:700;color:#1d4ed8;text-decoration:underline;display:inline-block;padding:5px 0}
