@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -39,6 +40,7 @@ class OpenAICompatibleProvider:
     requester: Callable[[urllib.request.Request, float], bytes] | None = None
     name: str = "openai-compatible"
     empty_retries: int | None = None
+    rate_limit_sleeper: Callable[[float], None] | None = None
 
     @classmethod
     def from_env(cls) -> "OpenAICompatibleProvider":
@@ -99,10 +101,10 @@ class OpenAICompatibleProvider:
                 method="POST",
             )
             try:
-                raw_bytes = self.requester(req, self.timeout) if self.requester else self._request(req)
+                raw_bytes = self._request_with_bounded_rate_wait(req)
                 data = json.loads(raw_bytes.decode("utf-8"))
-            except urllib.error.HTTPError as exc:
-                raise ProviderFailure(self.name, int(exc.code), f"HTTP {exc.code}") from exc
+            except ProviderFailure:
+                raise
             except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
                 raise ProviderFailure(self.name, None, f"AI provider request failed: {type(exc).__name__}") from exc
 
@@ -147,18 +149,90 @@ class OpenAICompatibleProvider:
             f"({last_empty_response}). No paid model was used."
         )
 
+    def _request_with_bounded_rate_wait(self, req: urllib.request.Request) -> bytes:
+        # Groq reports both daily requests and per-minute token limits.
+        # Retry a *single* short-lived TPM/RPM throttle, never a daily
+        # exhaustion. Do not reattempt long waits or repeat indefinitely.
+        waited = False
+        while True:
+            try:
+                return self.requester(req, self.timeout) if self.requester else self._request(req)
+            except urllib.error.HTTPError as exc:
+                header = exc.headers
+                retry_after = _positive_float(header.get("retry-after")) if header else None
+                requests_left = _nonnegative_int(
+                    header.get("x-ratelimit-remaining-requests") if header else None
+                )
+                tokens_left = _nonnegative_int(
+                    header.get("x-ratelimit-remaining-tokens") if header else None
+                )
+                is_short_throttle = (
+                    int(exc.code) == 429
+                    and not waited
+                    and retry_after is not None
+                    and 0 < retry_after <= 60
+                    and requests_left is not None
+                    and requests_left > 0
+                )
+                if is_short_throttle:
+                    waited = True
+                    (self.rate_limit_sleeper or time.sleep)(retry_after + 0.5)
+                    continue
+                raise ProviderFailure(
+                    self.name, int(exc.code), f"HTTP {exc.code}",
+                    retry_after_seconds=retry_after,
+                    remaining_daily_requests=requests_left,
+                    remaining_minute_tokens=tokens_left,
+                ) from exc
+
     def _request(self, req: urllib.request.Request) -> bytes:
         with urllib.request.urlopen(req, timeout=self.timeout) as response:
             return response.read()
 
 
+def _positive_float(value: object) -> float | None:
+    try:
+        number = float(value)
+    except (ValueError, TypeError):
+        return None
+    return number if 0 < number <= 86400 else None
+
+
+def _nonnegative_int(value: object) -> int | None:
+    try:
+        number = int(value)
+    except (ValueError, TypeError):
+        return None
+    return number if 0 <= number <= 1000000000 else None
+
+
 class ProviderFailure(RuntimeError):
     """Safe provider error: no API keys, request bodies or sensitive payloads."""
 
-    def __init__(self, provider: str, status_code: int | None, reason: str):
+    def __init__(
+        self,
+        provider: str,
+        status_code: int | None,
+        reason: str,
+        *,
+        retry_after_seconds: float | None = None,
+        remaining_daily_requests: int | None = None,
+        remaining_minute_tokens: int | None = None,
+    ):
         self.provider = provider
         self.status_code = status_code
-        super().__init__(f"{provider}: {reason}")
+        self.retry_after_seconds = retry_after_seconds
+        self.remaining_daily_requests = remaining_daily_requests
+        self.remaining_minute_tokens = remaining_minute_tokens
+        details = []
+        if retry_after_seconds is not None:
+            details.append(f"retry_after_seconds={retry_after_seconds:g}")
+        if remaining_daily_requests is not None:
+            details.append(f"remaining_daily_requests={remaining_daily_requests}")
+        if remaining_minute_tokens is not None:
+            details.append(f"remaining_minute_tokens={remaining_minute_tokens}")
+        suffix = ("; " + ", ".join(details)) if details else ""
+        super().__init__(f"{provider}: {reason}{suffix}")
 
 
 class FreeProviderFallback:
