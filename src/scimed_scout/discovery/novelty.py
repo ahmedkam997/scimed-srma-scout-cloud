@@ -21,9 +21,9 @@ class DiscoveryNoveltyService:
         ledger: SQLiteLedger,
         assessor: SemanticCompetitorAssessor,
         *,
-        max_reviews: int = 15,
-        max_registrations: int = 5,
-        batch_size: int = 10,
+        max_reviews: int = 3,
+        max_registrations: int = 2,
+        batch_size: int = 1,
     ):
         self.ledger = ledger
         self.assessor = assessor
