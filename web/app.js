@@ -340,7 +340,12 @@ function renderJobs() {
             <button class="secondary small" data-copy-job="${escapeHtml(job.id)}">${options.length ? 'Copy for ChatGPT' : 'Copy diagnostic report'}</button>
             <button class="secondary small" data-download-job="${escapeHtml(job.id)}">${options.length ? 'Download JSON' : 'Download report JSON'}</button>
           </div>`
-        : '';
+        : job.status === 'FAILED'
+          ? `<div class="job-actions">
+              <button class="secondary small" data-retry-job="${escapeHtml(job.id)}">Retry same job</button>
+              <button class="secondary small" data-copy-job="${escapeHtml(job.id)}">Copy failure report</button>
+            </div>`
+          : '';
 
     const audits = Array.isArray(job.result_json?.run_summary?.candidate_audits)
       ? job.result_json.run_summary.candidate_audits : [];
@@ -451,6 +456,40 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
 }
 
+async function retryJob(jobId) {
+  const job = jobs.find(item => item.id === jobId);
+  if (!job || job.status !== 'FAILED') return;
+  if (jobs.some(item => item.id !== jobId && item.specialty === job.specialty
+      && item.question_type === job.question_type
+      && ['QUEUED', 'RUNNING'].includes(item.status))) {
+    backendState('waiting', 'Another matching job is active',
+      'Finish or cancel the existing discovery before retrying this one.');
+    return;
+  }
+  if (!window.confirm(
+    'Retry this failed job using the same clinical settings? Check your OpenRouter/Groq access first. Previous unfinished data in this job will be replaced.'
+  )) return;
+  const button = Array.from(els.jobs.querySelectorAll('[data-retry-job]'))
+    .find(item => item.dataset.retryJob === jobId);
+  if (button) button.disabled = true;
+  try {
+    const { data, error } = await supabase.rpc('scimed_retry_job', { p_job_id: jobId });
+    if (error) throw error;
+    await loadJobs();
+    if (!data) {
+      backendState('waiting', 'Retry not applied',
+        'The task is no longer failed, or it does not belong to this browser.');
+      return;
+    }
+    backendState('waiting', 'Existing job requeued',
+      'Requesting a worker for the original job, without creating a duplicate.');
+    await wakeWorker(jobId, { silent: false });
+  } catch (error) {
+    backendState('error', 'Could not retry discovery', error.message || String(error));
+    if (button) button.disabled = false;
+  }
+}
+
 async function cancelJob(jobId) {
   const job = jobs.find(item => item.id === jobId);
   if (!job || !['QUEUED', 'RUNNING'].includes(job.status)) return;
@@ -537,6 +576,11 @@ els.refresh.addEventListener('click', async () => {
   }
 });
 els.jobs.addEventListener('click', event => {
+  const retry = event.target.closest('[data-retry-job]');
+  if (retry) {
+    retryJob(retry.dataset.retryJob);
+    return;
+  }
   const wake = event.target.closest('[data-wake-job]');
   if (wake) {
     wakeWorker(wake.dataset.wakeJob);
