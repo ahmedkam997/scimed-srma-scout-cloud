@@ -15,6 +15,9 @@ from scimed_scout.verification.queries import build_search_plan
 from .constants import MIN_DISCOVERY_STUDIES
 from .candidate_preflight import FocusedEvidencePreflight
 from .evidence import discovery_evidence_snapshot
+from .evidence_classification import (
+    classify_review_search_hit, classify_registration_search_hit,
+)
 from .gates import final_discovery_decision
 from .models import DiscoveryCandidateResult, DiscoveryRunResult
 from .novelty import DiscoveryNoveltyService
@@ -368,7 +371,21 @@ class ReviewDiscoveryOrchestrator:
                         )
                     )
                     for record in result.records:
-                        if evidence_type == "PRIMARY_STUDY":
+                        record_type = evidence_type
+                        if evidence_type == "PUBLISHED_REVIEW":
+                            kind = classify_review_search_hit(record)
+                            if kind != "CONFIRMED_REVIEW_CUE":
+                                # Keep every uncertain bibliographic citation
+                                # in a separate audit tier. A primary trial
+                                # is not a competing published systematic review.
+                                record_type = "UNCLASSIFIED_REVIEW_LEAD"
+                        elif evidence_type == "REGISTRATION":
+                            kind = classify_registration_search_hit(record)
+                            if kind == "PRIMARY_STUDY_PREREGISTRATION":
+                                record_type = "PRIMARY_STUDY_REGISTRATION"
+                            elif kind == "UNCLASSIFIED_REGISTRATION":
+                                record_type = "UNCLASSIFIED_REGISTRATION"
+                        elif evidence_type == "PRIMARY_STUDY":
                             if _obvious_review(record):
                                 continue
                             # Crossref title search covers books, chapters and
@@ -380,7 +397,7 @@ class ReviewDiscoveryOrchestrator:
                                 continue
                         self._store_record(
                             candidate.candidate_id,
-                            evidence_type,
+                            record_type,
                             record,
                             query,
                             purpose,
