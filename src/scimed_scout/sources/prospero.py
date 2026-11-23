@@ -29,7 +29,8 @@ class ProsperoCliSource:
     max_pages: int = 3
 
     def search(self, query: str, *, limit: int = 20) -> SearchResult:
-        if self.runner is None and shutil.which(self.executable) is None:
+        node_entry = os.getenv("PROSPERO_CLI_JS", "").strip() if self.runner is None else ""
+        if self.runner is None and not (node_entry and os.path.isfile(node_entry)) and shutil.which(self.executable) is None:
             return SearchResult(
                 self.name, query, SourceStatus.ACCESS_FAILED,
                 message="PROSPERO CLI missing. Worker must build verified v0.2.2 source; not an empty registry.",
@@ -41,8 +42,9 @@ class ProsperoCliSource:
         total: int | None = None
         pages_fetched = 0
         for page in range(1, max_pages + 1):
+            prefix = ["node", node_entry] if node_entry and os.path.isfile(node_entry) else [self.executable]
             command = [
-                self.executable, "search", query,
+                *prefix, "search", query,
                 "--page", str(page), "--page-size", str(page_size),
             ]
             try:
