@@ -148,3 +148,16 @@ def test_gemini_429_with_no_backups_is_reported_not_fabricated():
     router = FreeProviderFallback(gemini)
     with pytest.raises(ProviderFailure):
         router.complete(AIRequest(system="JSON", prompt="Generate"))
+
+
+def test_nested_gemini_three_way_router_exposes_only_safe_route_metadata():
+    gemini = Stub("gemini-free", ProviderFailure("gemini-free", 429, "HTTP 429"))
+    openrouter = Stub("openrouter-free", ProviderFailure("openrouter-free", 429, "HTTP 429"))
+    groq = Stub("groq-free-backup", '{"status":"ok"}')
+    provider = FreeProviderFallback(gemini, FreeProviderFallback(openrouter, groq))
+    assert provider.configured_free_route == ["gemini-free", "openrouter-free", "groq-free-backup"]
+    assert provider.total_failover_count == 0
+    provider.complete(AIRequest(system="JSON", prompt="Return JSON"))
+    assert provider.total_failover_count == 2
+    assert provider.unavailable_free_providers == ["gemini-free", "openrouter-free"]
+    assert "example-gemini" not in str(provider.configured_free_route)
