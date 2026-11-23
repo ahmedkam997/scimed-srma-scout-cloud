@@ -422,3 +422,69 @@ def test_osf_trove_registration_year_is_parsed_for_age_based_update_audit():
     assert result.records[0].year == 2019
     assert result.records[0].metadata["date_registered"] == "2019-04-21"
     assert result.records[0].metadata["date_modified"] == "2026-10-01"
+
+
+
+def test_live_osf_v2_version_only_meta_confirms_scoped_zero_without_total():
+    """The public OSF v2 API currently responds meta={"version":"2.0"}, no total."""
+    calls = []
+    def load(url):
+        calls.append(url)
+        if "share.osf.io" in url:
+            return {
+                "data": {
+                    "attributes": {"totalResultCount": 0},
+                    "relationships": {"searchResultPage": {"data": [], "links": {}}},
+                },
+                "included": [],
+            }
+        return {
+            "data": [], "meta": {"version": "2.0"},
+            "links": {"self": "https://api.osf.io/v2/registrations/", "next": None},
+        }
+    result = OSFRegistrationsSource(JsonHttpClient(loader=load)).search(
+        "testosterone replacement major adverse", limit=12,
+    )
+    assert result.status == SourceStatus.SEARCHED_NEGATIVE
+    assert len(calls) == 2
+    assert result.total_count == 0
+    assert "scoped" in result.message
+    assert "not global novelty clearance" in result.message
+
+
+def test_osf_version_only_empty_page_with_pagination_is_partial():
+    def load(url):
+        if "share.osf.io" in url:
+            return {
+                "data": {
+                    "attributes": {"totalResultCount": 0},
+                    "relationships": {"searchResultPage": {"data": [], "links": {}}},
+                },
+                "included": [],
+            }
+        return {"data": [], "meta": {"version": "2.0"}, "links": {"next": "https://api.osf.io/v2/registrations/?page=2"}}
+    result=OSFRegistrationsSource(JsonHttpClient(loader=load)).search(
+        "low-dose beta blocker", limit=10,
+    )
+    assert result.status == SourceStatus.PARTIAL
+    assert result.status != SourceStatus.SEARCHED_NEGATIVE
+
+
+def test_osf_version_only_index_disagreement_keeps_partial():
+    def load(url):
+        if "share.osf.io" in url:
+            return {
+                "data": {
+                    "attributes": {"totalResultCount": 0},
+                    "relationships": {"searchResultPage": {"data": [], "links": {}}},
+                },
+                "included": [],
+            }
+        return {"data": [
+            {"id": "reg1", "attributes": {"title": "Older cardiac systematic review"}},
+        ], "meta": {"version": "2.0"}, "links": {}}
+    result=OSFRegistrationsSource(JsonHttpClient(loader=load)).search(
+        "cardiac systematic review", limit=10,
+    )
+    assert result.status == SourceStatus.PARTIAL
+    assert result.status != SourceStatus.SEARCHED_NEGATIVE
