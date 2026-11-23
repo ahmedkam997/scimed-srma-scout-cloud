@@ -277,9 +277,16 @@ class ReviewDiscoveryOrchestrator:
             final_gate_result = final_discovery_decision(payload)
             decision = final_gate_result["decision"]
             status = CandidateStatus.QUALIFIED if decision == "QUALIFIED — FIRST-CHOICE REVIEW TOPIC" else CandidateStatus.REJECTED
-        elif coverage.blockers:
+        elif pending:
+            # A job marked COMPLETED must not leave records as DEEP_VERIFYING.
+            # Missing scientific assessments remain provisional even when
+            # registry coverage happens to be complete for this question.
             status = CandidateStatus.PROVISIONAL_BACKUP
-            decision = "PROVISIONAL — SOURCE COVERAGE INCOMPLETE"
+            decision = (
+                "PROVISIONAL — SOURCE COVERAGE INCOMPLETE"
+                if coverage.blockers
+                else "PROVISIONAL — SCIENTIFIC ASSESSMENT INCOMPLETE"
+            )
 
         self.ledger.set_candidate_status(candidate_id, status)
         self._append_decision(candidate, decision=decision, reason="; ".join(pending), payload={
