@@ -58,6 +58,33 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
             if not candidates:
                 raise RuntimeError("Candidate generation produced no new review topics")
 
+            # Persist completed candidate proposals before slower source checks.
+            # A failed later stage must not discard all generated ideas.
+            store.update_job(
+                job.id,
+                result_json={
+                    "checkpoint": {
+                        "stage": "CANDIDATE_GENERATION",
+                        "verified": False,
+                        "note": "AI-generated hypotheses. Novelty, eligibility and source coverage are not verified.",
+                        "candidate_count": len(candidates),
+                        "candidates": [
+                            {
+                                "candidate_id": candidate.candidate_id,
+                                "title": candidate.title,
+                                "question_type": candidate.question_type,
+                                "review_question": candidate.review_question,
+                                "population": candidate.population,
+                                "intervention_exposure_index_test": candidate.intervention_exposure_index_test,
+                                "comparator_reference": candidate.comparator_reference,
+                                "outcomes": candidate.outcomes,
+                            }
+                            for candidate in candidates
+                        ],
+                    }
+                },
+            )
+
             store.update_job(
                 job.id,
                 stage="DISCOVERY_RANKING",
