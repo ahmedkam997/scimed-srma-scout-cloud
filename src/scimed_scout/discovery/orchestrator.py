@@ -18,6 +18,7 @@ from .gates import final_discovery_decision
 from .models import DiscoveryCandidateResult, DiscoveryRunResult
 from .novelty import DiscoveryNoveltyService
 from .scoring import DiscoveryScoringService
+from .topic_diversity import select_diverse_ranked
 
 
 class ReviewDiscoveryOrchestrator:
@@ -58,19 +59,24 @@ class ReviewDiscoveryOrchestrator:
 
         self._check_cancellation()
         ranked = CandidateRankingService(self.ledger).rank_project(project_id, top_n=max_verify)
-        ranking_message = f"Ranked {len(ranked)} review-topic candidates"
+        by_id = {c.candidate_id: c for c in self.ledger.list_candidates(project_id)}
+        diverse, skipped_duplicates = select_diverse_ranked(ranked, by_id, limit=max_verify)
+        ranking_message = (
+            f"Ranked {len(ranked)} candidates, selected {len(diverse)} distinct PICOs; "
+            f"skipped {len(skipped_duplicates)} near-duplicate questions"
+        )
         self.ledger.update_checkpoint(project_id, stage="DISCOVERY_RANKING", progress=20, message=ranking_message)
         self._progress(20, "DISCOVERY_RANKING", ranking_message)
 
         results: list[DiscoveryCandidateResult] = []
         qualified: list[str] = []
-        for index, ranked_item in enumerate(ranked[:max_verify], 1):
+        for index, ranked_item in enumerate(diverse, 1):
             self._check_cancellation()
             candidate = self.ledger.get_candidate(ranked_item.candidate_id)
             if candidate is None:
                 continue
             self.ledger.set_candidate_status(candidate.candidate_id, CandidateStatus.DEEP_VERIFYING)
-            candidate_progress = min(90, 20 + int(65 * index / max(1, min(max_verify, len(ranked)))))
+            candidate_progress = min(90, 20 + int(65 * index / max(1, len(diverse))))
             candidate_message = f"Checking review topic {index}: {candidate.title}"
             self.ledger.update_checkpoint(
                 project_id,
@@ -101,7 +107,10 @@ class ReviewDiscoveryOrchestrator:
             message=final_message,
         )
         self._progress(final_progress, final_stage, final_message)
-        return DiscoveryRunResult(project_id, ranked, results, final_ids, qualified, final_options)
+        return DiscoveryRunResult(
+            project_id, ranked, results, final_ids, qualified, final_options,
+            duplicate_topics_skipped=skipped_duplicates,
+        )
 
     def verify_candidate(self, candidate_id: str, *, ranking_score: float = 0.0, limit_per_query: int = 20) -> DiscoveryCandidateResult:
         candidate = self.ledger.get_candidate(candidate_id)
