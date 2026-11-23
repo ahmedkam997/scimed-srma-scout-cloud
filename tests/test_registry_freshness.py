@@ -112,3 +112,50 @@ def test_old_completed_prospero_record_still_needs_publication_lookup():
     assert audit["classification"] == "OLDER_COMPLETED_REGISTRATION_CHECK_PUBLISHED_REVIEW"
     assert audit["publication_status"] == "NOT_VERIFIED"
     assert audit["review_last_search_date"] == "NOT_VERIFIED"
+
+
+def test_exact_prospero_accession_in_published_review_finds_publication_candidate():
+    from scimed_scout.discovery.novelty import _attach_publication_linkage
+    reg = registration_age_audit(question(), register("PROSPERO", 2018), [])
+    published = [{
+        "title": "Systematic review and meta-analysis of ketone monoester",
+        "source": "PubMed", "source_record_id": "PMID-5",
+        "payload": {
+            "year": 2022,
+            "metadata": {
+                "abstract": "PROSPERO registration number CRD420190000001 and included trials."
+            },
+        },
+    }]
+    _attach_publication_linkage(reg, published)
+    assert reg["publication_status"] == "PUBLICATION_CANDIDATE_LINKED_BY_REGISTRY_ID"
+    assert reg["linked_publication_candidates"][0]["year"] == 2022
+    assert reg["linked_publication_candidates"][0]["full_text_linkage_verified"] is False
+
+
+def test_similar_title_without_exact_registry_id_does_not_claim_publication():
+    from scimed_scout.discovery.novelty import _attach_publication_linkage
+    reg = registration_age_audit(question(), register("PROSPERO", 2019), [])
+    published = [{
+        "title": "Systematic review and meta-analysis of ketone monoester",
+        "source": "PubMed", "source_record_id": "PMID-6",
+        "payload": {"year": 2025, "metadata": {
+            "abstract": "The intervention was reviewed among endurance athletes."
+        }},
+    }]
+    _attach_publication_linkage(reg, published)
+    assert reg["publication_status"] == "NOT_VERIFIED"
+
+
+def test_osf_publication_link_requires_full_registration_url_not_short_id():
+    from scimed_scout.discovery.novelty import _attach_publication_linkage
+    reg = registration_age_audit(question(), register("OSF Registries", 2019), [])
+    published = [{
+        "title": "Systematic review of ketone monoester",
+        "source": "PubMed", "source_record_id": "PMID-8",
+        "payload": {"year": 2023, "metadata": {
+            "abstract": "Our OSF protocol is at https://osf.io/abc12/ ."
+        }},
+    }]
+    _attach_publication_linkage(reg, published)
+    assert reg["publication_status"] == "PUBLICATION_CANDIDATE_LINKED_BY_REGISTRY_ID"
