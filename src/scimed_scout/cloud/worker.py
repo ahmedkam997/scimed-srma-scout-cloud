@@ -246,6 +246,8 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "desired_options": result.desired_options,
                     "status_counts": status_counts,
                     "candidate_audits": candidate_audits,
+                    "duplicate_topics_skipped": result.duplicate_topics_skipped,
+                    "duplicate_topics_skipped_count": len(result.duplicate_topics_skipped),
                     "recent_pubmed_cues": evidence_cues,
                     "ai_failover_count": provider.failover_count,
                     "last_ai_provider": provider.last_provider,
