@@ -452,6 +452,8 @@ function renderJobs() {
     const summary = job.result_json?.run_summary || {};
     const statusCounts = summary.status_counts || {};
     const provisional = Number(statusCounts.PROVISIONAL_BACKUP || 0);
+    const incompleteFromLegacy = Number(statusCounts.DEEP_VERIFYING || 0);
+    const unresolvedCount = provisional + incompleteFromLegacy;
     const rejected = Number(statusCounts.REJECTED || 0);
     const checked = Number(summary.verified_candidates || 0);
     const generated = Number(summary.generated_candidates || 0);
@@ -475,7 +477,9 @@ function renderJobs() {
       ? `<div class="job-result-summary">
           <b>Discovery review summary</b>
           <p>Generated ${escapeHtml(generated)} candidates. Checked ${escapeHtml(checked)}.
-          Qualified ${escapeHtml(options.length)}. Provisional ${escapeHtml(provisional)}.
+          Qualified ${escapeHtml(options.length)}.
+          Unresolved / provisional ${escapeHtml(unresolvedCount)}
+          ${incompleteFromLegacy ? '(including ' + escapeHtml(incompleteFromLegacy) + ' earlier runs left in DEEP_VERIFYING)' : ''}.
           Rejected ${escapeHtml(rejected)}.
           AI fallback calls ${escapeHtml(failovers)}.</p>
           ${summary.bibliographic_preflight ? `<p>Source-informed PubMed preflight:
@@ -490,7 +494,7 @@ function renderJobs() {
             ? `<p>AI quota interrupted generation. ${escapeHtml(generated)} fully parsed ideas were preserved. ${escapeHtml(generationShortfall)} planned proposals were not generated.</p>`
             : ''}
           ${generationWarnings.map(warning => `<p class="help">${escapeHtml(warning)}</p>`).join('')}
-          ${provisional && !options.length
+          ${unresolvedCount && !options.length
             ? '<p>Source verification is incomplete for the provisional topics. They are not confirmed to lack novelty or scientific value.</p>'
             : ''}
           ${!Array.isArray(summary.candidate_audits)
