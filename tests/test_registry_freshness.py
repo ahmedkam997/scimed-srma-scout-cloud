@@ -68,8 +68,10 @@ def test_old_publication_is_not_a_verified_search_cutoff():
     }
     audit = published_review_update_audit(question(), review, [primary("Ketone monoester trial", 2025)])
     assert audit["publication_year"] == 2019
-    assert audit["classification"] == "SEARCH_DATE_MISSING_MANUAL_CHECK"
+    assert audit["classification"] == "OLD_REVIEW_POTENTIAL_UPDATE_SEARCH_DATE_UNVERIFIED"
     assert audit["post_cutoff_bibliographic_leads"]["count"] is None
+    assert audit["post_publication_bibliographic_leads"]["count"] == 1
+    assert audit["novelty_confirmed"] is False
 
 
 def test_explicit_search_cutoff_supports_bibliographic_update_signal_only():
