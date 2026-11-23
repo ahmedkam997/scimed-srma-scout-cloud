@@ -137,6 +137,26 @@ function renderJobs() {
     const options = qualifiedOptions(job);
     const progress = Number(job.progress || 0);
     const statusClass = String(job.status || '').toLowerCase();
+    const summary = job.result_json?.run_summary || {};
+    const statusCounts = summary.status_counts || {};
+    const provisional = Number(statusCounts.PROVISIONAL_BACKUP || 0);
+    const rejected = Number(statusCounts.REJECTED || 0);
+    const checked = Number(summary.verified_candidates || 0);
+    const generated = Number(summary.generated_candidates || 0);
+    const summaryHtml = job.status === 'COMPLETED' && checked
+      ? `<div class="job-result-summary">
+          <b>Discovery review summary</b>
+          <p>Generated ${escapeHtml(generated)} candidates. Checked ${escapeHtml(checked)}.
+          Qualified ${escapeHtml(options.length)}. Provisional ${escapeHtml(provisional)}.
+          Rejected ${escapeHtml(rejected)}.</p>
+          ${provisional && !options.length
+            ? '<p>Source verification is incomplete for the provisional topics. They are not confirmed to lack novelty or scientific value.</p>'
+            : ''}
+          ${!Array.isArray(summary.candidate_audits)
+            ? '<p>This earlier run did not save topic-level source failures. Its exact blockers are not recoverable from this report.</p>'
+            : ''}
+        </div>`
+      : '';
     const optionHtml = options.length
       ? `<div class="topic-list">${options.map(option => `
           <article class="topic">
@@ -157,8 +177,8 @@ function renderJobs() {
         </div>`
       : job.status === 'COMPLETED'
         ? `<div class="job-actions">
-            <button class="secondary small" data-copy-job="${escapeHtml(job.id)}">Copy for ChatGPT</button>
-            <button class="secondary small" data-download-job="${escapeHtml(job.id)}">Download JSON</button>
+            <button class="secondary small" data-copy-job="${escapeHtml(job.id)}">${options.length ? 'Copy for ChatGPT' : 'Copy diagnostic report'}</button>
+            <button class="secondary small" data-download-job="${escapeHtml(job.id)}">${options.length ? 'Download JSON' : 'Download report JSON'}</button>
           </div>`
         : '';
 
@@ -173,6 +193,9 @@ function renderJobs() {
             const trace = score.scoring_trace || {};
             const failed = (audit.failed_gates || []).map(gate => escapeHtml(gate.name)).join('; ');
             const pending = (audit.pending || []).map(x => escapeHtml(x)).join('; ');
+            const blockers = (audit.coverage_blockers || []).map(x => escapeHtml(x)).join('; ');
+            const sourceStatus = Object.entries(audit.source_statuses || {})
+              .map(([name, status]) => `${escapeHtml(name)}: ${escapeHtml(status)}`).join('; ');
             return `<article class="score-item">
               <b>${escapeHtml(audit.title)}</b>
               <div class="score-data">
@@ -184,6 +207,8 @@ function renderJobs() {
               <small>${escapeHtml(trace.information_gain_status || 'Not estimated')}</small>
               ${failed ? `<p>Failed gates: ${failed}</p>` : ''}
               ${pending ? `<p>Unresolved: ${pending}</p>` : ''}
+              ${blockers ? `<p>Source coverage blockers: ${blockers}</p>` : ''}
+              ${sourceStatus ? `<p>Source search statuses: ${sourceStatus}</p>` : ''}
               <details><summary>Methods and score weights</summary>
                 <pre>${escapeHtml(JSON.stringify({
                   version: trace.method_version || '',
@@ -220,6 +245,7 @@ function renderJobs() {
         <div class="progress"><span style="width:${Math.max(0,Math.min(100,progress))}%"></span></div>
         <div class="job-meta"><span>${progress}%</span><span>${escapeHtml(job.stage || '')}</span></div>
         <p class="job-message">${escapeHtml(job.message || '')}</p>
+        ${summaryHtml}
         ${optionHtml}
         ${auditHtml}
         ${actions}
@@ -273,23 +299,40 @@ async function cancelJob(jobId) {
   }
 }
 
+function reportPayload(job) {
+  const pkg = job?.result_json?.package || {};
+  if (Array.isArray(pkg.options) && pkg.options.length) return pkg;
+  return {
+    report_type: 'SCIMED_DISCOVERY_DIAGNOSTIC',
+    job_id: job.id,
+    status: job.status,
+    specialty: job.specialty,
+    question_type: job.question_type,
+    summary: job?.result_json?.run_summary || {},
+    selection_policy: pkg.selection_policy || {},
+    explanation: 'No candidate cleared all mandatory checks. PROVISIONAL_BACKUP does not mean confirmed lack of novelty.',
+    missing_detail: Array.isArray(job?.result_json?.run_summary?.candidate_audits)
+      ? null
+      : 'Older job did not preserve topic-level source audit or candidate titles.'
+  };
+}
+
 async function copyJob(jobId) {
   const job = jobs.find(item => item.id === jobId);
-  const pkg = job?.result_json?.package;
-  if (!pkg) return;
-  await navigator.clipboard.writeText(JSON.stringify(pkg, null, 2));
-  backendState('ok', 'Copied', 'The qualified-topic package is ready to paste into ChatGPT.');
+  if (!job) return;
+  await navigator.clipboard.writeText(JSON.stringify(reportPayload(job), null, 2));
+  backendState('ok', 'Copied', 'The discovery report is ready to paste into ChatGPT.');
 }
 
 function downloadJob(jobId) {
   const job = jobs.find(item => item.id === jobId);
-  const pkg = job?.result_json?.package;
-  if (!pkg) return;
-  const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
+  if (!job) return;
+  const payload = reportPayload(job);
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `${jobId}_review_topics.json`;
+  link.download = `${jobId}_discovery_report.json`;
   document.body.appendChild(link);
   link.click();
   link.remove();
