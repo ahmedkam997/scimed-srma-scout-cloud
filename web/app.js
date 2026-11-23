@@ -197,6 +197,57 @@ function safeEvidenceLink(record) {
   }
 }
 
+// Presentation-only grouping for legacy reports that predate server-side
+// PICO deduplication. The stored source audit always remains unchanged.
+function clinicalWords(value) {
+  const raw = Array.isArray(value) ? value.join(' ') : String(value || '');
+  const omit = new Set(['a','an','and','the','in','of','to','for','with','among','by',
+    'during','versus','vs','patients','patient','effects','effect','impact',
+    'effectiveness','outcomes','outcome','on','study','studies','review',
+    'systematic','meta','analysis','undergoing','plus','adjunctive']);
+  return new Set((raw.normalize('NFKC').toLowerCase().match(/[a-z0-9\u0600-\u06ff]+/g) || [])
+    .filter(word => !omit.has(word)));
+}
+
+function wordContainment(a,b) {
+  const x=clinicalWords(a), y=clinicalWords(b);
+  if(!x.size || !y.size) return 0;
+  return [...x].filter(word=>y.has(word)).length/Math.min(x.size,y.size);
+}
+
+function normalizedReviewType(topic) {
+  const t=String(topic.question_type||'').toUpperCase();
+  if(/INTERVENTION|EFFECTIVENESS|RCT|META|SYSTEMATIC REVIEW/.test(t) &&
+      topic.intervention_exposure_index_test) return 'EFFECTIVENESS';
+  return t.trim().replaceAll(' ','_');
+}
+
+function similarPico(a,b) {
+  if(normalizedReviewType(a)!==normalizedReviewType(b)) return false;
+  const aPop=clinicalWords(a.population), bPop=clinicalWords(b.population);
+  const young=['child','children','pediatric','paediatric','adolescent'];
+  const older=['adult','adults','older','elderly','geriatric'];
+  if((young.some(x=>aPop.has(x)) && older.some(x=>bPop.has(x))) ||
+     (young.some(x=>bPop.has(x)) && older.some(x=>aPop.has(x)))) return false;
+  for(const field of ['population','intervention_exposure_index_test','comparator_reference']) {
+    const nums=v=>[...clinicalWords(v)].filter(x=>/^\d+$/.test(x)).sort().join(',');
+    if(nums(a[field])!==nums(b[field])) return false;
+  }
+  return wordContainment(a.intervention_exposure_index_test,b.intervention_exposure_index_test)>=0.85 &&
+    wordContainment(a.population,b.population)>=0.60 &&
+    wordContainment(a.comparator_reference,b.comparator_reference)>=0.70 &&
+    wordContainment(a.outcomes,b.outcomes)>=0.25 &&
+    wordContainment(a.title,b.title)>=0.65;
+}
+
+function uniqueProvisionalTopics(items) {
+  const unique=[];
+  for(const candidate of items) {
+    if(!unique.some(earlier=>similarPico(candidate,earlier))) unique.push(candidate);
+  }
+  return unique;
+}
+
 function renderJobs() {
   const active = jobs.filter(job => ['QUEUED', 'RUNNING'].includes(job.status)).length;
   const qualified = jobs.reduce((sum, job) => sum + qualifiedOptions(job).length, 0);
@@ -309,24 +360,33 @@ function renderJobs() {
           </article>`).join('')}
         </details>` : '';
 
-    const provisionalOptions = Array.isArray(job.result_json?.package?.provisional_options)
+    const originalProvisionalOptions = Array.isArray(job.result_json?.package?.provisional_options)
       ? job.result_json.package.provisional_options : [];
+    const provisionalOptions = uniqueProvisionalTopics(originalProvisionalOptions);
+    const groupedCount = originalProvisionalOptions.length - provisionalOptions.length;
     const provisionalHtml = job.status === 'COMPLETED' && provisionalOptions.length
       ? `<details class="score-audit" open>
-          <summary>Provisional review topics (${provisionalOptions.length}) - verification required</summary>
+          <summary>Distinct provisional topics (${provisionalOptions.length}) - verification required</summary>
+          ${groupedCount ? `<p class="help">Grouped ${groupedCount} near-duplicate clinical PICO questions; original source audit remains intact.</p>` : ''}
           <p class="help">These are research hypotheses, not qualified or novelty-confirmed topics. Source access and eligibility require manual review.</p>
           ${provisionalOptions.map(topic => `<article class="score-item">
             <b>${escapeHtml(topic.title || '')}</b>
             <p>${escapeHtml(topic.review_question || '')}</p>
             <div class="score-data">
-              <span>Study candidates: ${escapeHtml(topic.discovered_primary_study_candidates ?? 'N/A')}</span>
+              <span>Unscreened bibliography records: ${escapeHtml(topic.discovered_primary_study_candidates ?? 'N/A')}</span>
               <span>Clinical area: ${escapeHtml(topic.specialty || 'Unknown')}</span>
+              ${topic.bibliographic_pico_fit ? `<span>Intervention title matches: ${escapeHtml(topic.bibliographic_pico_fit.intervention_title_matches)}</span>
+              <span>Titles mentioning comparator: ${escapeHtml(topic.bibliographic_pico_fit.intervention_comparator_title_matches)}</span>` : ''}
             </div>
             <details><summary>Found published reviews (verify overlap)</summary>
               ${(topic.published_review_examples || []).map(item => `<p>${safeEvidenceLink(item)}</p>`).join('') || '<p>No review examples preserved</p>'}
             </details>
             <details><summary>Potential study records (not eligibility-screened)</summary>
               ${(topic.primary_study_examples || []).map(item => `<p>${safeEvidenceLink(item)}</p>`).join('') || '<p>No examples preserved</p>'}
+            </details>
+            ${topic.bibliographic_pico_fit ? `<p class="help">${escapeHtml(topic.bibliographic_pico_fit.warning || '')}</p>` : ''}
+            <details><summary>Relevant registration records (not cleared)</summary>
+              ${(topic.registration_examples || []).map(item => `<p>${safeEvidenceLink(item)}</p>`).join('') || '<p>No registry examples preserved</p>'}
             </details>
             <details><summary>Why provisional?</summary>
               <p>${(topic.source_blockers || []).map(escapeHtml).join('; ') || 'Manual source and methods checks remain'}</p>
@@ -542,7 +602,9 @@ function reportPayload(job) {
     checkpoint: job?.result_json?.checkpoint || null,
     error_excerpt: (job.error_text || '').slice(-700),
     selection_policy: pkg.selection_policy || {},
-    provisional_options: Array.isArray(pkg.provisional_options) ? pkg.provisional_options : [],
+    provisional_options: uniqueProvisionalTopics(Array.isArray(pkg.provisional_options) ? pkg.provisional_options : []),
+    original_provisional_count: Array.isArray(pkg.provisional_options) ? pkg.provisional_options.length : 0,
+    near_duplicates_grouped_only_in_presentation: true,
     explanation: 'No candidate cleared all mandatory checks. PROVISIONAL_BACKUP does not mean confirmed lack of novelty.',
     missing_detail: Array.isArray(job?.result_json?.run_summary?.candidate_audits)
       ? null
