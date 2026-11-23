@@ -121,3 +121,43 @@ def test_registry_plan_removes_dose_parenthesis_without_losing_treatment():
     assert len(plan.registry_queries) > 1
     assert all("Vitamin D3 supplementation" in q for q in plan.registry_queries)
     assert all("(" not in q and ")" not in q for q in plan.registry_queries)
+
+
+def test_clinicaltrials_study_registry_pages_until_no_next_token():
+    from urllib.parse import parse_qs, urlsplit
+    calls = []
+    def load(url):
+        query = parse_qs(urlsplit(url).query)
+        calls.append(query)
+        page = 1 if "pageToken" not in query else 2
+        nct = f"NCT{page:08d}"
+        return {
+            "totalCount": 2,
+            "studies": [{"protocolSection": {"identificationModule": {
+                "nctId": nct, "briefTitle": f"Trial {page}"
+            }}}],
+            "nextPageToken": "NEXT" if page == 1 else None,
+        }
+    result = ClinicalTrialsGovSource(JsonHttpClient(loader=load)).search(
+        "cardiac ablation", limit=12
+    )
+    assert result.status == SourceStatus.SEARCHED_POSITIVE
+    assert len(result.records) == 2
+    assert len(calls) == 2
+    assert calls[0]["pageSize"] == ["100"]
+    assert calls[1]["pageToken"] == ["NEXT"]
+
+
+def test_clinicaltrials_duplicate_page_token_fails_closed():
+    from urllib.parse import parse_qs, urlsplit
+    def load(url):
+        return {
+            "totalCount": 200,
+            "studies": [{"protocolSection": {"identificationModule": {
+                "nctId": "NCT00000001", "briefTitle": "Trial"
+            }}}],
+            "nextPageToken": "SAME",
+        }
+    result = ClinicalTrialsGovSource(JsonHttpClient(loader=load)).search("blood pressure")
+    assert result.status == SourceStatus.PARTIAL
+    assert len(result.records) == 1
