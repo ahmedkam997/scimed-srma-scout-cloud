@@ -169,3 +169,21 @@ def test_obvious_systematic_review_is_not_counted_as_primary_study(tmp_path):
         ledger.upsert_candidate(candidate())
         result = ReviewDiscoveryOrchestrator(ledger, custom).verify_candidate("C1")
         assert result.evidence.unique_primary_study_candidates == 4
+
+
+def test_completed_candidate_with_complete_registry_but_unresolved_scoring_is_provisional(tmp_path):
+    class OutOfQuotaScoring:
+        def score(self, *args, **kwargs):
+            raise RuntimeError("Free provider quota exhausted")
+
+    with SQLiteLedger(tmp_path / "out_of_quota.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Radiology", question_type="DIAGNOSTIC_ACCURACY"))
+        ledger.upsert_candidate(candidate())
+        result = ReviewDiscoveryOrchestrator(
+            ledger, clients(), scoring_service=OutOfQuotaScoring()
+        ).verify_candidate("C1")
+        assert result.coverage.complete
+        assert result.candidate_status == CandidateStatus.PROVISIONAL_BACKUP
+        assert result.decision == "PROVISIONAL — SCIENTIFIC ASSESSMENT INCOMPLETE"
+        assert ledger.get_candidate("C1").status == CandidateStatus.PROVISIONAL_BACKUP
+        assert any("Free provider quota" in x for x in result.pending)
