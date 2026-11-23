@@ -12,6 +12,7 @@ from scimed_scout.ai import CandidateDiscoveryService, FreeProviderFallback
 from scimed_scout.competitors import SemanticCompetitorAssessor
 from scimed_scout.discovery.topic_memory import recent_topic_memory
 from scimed_scout.discovery.open_access_dates import OpenAccessSearchDateResolver
+from scimed_scout.discovery.candidate_preflight import FocusedEvidencePreflight
 from scimed_scout.discovery.evidence_seed import recent_pubmed_cues, cue_prompt
 from scimed_scout.discovery import (
     DiscoveryNoveltyService,
@@ -250,13 +251,22 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     message=message,
                 )
 
+            source_clients = build_default_source_clients()
+            pubmed_client = next(
+                (source for source in source_clients if source.name == "PubMed"), None
+            )
+            preflight = (
+                FocusedEvidencePreflight(pubmed_client, max_candidates=24, per_query=10)
+                if pubmed_client is not None else None
+            )
             orchestrator = ReviewDiscoveryOrchestrator(
                 ledger,
-                build_default_source_clients(),
+                source_clients,
                 novelty_service=novelty,
                 scoring_service=scoring,
                 progress_callback=progress_callback,
                 cancellation_check=lambda: store.ensure_active(job.id),
+                evidence_preflight=preflight,
             )
             result = orchestrator.run(
                 project_id,
@@ -264,6 +274,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 max_verify=job.max_verify,
                 final_options=job.final_options,
                 limit_per_query=job.limit_per_query,
+                adaptive_extra=min(4, max(2, job.max_verify // 2)),
             )
             store.ensure_active(job.id)
             package = build_discovery_review_package(ledger, result)
@@ -334,6 +345,9 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 "run_summary": {
                     "generated_candidates": len(candidates),
                     "unverified_generated_candidates": len(unverified_drafts),
+                    "bibliographic_preflight": result.bibliographic_preflight_summary,
+                    "adaptive_deep_checks_used": result.adaptive_deep_checks_used,
+                    "adaptive_checks_skipped_reason": result.adaptive_checks_skipped_reason,
                     "requested_candidates": job.candidate_count,
                     "generation_shortfall": max(0, job.candidate_count - len(candidates)),
                     "generation_warnings": generator.generation_warnings[:5],
