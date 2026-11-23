@@ -75,7 +75,7 @@ Keep every candidate compact. Use one focused clinical question per topic. Limit
 rationale and novelty_hypothesis to 20 words each; include 2 to 4 search terms
 and at most 3 outcomes and 2 eligible designs per candidate. Avoid
 long explanations, markdown or commentary outside JSON.
-Use distinct clinical discovery strategies across the batch: (1) newly
+Each proposal must have a genuinely distinct population/intervention/comparator question, not a paraphrase of another PICO.\nUse distinct clinical discovery strategies across the batch: (1) newly
 published therapeutic approaches or diagnostic generations, (2) narrow and
 understudied patient subgroups, (3) head-to-head comparisons or optimal
 treatment sequences, and (4) long-term harms or patient-important outcomes.
@@ -160,6 +160,7 @@ class CandidateDiscoveryService:
         # A short-lived historical guard prevents re-running source searches on
         # recently checked PICO questions without permanently blacklisting them.
         from scimed_scout.discovery.topic_memory import is_recently_checked
+        from scimed_scout.discovery.topic_diversity import same_clinical_question
 
         recent = recent_topics or []
         previous_titles = "; ".join(str(item.get("title") or "")[:100] for item in recent[:12])
@@ -173,6 +174,7 @@ class CandidateDiscoveryService:
         target = max(1, min(50, int(count)))
         proposals_with_response: list[tuple[CandidateProposal, object]] = []
         seen_titles: set[str] = set()
+        skipped_near_duplicate_picos = 0
         batch_sizes = [min(4, target - start) for start in range(0, target, 4)]
         # Do not spend unlimited model requests when a batch is malformed.
         max_calls = min(8, len(batch_sizes) + 3)
@@ -226,6 +228,9 @@ class CandidateDiscoveryService:
                                 "recheck_after": old.get("recheck_at"),
                                 "reason": "RECENTLY_CHECKED_PICO",
                             })
+                        continue
+                    if any(same_clinical_question(proposal, kept) for kept, _ in proposals_with_response):
+                        skipped_near_duplicate_picos += 1
                         continue
                     proposals_with_response.append((proposal, response))
                     if len(proposals_with_response) >= target:
@@ -313,6 +318,9 @@ class CandidateDiscoveryService:
                                 "reason": "RECENTLY_CHECKED_PICO",
                             })
                         continue
+                    if any(same_clinical_question(proposal, kept) for kept, _ in proposals_with_response):
+                        skipped_near_duplicate_picos += 1
+                        continue
                     proposals_with_response.append((proposal, response))
                     if len(proposals_with_response) >= target:
                         break
@@ -356,6 +364,11 @@ class CandidateDiscoveryService:
                 + "Check OpenRouter status, quotas, and Groq backup configuration. "
                 + "Provider diagnostics: "
                 + "; ".join(failure_messages[:3])
+            )
+
+        if skipped_near_duplicate_picos:
+            self.generation_warnings.append(
+                f"Skipped {skipped_near_duplicate_picos} near-duplicate clinical PICO(s) before source verification."
             )
 
         records: list[CandidateRecord] = []
