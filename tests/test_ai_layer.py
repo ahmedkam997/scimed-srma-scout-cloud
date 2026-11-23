@@ -267,7 +267,7 @@ def test_truncated_json_does_not_invent_a_partial_candidate(tmp_path):
     ])
     with SQLiteLedger(tmp_path / "invalid.sqlite3") as ledger:
         ledger.upsert_project(ProjectRecord("P1", "Cardiology"))
-        with pytest.raises(RuntimeError, match="no complete candidate JSON"):
+        with pytest.raises(RuntimeError, match="no complete candidate JSON|did not return any complete candidate JSON"):
             CandidateDiscoveryService(provider, ledger).generate_and_store(
                 project_id="P1", specialty="Cardiology", count=2
             )
