@@ -46,7 +46,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   let reserved = false;
   try {
-    const res = await fetch(apiUrl.replace(/\\/$/, "") + "/rest/v1/rpc/scimed_request_dispatch", {
+    const res = await fetch((apiUrl.endsWith("/") ? apiUrl.slice(0, -1) : apiUrl) + "/rest/v1/rpc/scimed_request_dispatch", {
       method: "POST",
       headers: {
         apikey: anonKey,
