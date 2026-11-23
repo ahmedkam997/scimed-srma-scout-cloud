@@ -333,7 +333,7 @@ def test_osf_two_independent_indexes_confirm_scoped_zero_only():
         return {"data": [], "meta": {"total": 0}, "links": {"next": None}}
     result = OSFRegistrationsSource(JsonHttpClient(loader=load)).search("specific catheter ablation")
     assert result.status == SourceStatus.SEARCHED_NEGATIVE
-    assert len(calls) == 2
+    assert len(calls) == 4  # focused and broad, each checked in Trove plus OSF v2
     assert "scoped query" in result.message
     assert "unindexed registrations" in result.message
 
