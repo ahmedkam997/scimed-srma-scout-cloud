@@ -260,3 +260,58 @@ def test_prospero_cli_success_with_upstream_error_note_is_partial():
     result = ProsperoCliSource(runner=fake).search("x")
     assert result.status == SourceStatus.PARTIAL
     assert result.status != SourceStatus.SEARCHED_NEGATIVE
+
+
+def test_osf_requests_full_50_hit_pages_even_if_user_limit_is_twelve():
+    seen = []
+    def load(url):
+        from urllib.parse import parse_qs, urlsplit
+        seen.append(parse_qs(urlsplit(url).query))
+        return {
+            "data": {
+                "attributes": {"totalResultCount": 1},
+                "relationships": {"searchResultPage": {
+                    "data": [{"id": "hit1", "type": "search-result"}],
+                    "links": {},
+                }},
+            },
+            "included": [
+                {"id": "hit1", "type": "search-result", "relationships": {
+                    "indexCard": {"data": {"id": "card1"}}}},
+                {"id": "card1", "type": "index-card",
+                 "attributes": {"resourceMetadata": {"title": "Registered topic",
+                                                       "@id": "https://osf.io/abc12/"}}},
+            ],
+        }
+    source = OSFRegistrationsSource(JsonHttpClient(loader=load))
+    result = source.search("cardiac ablation", limit=12)
+    assert result.status == SourceStatus.SEARCHED_POSITIVE
+    assert seen[0]["page[size]"] == ["50"]
+
+
+def test_osf_exhausted_indexed_pages_with_duplicate_cards_is_complete_positive():
+    counter = [0]
+    def load(url):
+        counter[0] += 1
+        page = counter[0]
+        return {
+            "data": {
+                "attributes": {"totalResultCount": 2},
+                "relationships": {"searchResultPage": {
+                    "data": [{"id": f"hit{page}", "type": "search-result"}],
+                    "links": {"next": {"href": "https://share.osf.io/trove/index-card-search?page=2"}}
+                             if page == 1 else {},
+                }},
+            },
+            "included": [
+                {"id": f"hit{page}", "type": "search-result", "relationships": {
+                    "indexCard": {"data": {"id": f"card{page}"}}}},
+                {"id": f"card{page}", "type": "index-card",
+                 "attributes": {"resourceMetadata": {"title": "Same registered topic",
+                                                       "@id": "https://osf.io/abc12/"}}},
+            ],
+        }
+    result = OSFRegistrationsSource(JsonHttpClient(loader=load)).search("heart failure")
+    assert len(result.records) == 1
+    assert result.status == SourceStatus.SEARCHED_POSITIVE
+    assert "2/2 indexed hits" in result.message
