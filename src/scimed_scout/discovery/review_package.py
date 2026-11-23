@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -177,6 +178,17 @@ def build_discovery_review_package(
                     limit=5,
                 )
             ],
+            "primary_study_screening_queue": _primary_screening_queue(
+                candidate,
+                ledger.list_external_evidence(verified.candidate_id, "PRIMARY_STUDY"),
+                list(metadata.get("discovery_published_review_update_audit") or []),
+                limit=40,
+            ),
+            "screening_queue_status": (
+                "UNSCREENED_BIBLIOGRAPHIC_RECORDS_ONLY. "
+                "Trial-family independence, comparator eligibility, full text, "
+                "and independent studies remain unconfirmed."
+            ),
             "primary_examples_selection_note": (
                 "Title/PICO keyword ranking only; no full-text eligibility, "
                 "trial-family independence, or effect-data verification."
@@ -338,3 +350,79 @@ def _pico_fit_signals(candidate: Any, records: list[dict]) -> dict[str, Any]:
             "Title matches are hypotheses for manual abstract and full-text checks."
         ),
     }
+
+
+def _primary_screening_queue(
+    candidate: Any,
+    records: list[dict],
+    review_age_audits: list[dict],
+    *,
+    limit: int = 40,
+) -> list[dict[str, Any]]:
+    """Produce a human-checkable evidence queue, not eligible-study counts."""
+    intervention = _tokens(getattr(candidate, "intervention_exposure_index_test", ""))
+    comparator = _tokens(getattr(candidate, "comparator_reference", ""))
+    population = _tokens(getattr(candidate, "population", ""))
+    search_years = []
+    for review in review_age_audits:
+        date = str(review.get("last_search_date") or "")
+        match = re.search(r"(?:19|20)\\d{2}", date)
+        if match:
+            search_years.append(int(match.group()))
+    baseline_year = max(search_years) if search_years else None
+    rows = []
+    seen: set[str] = set()
+    for item in records:
+        payload = item.get("payload") or {}
+        meta = payload.get("metadata") or {}
+        if not isinstance(meta, dict):
+            meta = {}
+        title = str(item.get("title") or "").strip()
+        if not title or re.search(
+            r"\\b(?:systematic review|meta-analysis|scoping review|network meta-analysis)\\b",
+            title, flags=re.IGNORECASE,
+        ):
+            continue
+        doi = str(payload.get("doi") or "").casefold().strip()
+        dedup = doi if doi else " ".join(re.findall(r"[a-z0-9]+", title.casefold()))
+        if not dedup or dedup in seen:
+            continue
+        seen.add(dedup)
+        abstract = str(meta.get("abstract") or meta.get("summary") or "")[:900]
+        title_tokens = _tokens(title)
+        body_tokens = title_tokens | _tokens(abstract)
+        if intervention:
+            match_title = len(title_tokens & intervention) / len(intervention)
+            match_body = len(body_tokens & intervention) / len(intervention)
+        else:
+            match_title = match_body = 0.0
+        population_match = len(body_tokens & population) / max(1, len(population))
+        comparator_match = len(body_tokens & comparator) / max(1, len(comparator))
+        score = round(3 * match_title + 2 * match_body + population_match + comparator_match, 3)
+        ncts = sorted(set(re.findall(r"\\bNCT\\d{8}\\b", title + " " + abstract, flags=re.IGNORECASE)))
+        year = payload.get("year")
+        year = int(year) if str(year or "").isdigit() else None
+        if year is None or baseline_year is None:
+            after = "UNDETERMINED"
+        else:
+            after = "POST_SEARCH_BIBLIOGRAPHIC_LEAD" if year > baseline_year else "NOT_POST_SEARCH"
+        rows.append((score, {
+            "title": title,
+            "year": year,
+            "source": str(item.get("source") or ""),
+            "record_id": str(item.get("source_record_id") or ""),
+            "doi": str(payload.get("doi") or ""),
+            "url": str(payload.get("url") or ""),
+            "abstract_excerpt": abstract[:500],
+            "registry_trial_ids": ncts,
+            "title_intervention_match": round(match_title, 3),
+            "body_population_match": round(population_match, 3),
+            "body_comparator_match": round(comparator_match, 3),
+            "latest_documented_review_search_year": baseline_year,
+            "post_search_flag": after,
+            "screening_decision": "",
+            "fulltext_eligibility": "NOT_CHECKED",
+            "trial_family_independence": "NOT_CONFIRMED",
+        }))
+    rows.sort(key=lambda item: (-item[0], -(item[1]["year"] or 0), item[1]["title"].casefold()))
+    return [item for _, item in rows[:max(0, limit)]]
