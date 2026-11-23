@@ -214,7 +214,7 @@ def _proposal_named(name):
         "review_question": f"Does {name} change management?",
         # Different titles alone do not define distinct clinical questions.
         # These fixtures test generation batching with genuinely distinct PICOs.
-        "intervention_exposure_index_test": f"Diagnostic test {name}",
+        "intervention_exposure_index_test": f"DiagnosticDevice{''.join(ch for ch in name if ch.isalnum())}",
     }
 
 
