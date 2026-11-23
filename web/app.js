@@ -256,6 +256,11 @@ function renderJobs() {
             </details>
             <details><summary>Why provisional?</summary>
               <p>${(topic.source_blockers || []).map(escapeHtml).join('; ') || 'Manual source and methods checks remain'}</p>
+              <p>To resolve unreviewed registration matches, check
+                <a href="https://www.crd.york.ac.uk/PROSPERO/search" target="_blank" rel="noopener noreferrer">official PROSPERO</a>
+                and
+                <a href="https://osf.io/search/" target="_blank" rel="noopener noreferrer">official OSF Search</a>.
+                A partial automated search is not a negative result.</p>
               <p>${(topic.unresolved_checks || []).map(escapeHtml).join('; ')}</p>
               <p>${Object.entries(topic.source_statuses || {}).map(([key,value]) => escapeHtml(key) + ': ' + escapeHtml(value)).join('; ')}</p>
             </details>
