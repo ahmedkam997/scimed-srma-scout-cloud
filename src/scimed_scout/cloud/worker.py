@@ -13,7 +13,9 @@ from scimed_scout.competitors import SemanticCompetitorAssessor
 from scimed_scout.discovery.topic_memory import recent_topic_memory
 from scimed_scout.discovery.open_access_dates import OpenAccessSearchDateResolver
 from scimed_scout.discovery.candidate_preflight import FocusedEvidencePreflight
-from scimed_scout.discovery.evidence_seed import recent_pubmed_cues, cue_prompt
+from scimed_scout.discovery.evidence_seed import (
+    recent_pubmed_cues, cue_prompt, recent_review_gap_cues, review_gap_prompt,
+)
 from scimed_scout.discovery import (
     DiscoveryNoveltyService,
     DiscoveryScoringService,
@@ -125,6 +127,12 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
             )
             generator = CandidateDiscoveryService(provider, ledger)
             evidence_cues = recent_pubmed_cues(job.specialty, job.question_type)
+            # Campbell/3ie-style evidence-gap cues from *actual review
+            # abstracts*, not model-generated claims of novelty. One free
+            # Europe PMC query, with a safe empty result on source outages.
+            review_gap_cues = recent_review_gap_cues(
+                job.specialty, job.question_type, max_records=5,
+            )
             # Save real bibliographic leads BEFORE any paid/free AI endpoint
             # is called. A quota or malformed JSON must not erase the evidence
             # already retrieved from PubMed. These are NOT review PICO proposals.
@@ -137,6 +145,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                         "note": "Real PubMed records. Not confirmed eligible primary studies, systematic-review ideas, or evidence of novelty.",
                         "candidate_count": 0,
                         "recent_pubmed_cues": evidence_cues,
+                        "published_review_gap_cues": review_gap_cues,
                         "candidates": [],
                     }
                 },
@@ -161,7 +170,9 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 question_types=[] if job.question_type.strip().upper() == "ALL" else [job.question_type],
                 design_scope=[],
                 count=job.candidate_count,
-                additional_context=cue_prompt(evidence_cues),
+                additional_context=(
+                    cue_prompt(evidence_cues) + "\n" + review_gap_prompt(review_gap_cues)
+                ).strip(),
                 progress_callback=generation_progress,
                 recent_topics=prior_topics,
                 skipped_recent=recently_skipped,
@@ -367,6 +378,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "duplicate_topics_skipped": result.duplicate_topics_skipped,
                     "duplicate_topics_skipped_count": len(result.duplicate_topics_skipped),
                     "recent_pubmed_cues": evidence_cues,
+                    "published_review_gap_cues": review_gap_cues,
                     "ai_failover_count": provider.total_failover_count,
                     "configured_free_ai_route": provider.configured_free_route,
                     "unavailable_free_providers": provider.unavailable_free_providers,
