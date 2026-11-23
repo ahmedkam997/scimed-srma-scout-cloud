@@ -25,6 +25,15 @@ TERMS = {
 }
 
 
+_NONPRIMARY_SEED_TITLE = re.compile(
+    r"\b(?:rationale and design|trial design|study protocol|protocol for|"
+    r"expert consensus|consensus statement|clinical practice guideline|"
+    r"systematic review|scoping review|meta.analysis|umbrella review|"
+    r"editorial|erratum|correction to|commentary)\b",
+    flags=re.I,
+)
+
+
 def recent_pubmed_cues(
     specialty: str,
     question_type: str = "ALL",
@@ -61,7 +70,15 @@ def recent_pubmed_cues(
     seen: set[str] = set()
     for record in result.records:
         title = str(record.title or "").strip()
-        if len(title) < 18 or title.casefold() in seen:
+        # PubMed sometimes indexes future print-year citations ahead of
+        # publication. Do not present a 2027 print-year record as an already
+        # published original trial in a 2026 discovery run. Nor should an
+        # expert consensus or protocol be treated as direct primary evidence.
+        if (
+            len(title) < 18 or title.casefold() in seen
+            or _NONPRIMARY_SEED_TITLE.search(title)
+            or (record.year is not None and record.year > year)
+        ):
             continue
         seen.add(title.casefold())
         output.append({
