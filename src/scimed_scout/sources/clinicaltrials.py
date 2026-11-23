@@ -73,7 +73,7 @@ class ClinicalTrialsGovSource:
                     protocol = study.get("protocolSection") or {}
                     ident = protocol.get("identificationModule") or {}
                     nct = str(ident.get("nctId") or "").strip()
-                    if not re.fullmatch(r"NCT\\d{8}", nct):
+                    if not re.fullmatch(r"NCT\d{8}", nct):
                         continue
                     records[nct] = SearchRecord(
                         self.name, nct, str(ident.get("briefTitle") or ident.get("officialTitle") or ""),
