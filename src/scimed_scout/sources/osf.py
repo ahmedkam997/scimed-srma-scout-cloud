@@ -165,7 +165,7 @@ class OSFRegistrationsSource:
                 modified = _literal(metadata.get("dateModified")).strip()
                 status = _literal(metadata.get("status")).strip()
                 withdrawn = _literal(metadata.get("withdrawn")).strip()
-                year = int(registered[:4]) if re.match(r"^(?:19|20)\\d{2}", registered) else None
+                year = int(registered[:4]) if re.match(r"^(?:19|20)\d{2}", registered) else None
                 records[rid] = SearchRecord(
                     self.name, rid, title=title,
                     url=f"https://osf.io/{rid}/" if candidates else "",
@@ -268,7 +268,7 @@ class OSFRegistrationsSource:
             if not rid:
                 continue
             registered = str(attrs.get("date_registered") or "")
-            year = int(registered[:4]) if re.match(r"^(?:19|20)\\d{2}", registered) else None
+            year = int(registered[:4]) if re.match(r"^(?:19|20)\d{2}", registered) else None
             records.append(SearchRecord(
                 self.name, rid, title=str(attrs.get("title") or ""),
                 url=str((item.get("links") or {}).get("html") or f"https://osf.io/{rid}/"),
