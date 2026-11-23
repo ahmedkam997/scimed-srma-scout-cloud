@@ -17,3 +17,7 @@
 .worker-help{margin-top:12px;border:1px solid #f5d58d;border-radius:10px;background:#fffbeb;padding:10px;font-size:12px;color:#854d0e}
 .worker-help p{margin:6px 0;line-height:1.45}
 .worker-link{font-weight:700;color:#1d4ed8;text-decoration:underline;display:inline-block;padding:5px 0}
+
+.job-failure-hint{font-size:12px;line-height:1.5;background:#fff8eb;border:1px solid #fed7aa;color:#7c2d12;border-radius:9px;padding:10px;margin:8px 0}
+.worker-help button[data-wake-job]{width:100%;margin:8px 0;border-color:#abc4e9;color:#153c70}
+.worker-help button[data-wake-job]:disabled{opacity:.55}
