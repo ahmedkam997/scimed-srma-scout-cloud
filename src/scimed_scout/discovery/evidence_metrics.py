@@ -192,28 +192,47 @@ def evidence_metrics(
     date_coverage = len(dated_primary) / distinct_primary_count if distinct_primary_count else 0.0
     new_since = None
     baseline_year = None
+    review_pub_years = [
+        _year((record.get("payload") or {}).get("year"))
+        for record in related_reviews
+    ]
+    latest_review_pub_year = max((y for y in review_pub_years if y), default=None)
+    post_pub = sum(year > latest_review_pub_year for _, year in dated_primary) if latest_review_pub_year else None
     if unresolved:
         gain = 0.0
         gain_status = "NOT_ESTIMABLE_COMPETITOR_SCOPE"
     elif not related_reviews:
-        # New synthesis opportunity is provisional until full-text studies and
-        # previous review search cutoffs are actually verified.
+        # This is only a bibliographic lead until full-text and source
+        # coverage confirm that there are no newer competing syntheses.
         gain = 4.0 if distinct_primary_count >= 4 else 0.0
         gain_status = "NO_MATCHING_EXISTING_SYNTHESIS_PROVISIONAL"
     else:
-        years = [_year((record.get("payload") or {}).get("year")) for record in related_reviews]
-        if not years or any(y is None for y in years):
+        search_dates = []
+        for record in related_reviews:
+            payload = record.get("payload") or {}
+            metadata = payload.get("metadata") or {}
+            if not isinstance(metadata, dict):
+                metadata = {}
+            explicit_cutoff = next((
+                metadata.get(key)
+                for key in (
+                    "last_search_date", "date_last_searched", "search_end_date",
+                    "date_of_last_search", "search_cutoff",
+                )
+                if metadata.get(key)
+            ), None)
+            search_dates.append(_year(explicit_cutoff))
+        if not search_dates or any(y is None for y in search_dates):
             gain = 0.0
-            gain_status = "NOT_ESTIMABLE_REVIEW_DATE"
+            gain_status = "NOT_ESTIMABLE_REVIEW_SEARCH_DATE"
         elif date_coverage < 0.8:
             gain = 0.0
             gain_status = "NOT_ESTIMABLE_PRIMARY_DATES"
         else:
-            # Publication year is a conservative proxy, NOT a search cutoff.
-            baseline_year = max(y for y in years if y is not None)
+            baseline_year = max(y for y in search_dates if y is not None)
             new_since = sum(year > baseline_year for _, year in dated_primary)
             gain = round(5.0 * new_since / max(1, distinct_primary_count), 2)
-            gain_status = "POST_PUBLICATION_STUDY_FRACTION_PROXY"
+            gain_status = "POST_DOCUMENTED_SEARCH_CUTOFF_BIBLIOGRAPHIC_PROXY"
 
     refs = [
         {
@@ -240,8 +259,10 @@ def evidence_metrics(
         "study_count_discovered_not_eligible": distinct_primary_count,
         "dated_primary_records": len(dated_primary),
         "primary_date_completeness": round(date_coverage, 3),
-        "latest_related_review_publication_year": baseline_year,
-        "primary_records_newer_than_publication": new_since,
+        "latest_related_review_publication_year": latest_review_pub_year,
+        "latest_related_review_search_year": baseline_year,
+        "primary_records_newer_than_publication": post_pub,
+        "primary_records_newer_than_review_search": new_since,
         "competing_reviews_assessed": len(review_pairs),
         "registrations_assessed": len(registration_pairs),
         "overlap_evidence": refs[:25],
