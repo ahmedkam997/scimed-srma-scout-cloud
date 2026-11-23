@@ -208,7 +208,14 @@ class SequenceProvider:
 
 def _proposal_named(name):
     item = candidate_payload()["candidates"][0]
-    return {**item, "title": name, "review_question": f"Does {name} change management?"}
+    return {
+        **item,
+        "title": name,
+        "review_question": f"Does {name} change management?",
+        # Different titles alone do not define distinct clinical questions.
+        # These fixtures test generation batching with genuinely distinct PICOs.
+        "intervention_exposure_index_test": f"Diagnostic test {name}",
+    }
 
 
 def test_candidate_generation_salvages_complete_objects_then_retries_short_json(tmp_path):
