@@ -167,3 +167,23 @@ def test_prospero_node_entry_can_run_from_verified_worker_build(monkeypatch, tmp
     result = ProsperoCliSource(runner=run).search("x")
     assert result.status == SourceStatus.SEARCHED_NEGATIVE
     assert calls[0][0] == "prospero"  # mocked runner takes precedence
+
+
+def test_prospero_count_drift_preserves_fetched_pages_without_false_clearance():
+    import json
+    import subprocess
+    from scimed_scout.sources.prospero import ProsperoCliSource
+    from scimed_scout.domain import SourceStatus
+
+    calls=[]
+    def inconsistent_index(command):
+        calls.append(command)
+        page=1 if len(calls)==1 else 2
+        payload={"ok":True,"data":{"total_hits":8 if page==1 else 9,
+            "hits":[{"record_id":str(page),"accession_number":f"CRD42026000000{page}",
+                     "title":f"Registered review {page}"}]}}
+        return subprocess.CompletedProcess(command,0,stdout=json.dumps(payload),stderr="")
+    result=ProsperoCliSource(runner=inconsistent_index,max_pages=2).search("heart failure",limit=2)
+    assert result.status==SourceStatus.PARTIAL
+    assert len(result.records)==2
+    assert "count_changed=True" in result.message
