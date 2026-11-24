@@ -678,6 +678,7 @@ function renderJobs() {
       key: node.dataset.gapKey,
       entries: [...node.querySelectorAll('details[data-gap-record][open]')]
         .map(child => child.dataset.gapRecord),
+      finalAuditOpen:!!node.querySelector('.gap-final-audit[open]'),
     }));
   const active = jobs.filter(job => ['QUEUED', 'RUNNING'].includes(job.status)).length;
   const qualified = jobs.reduce((sum, job) => sum + qualifiedOptions(job).length, 0);
@@ -1059,6 +1060,10 @@ function renderJobs() {
       .find(node => node.dataset.gapKey === saved.key);
     if (!panel) continue;
     panel.open = true;
+    if (saved.finalAuditOpen) {
+      const finalAudit=panel.querySelector('.gap-final-audit');
+      if (finalAudit) finalAudit.open=true;
+    }
     for (const idx of saved.entries) {
       const child = [...panel.querySelectorAll('details[data-gap-record]')]
         .find(node => node.dataset.gapRecord === idx);
@@ -1392,6 +1397,16 @@ els.refresh.addEventListener('click', async () => {
   }
 });
 els.jobs.addEventListener('click', async event => {
+  const finalAuditExport = event.target.closest('[data-final-audit-export]');
+  if (finalAuditExport) {
+    const job = jobs.find(row => row.id === finalAuditExport.dataset.finalAuditExport);
+    const topic = job && findTransferTopic(job,finalAuditExport.dataset.gapTopic);
+    if (!job || !topic || !window.SCIMED_FINAL || !window.SCIMED_GAP) return;
+    const audit = window.SCIMED_FINAL.build(job,topic,window.SCIMED_GAP);
+    const filename = topicFileName(topic).replace(/\.md$/i,'_Final_Evidence_Audit.json');
+    saveTextFile(filename,JSON.stringify(audit,null,2),'application/json;charset=utf-8');
+    return;
+  }
   const wakeButton = event.target.closest('[data-source-wake]');
   if (wakeButton) {
     const panel=wakeButton.closest('.gap-source-recheck');

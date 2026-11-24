@@ -2,6 +2,15 @@
 
 Discovery-only engine for high-value systematic review and meta-analysis topics.
 
+
+## Research-first novelty checks and Final Evidence Audit
+
+All future SciMed Scout research decisions and code changes follow [the research-first evidence audit SOP](docs/RESEARCH_FIRST_EVIDENCE_AUDIT_SOP.md). Consult maintained comparable projects, methodological guidelines and primary/independent clinical sources before selecting a new implementation.
+
+Each saved topic displays a **Final Evidence Audit** panel inside Research Gap Verification. The panel combines immutable original source status, manual source-linked notes, targeted source recheck diagnostics and, when independently researched, curated current competing reviews, PROSPERO titles and primary study family issues. It exports a traceable JSON brief. For the dialysis-dependent ESRD / LAAO-versus-DOAC example, see the [November 2026 source audit](research_audits/2026-11-24_LAAO_DOAC_ESRD_primary_study_audit.md).
+
+This feature never runs source queries on opening, changes an existing discovery qualification, counts bibliography records as independent eligible populations, or automatically awards GO. Registry index titles remain labeled TITLE_ONLY until the full protocol has been independently examined. Only a complete source-linked eligibility and study-family audit supports protocol registration.
+
 ## Scope
 
 The active product does one job: discover, verify and rank review topics.
