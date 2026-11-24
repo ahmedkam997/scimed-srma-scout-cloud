@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111827">
   <link rel="manifest" href="manifest.webmanifest">
   <title>SciMed Review Scout</title>
-  <link rel="stylesheet" href="styles.css?v=20261123-preliminary-score">
+  <link rel="stylesheet" href="styles.css?v=20261124-cloud-reconnect">
 </head>
 <body>
 <main>
@@ -126,7 +126,20 @@
 
   <p class="foot">A failed source is never interpreted as a negative search.</p>
 </main>
-<script src="config.js?v=20261123-preliminary-score"></script>
-<script type="module" src="app.js?v=20261123-preliminary-score"></script>
+<script src="config.js?v=20261124-cloud-reconnect"></script>
+<script type="module" src="app.js?v=20261124-cloud-reconnect"></script>
+<script>
+  // Runs independently of app.js: a failed module import cannot strand
+  // the Android UI on a permanently disabled Start button.
+  window.setTimeout(() => {
+    const status = document.getElementById('backendStatus');
+    if (!status || status.querySelector('b')?.textContent !== 'Connecting backend') return;
+    status.className = 'status-card status-error';
+    status.innerHTML = '<b>App could not finish loading</b>' +
+      '<span>The application script or cloud connection is unavailable. Reload the page and check your internet connection.</span>' +
+      '<button class="secondary small" type="button" id="reloadCloudApp">Reload app</button>';
+    document.getElementById('reloadCloudApp').addEventListener('click', () => location.reload());
+  }, 22000);
+</script>
 </body>
 </html>
