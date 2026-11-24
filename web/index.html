@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111827">
   <link rel="manifest" href="manifest.webmanifest">
   <title>SciMed Review Scout</title>
-  <link rel="stylesheet" href="styles.css?v=20261124-gap-verification">
+  <link rel="stylesheet" href="styles.css?v=20261124-gap-cloud">
 </head>
 <body>
 <main>
@@ -102,7 +102,7 @@
       <h2>Discovery jobs</h2>
       <button id="refresh" class="secondary small" disabled>Refresh</button>
     </div>
-    <p class="help">For each completed provisional idea, open "Research Gap Verification" to review PICO-ranked competing reviews and registrations, document manual findings with source URLs, and export a verification ledger. Open "Full topic details + ChatGPT review prompt" to transfer the original dossier. Manual findings stay in this browser only and never automatically qualify a topic.</p>
+    <p class="help">For each completed provisional idea, open "Research Gap Verification" to review PICO-ranked competing reviews and registrations, document manual findings with source URLs, synchronize notes privately to Supabase using this browser token, and export a verification ledger. Open "Full topic details + ChatGPT review prompt" to transfer the original dossier. Manual findings are saved locally first then synchronized to Supabase. The device token is browser-specific, so other devices do not share your notes automatically. No automatic qualification.</p>
     <div id="jobs" class="jobs">
       <p class="empty">No discovery jobs yet.</p>
     </div>
@@ -127,9 +127,9 @@
 
   <p class="foot">A failed source is never interpreted as a negative search.</p>
 </main>
-<script src="config.js?v=20261124-gap-verification"></script>
-<script src="gap-verification.js?v=20261124-gap-verification"></script>
-<script type="module" src="app.js?v=20261124-gap-verification"></script>
+<script src="config.js?v=20261124-gap-cloud"></script>
+<script src="gap-verification.js?v=20261124-gap-cloud"></script>
+<script type="module" src="app.js?v=20261124-gap-cloud"></script>
 <script>
   // Runs independently of app.js: a failed module import cannot strand
   // the Android UI on a permanently disabled Start button.
