@@ -1239,7 +1239,7 @@ els.jobs.addEventListener('click', event => {
     if (!job || !topic || !window.SCIMED_GAP) return;
     if (gapExport) {
       const exportData = window.SCIMED_GAP.exportLedger(job, topic);
-      const fileName = topicFileName(topic).replace(/\\.md$/i, '_Gap_Verification.json');
+      const fileName = topicFileName(topic).replace(/\.md$/i, '_Gap_Verification.json');
       saveTextFile(fileName, JSON.stringify(exportData, null, 2),
         'application/json;charset=utf-8');
       return;
