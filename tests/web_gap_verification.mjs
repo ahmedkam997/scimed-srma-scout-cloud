@@ -160,7 +160,7 @@ test('Cloud events for one browser-scoped job merge with locally unsent notes', 
     evidence_url:'https://pubmed.ncbi.nlm.nih.gov/123/',
     documented_last_search_date:'2024-08-30',
     rationale:'Published methods show matching PICO with a dated search',
-    created_at:'2026-11-24T13:51:00Z',
+    created_at:new Date(Date.now()+60000).toISOString(),
   },{
     id:randomUUID(),job_id:'ANOTHER-JOB',candidate_id:topic.candidate_id,
     record_key:'review|unrelated',decision:'DOCUMENTED_NON_OVERLAP',
