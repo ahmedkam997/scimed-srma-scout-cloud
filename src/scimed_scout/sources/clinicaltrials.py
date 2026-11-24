@@ -35,31 +35,41 @@ class ClinicalTrialsGovSource:
                 params = {
                     "query.term": safe_query,
                     "pageSize": 100,
-                    "countTotal": "true",
                 }
+                # ClinicalTrials.gov v2 includes totalCount on the first
+                # page when countTotal=true. Later pages may omit it.
+                if not token:
+                    params["countTotal"] = "true"
                 if token:
                     if token in seen_tokens:
                         break
                     seen_tokens.add(token)
                     params["pageToken"] = token
                 data = self.http.get_json(self.endpoint, params)
-                if not isinstance(data, dict) or data.get("totalCount") is None:
+                if not isinstance(data, dict):
                     return SearchResult(
                         self.name, query, SourceStatus.PARTIAL,
                         list(records.values()), total,
-                        message="ClinicalTrials.gov response missing totalCount",
+                        message="ClinicalTrials.gov response is not a JSON object",
                     )
-                current_total = int(data["totalCount"])
-                if current_total < 0:
-                    raise ValueError("Negative ClinicalTrials.gov totalCount")
-                if total is None:
-                    total = current_total
-                elif total != current_total:
+                if total is None and data.get("totalCount") is None:
                     return SearchResult(
                         self.name, query, SourceStatus.PARTIAL,
-                        list(records.values()), max(total, current_total),
-                        message="ClinicalTrials.gov result count changed while paginating",
+                        list(records.values()), total,
+                        message="ClinicalTrials.gov first page missing totalCount",
                     )
+                if data.get("totalCount") is not None:
+                    current_total = int(data["totalCount"])
+                    if current_total < 0:
+                        raise ValueError("Negative ClinicalTrials.gov totalCount")
+                    if total is None:
+                        total = current_total
+                    elif total != current_total:
+                        return SearchResult(
+                            self.name, query, SourceStatus.PARTIAL,
+                            list(records.values()), max(total, current_total),
+                            message="ClinicalTrials.gov result count changed while paginating",
+                        )
                 studies = data.get("studies")
                 if not isinstance(studies, list):
                     return SearchResult(
