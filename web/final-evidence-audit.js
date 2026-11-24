@@ -230,6 +230,15 @@
       prioritized_published_reviews:curated?.published_reviews?.length
         ? curated.published_reviews : bibliographicLeads('review'),
       study_family_screening_ledger:curated?.study_reports || [],
+      curated_report_screening_scope: 'BOUNDED_NON_EXHAUSTIVE_PRIMARY_SOURCE_AUDIT',
+      curated_reports_with_full_text_source_inspected: (curated?.study_reports||[])
+        .filter(r=>r.full_text_source_inspected===true).length,
+      curated_report_decisions_excluding_or_not_extractable: (curated?.study_reports||[])
+        .filter(r=>String(r.exact_pico_eligibility_decision||'').startsWith('EXCLUDE')
+          || String(r.exact_pico_eligibility_decision||'').startsWith('NOT_EXTRACTABLE')
+          || String(r.exact_pico_eligibility_decision||'').startsWith('LM_ONLY_COUNTS_NOT_REPORTED')).length,
+      verified_eligible_independent_reports_in_this_curated_screen:verifiedIndependent.length,
+      this_screen_cannot_establish_total_global_eligible_count:true,
       saved_citation_shortlist_count:savedCitations.length,
       noncurated_bibliography_fallback_not_full_text:true,
       evidence_methods:[...methodsFor(type),...(curated?.sources_and_methods||[])],
@@ -268,6 +277,8 @@
             '<p class="help">Population: '+esc(r.population||'unknown')+
             '. Comparator: '+esc(r.comparator||'unknown')+
             '. Family: '+esc(r.family||'unresolved')+
+            '. Full-text source directly inspected: '+(r.full_text_source_inspected===true?'YES':'NO / NOT CONFIRMED')+
+            '. Exact PICO screening status: '+esc(r.exact_pico_eligibility_decision||'NOT ASSESSED')+
             '. Independence and extraction: '+(verifiedIndependence(r)?'VERIFIED':'NOT VERIFIED')+
             '. Potential overlap: '+esc((r.possible_overlaps||[]).join(', ')||'unknown')+
             '</p>':
