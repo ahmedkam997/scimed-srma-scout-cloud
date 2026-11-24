@@ -167,10 +167,18 @@ def _registry_focus(value: str) -> list[str]:
     """Clinical terms, without dose/time and generic Boolean noise."""
     raw = re.sub(r"\([^)]*\)", " ", str(value or ""))
     raw = raw.replace("‑", "-").replace("–", "-").replace("—", "-")
-    # Split hyphenated dose modifiers before filtering. Previously
-    # "Oral low-dose colchicine" became ["oral", "low-dose"] and
-    # completely lost the drug name from registry searches.
-    tokens = re.findall(r"[a-z0-9]+", raw.casefold())
+    # Split lexical compounds (e.g. low-dose, sacubitril-valsartan)
+    # while retaining hybrid medical codes such as DPP-4 and IL-6.
+    # Previously "oral low-dose colchicine" yielded generic "oral low-dose"
+    # and dropped the active drug name entirely.
+    compounds = re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", raw.casefold())
+    tokens = []
+    for compound in compounds:
+        parts = compound.split("-")
+        if len(parts) == 2 and (parts[0].isdigit() or parts[1].isdigit()):
+            tokens.append(compound)
+        else:
+            tokens.extend(parts)
     return list(dict.fromkeys(
         token for token in tokens
         if token not in _REGISTRY_NOISE
