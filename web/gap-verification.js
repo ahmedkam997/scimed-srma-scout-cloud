@@ -145,9 +145,10 @@
       const existing = deduped.get(key);
       if (!existing || (!existing.cloud_synced && item.cloud_synced)) deduped.set(key, item);
     }
+    // Stable sort: two human corrections saved within the same millisecond
+    // retain their append order. UUID order is not temporal evidence.
     const history = [...deduped.values()].sort((a,b) =>
       String(a.recorded_at_utc || '').localeCompare(String(b.recorded_at_utc || ''))
-      || String(a.id || '').localeCompare(String(b.id || ''))
     );
     const decisions = {};
     for (const item of history) if (item.record_key) decisions[item.record_key] = item;
