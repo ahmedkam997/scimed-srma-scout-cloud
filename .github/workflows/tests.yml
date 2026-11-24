@@ -16,8 +16,10 @@ jobs:
       - run: python -m pip install -e '.[dev]'
       - run: pytest -q
       - run: node --check web/app.js
+      - run: node --check web/gap-verification.js
       - run: node --check web/sw.js
       - run: node --test tests/web_legacy_dedup.mjs
       - run: node --test tests/web_topic_transfer.mjs
+      - run: node --test tests/web_gap_verification.mjs
       - run: node --test tests/web_startup_reconnect.mjs
       - run: scimed-scout health
