@@ -34,6 +34,8 @@ def test_pubmed_checkpoint_saved_before_unavailable_ai(monkeypatch):
          "pmid": "12345", "url": "https://pubmed.ncbi.nlm.nih.gov/12345/",
          "verified_inclusion": False}
     ])
+    monkeypatch.setattr(discovery_worker, "recent_review_gap_cues",
+                        lambda *args, **kwargs: [])
 
     def fail_generation(self, **kwargs):
         raise RuntimeError("free AI unreachable")
