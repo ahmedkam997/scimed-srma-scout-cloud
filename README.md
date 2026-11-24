@@ -129,6 +129,7 @@ Default model and endpoint:
 Other optional secrets:
 
     SEMANTIC_SCHOLAR_API_KEY
+    OPENALEX_API_KEY        # Optional free OpenAlex account key; never put in browser config
 
 The smoke workflow `.github/workflows/gemini-smoke.yml` verifies actual key/model access with one small JSON request without printing the secret. The GitHub Actions test suite runs mocked provider-quota tests without contacting Gemini.
 
