@@ -213,7 +213,7 @@ class SourceRecheckStore(SupabaseJobStore):
         return result[0] if result else None
 
     def parent_job(self, job_id: str) -> dict[str, Any]:
-        rows = self._select({"select":"id,status,specialty,question_type,result_json",
+        rows = self._select({"select":"id,status,specialty,question_type,result_json,client_token_hash",
                              "id":f"eq.{job_id}","limit":"1"})
         if not rows:
             raise ValueError("Parent discovery job not available.")
@@ -245,10 +245,10 @@ def run_once(store: SourceRecheckStore | None = None,
         return 0
     try:
         parent = store.parent_job(str(row["job_id"]))
-        if str(row.get("client_token_hash")) != str(parent.get("client_token_hash")):
-            # The parent select omits client_token_hash, so we rely instead
-            # on the RLS insert policy, which already ensured ownership.
-            pass
+        if not row.get("client_token_hash") or (
+            str(row["client_token_hash"]) != str(parent.get("client_token_hash"))
+        ):
+            raise PermissionError("Recheck request owner does not match the original job.")
         result = recheck_saved_topic(parent,str(row["candidate_id"]),
                                      source_clients=source_clients)
         store.finish_recheck(str(row["id"]),result)
