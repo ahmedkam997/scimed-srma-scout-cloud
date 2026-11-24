@@ -41,7 +41,19 @@ Applies to every future feature, clinical PICO, discovery job, novelty audit, an
 
 Always keep the scientific assessment separate from automated job statuses (`QUEUED`, `RUNNING`, `COMPLETED`) and from the discovery `QUALIFIED` label.
 
-## E. Evidence transfer and audit trail
+## E. PICO-specific scientific audit templates
+
+Every Final Evidence Audit must classify the question from its actual index test/intervention, population, comparator/reference standard, eligible design and outcomes BEFORE generating its scientific gates. Do not reuse an ESRD/DOAC gate in diagnostic FFR-CT questions or any other unrelated topic. A regression test should explicitly forbid cross-topic concepts.
+
+For diagnostic test accuracy (DTA), use the [Cochrane DTA Handbook](https://www.cochrane.org/authors/handbooks-and-manuals/handbook-systematic-reviews-diagnostic-test-accuracy), [PRISMA-DTA](https://www.prisma-statement.org/dta), and [QUADAS-3 (2026)](https://pubmed.ncbi.nlm.nih.gov/41698208/) as relevant. Require matching target-condition and reference-standard definitions, threshold, TP/FP/FN/TN, patient/vessel/lesion unit of analysis, applicability and risk of bias. A 2x2 table using angiography is not automatically eligible for an invasive physiological FFR accuracy review.
+
+For comparative interventions, require the same PICO intervention and comparator arms, compatible endpoints and follow-up, with RoB 2/ROBINS-I as relevant. For prognosis, require compatible predictions/effects and time horizon. For prevalence, require a valid case definition with numerator and population denominator. For evidence mapping, prioritize source coverage and charting rather than assuming quantitative meta-analysis.
+
+The Scout 4-study minimum is a **project prioritization preference**, NOT a universal methodological law for DTA or any other evidence synthesis. Preserve unknown eligible counts as `null`; never infer zero from a preliminary report. A general bibliography lead is not a full-text verified study even if its title contains exact PICO terms.
+
+Before building new statistics, evaluate existing maintained tools such as [MetaDTA](https://github.com/CRSU-Apps/MetaDTA) and [Meta-DiSc 2.0](https://pmc.ncbi.nlm.nih.gov/articles/PMC9707040/), and record what their methods already provide.
+
+## F. Evidence transfer and audit trail
 
 - For each recommendation, preserve its source link, date, scope, limitations and next verification action.
 - Keep competing published reviews distinct from registrations. Old registrations do not imply a completed published synthesis.

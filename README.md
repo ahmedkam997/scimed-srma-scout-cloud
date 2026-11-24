@@ -9,7 +9,10 @@ All future SciMed Scout research decisions and code changes follow [the research
 
 Each saved topic displays a **Final Evidence Audit** panel inside Research Gap Verification. The panel combines immutable original source status, manual source-linked notes, targeted source recheck diagnostics and, when independently researched, curated current competing reviews, PROSPERO titles and primary study family issues. It exports a traceable JSON brief. For the dialysis-dependent ESRD / LAAO-versus-DOAC example, see the [November 2026 source audit](research_audits/2026-11-24_LAAO_DOAC_ESRD_primary_study_audit.md).
 
-This feature never runs source queries on opening, changes an existing discovery qualification, counts bibliography records as independent eligible populations, or automatically awards GO. Registry index titles remain labeled TITLE_ONLY until the full protocol has been independently examined. Only a complete source-linked eligibility and study-family audit supports protocol registration.
+This feature never runs source queries on opening, changes an existing discovery qualification, counts bibliography records as independent eligible populations, or automatically awards GO.
+
+The Final Evidence Audit now derives its unresolved criteria from the clinical question type. For **diagnostic-test-accuracy** questions it checks the index test, true reference standard, accuracy 2×2 counts, analytical unit and QUADAS-3 instead of leaking unrelated intervention/comparator rules into other PICOs. Uncurated topics display saved bibliography as **unscreened citation leads** rather than invented evidence or an empty full-text audit. See the [CT-derived FFR in intermediate left main disease preflight](research_audits/2026-11-24_CTFFR_Left_Main_DTA_preflight.md), based on contemporary SCCT/SCAI consensus, Cochrane DTA, PRISMA-DTA and compared open-source DTA tools.
+ Registry index titles remain labeled TITLE_ONLY until the full protocol has been independently examined. Only a complete source-linked eligibility and study-family audit supports protocol registration.
 
 ## Scope
 
