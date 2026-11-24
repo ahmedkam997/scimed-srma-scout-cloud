@@ -194,6 +194,15 @@ class ReviewDiscoveryOrchestrator:
                 pending.append(f"TYPE-A: novelty assessment failed: {exc}")
             candidate = self.ledger.get_candidate(candidate_id) or candidate
 
+        # Novelty assessment writes source-linked semantic judgments and
+        # resolved search dates back to the ledger. Refresh these records:
+        # the pre-assessment snapshots have no judgments and incorrectly
+        # force evidence_metrics() to report zero assessed competitors.
+        # Unassessed records remain in the complete corpus and still block
+        # final qualification; this is a data-freshness fix, not clearance.
+        reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
+        registrations = self.ledger.list_external_evidence(candidate_id, "REGISTRATION")
+
         meta = candidate.metadata or {}
         if reviews and not bool(meta.get("discovery_competitor_assessment_complete")):
             pending.append("TYPE-A: competing published reviews are not fully assessed")
