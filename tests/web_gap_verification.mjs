@@ -122,11 +122,12 @@ test('The exported ledger retains unresolved source coverage and original biblio
   assert.equal(ledger.schema,'SCIMED_RESEARCH_GAP_VERIFICATION_V1');
   assert.equal(ledger.manual_review_does_not_override_gates,true);
   assert.equal(ledger.qualification_automatically_modified,false);
+  assert.equal(ledger.history_is_not_cryptographically_immutable_or_authenticated,true);
   assert.equal(ledger.original_status,'PROVISIONAL_BACKUP');
   assert.equal(ledger.saved_source_statuses.PROSPERO,'PARTIAL');
   assert.equal(ledger.source_search_audit[0].status,'PARTIAL');
   assert.equal(ledger.bibliographic_candidates_ordered_for_manual_review.length,3);
-  assert.equal(ledger.immutable_local_adjudication_history.length,1);
+  assert.equal(ledger.append_only_local_adjudication_history.length,1);
 });
 
 test('HTML-escaped titles and non-whitelisted links cannot inject markup', () => {
