@@ -71,3 +71,11 @@
 .gap-source-recheck>summary{color:#164e84;font-weight:800;cursor:pointer}
 .gap-source-recheck button:disabled{opacity:.6;cursor:default}
 .gap-source-message{overflow-wrap:anywhere;color:#125c75;font-size:12px}
+
+/* Source-linked Final Evidence Audit: compact, mobile-first and printable. */
+.gap-final-audit{border:1px solid #96b6a1;background:#f6faf7;border-radius:9px;margin:12px 0;padding:11px;color:#193429}
+.gap-final-audit>summary{font-weight:800;color:#22513b;cursor:pointer;line-height:1.45}
+.gap-final-audit .gap-queue{border-color:#d1e5d8}
+.gap-final-audit .gap-record{background:#fff;word-break:break-word;border-top:1px solid #e5ebeb}
+.gap-final-audit .gap-record p{margin:6px 0}
+.gap-final-audit button{white-space:normal;max-width:100%;margin-top:10px}
