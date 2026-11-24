@@ -166,6 +166,23 @@
       rationale:String(item.rationale||''),
       recorded_at_utc:item.recorded_at_utc || null,
     }));
+    // Fallback to source-linked, unscreened citations already saved in the
+    // original dossier. This is NOT a fresh search or a curated full-text audit.
+    // The saved shortlist may omit many original source hits.
+    const savedCitations=typeof gap?.evidenceOf === 'function'
+      ? (gap.evidenceOf(topic) || []) : [];
+    const bibliographicLeads=kind => savedCitations
+      .filter(item=>item.kind===kind).slice(0,20).map(item=>({
+        id:String(item.record_id||item.doi||item.key||''),
+        title:String(item.title||'Untitled citation'),
+        url:String(item.url||''),
+        source:String(item.source||'Unknown'),
+        evidence_level:'SAVED_BIBLIOGRAPHIC_CITATION_ONLY',
+        overlap:'UNASSESSED',
+        full_protocol_accessed:false,
+        last_search_date:null,
+        note:'Retrieved from saved source-linked bibliography; not independently screened for full PICO, publication/registration status, or actual last search date.',
+      }));
     const competitors=quality.competing_review_screening || {};
     const reviewHits=countOrUnknown(competitors.published_review_records_discovered);
     const registrationHits=countOrUnknown(competitors.registration_records_discovered);
@@ -208,9 +225,13 @@
       source_coverage_problems_preserved:sourceProblems,
       targeted_search_technical_results:targetedResults,
       saved_manual_review_decisions:manualDecisions,
-      prioritized_registrations:curated?.registrations || [],
-      prioritized_published_reviews:curated?.published_reviews || [],
+      prioritized_registrations:curated?.registrations?.length
+        ? curated.registrations : bibliographicLeads('registration'),
+      prioritized_published_reviews:curated?.published_reviews?.length
+        ? curated.published_reviews : bibliographicLeads('review'),
       study_family_screening_ledger:curated?.study_reports || [],
+      saved_citation_shortlist_count:savedCitations.length,
+      noncurated_bibliography_fallback_not_full_text:true,
       evidence_methods:[...methodsFor(type),...(curated?.sources_and_methods||[])],
       clinical_question:topic.research_dossier?.scientific_question || {
         population:topic.population,
