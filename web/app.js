@@ -678,6 +678,7 @@ function renderJobs() {
       key: node.dataset.gapKey,
       entries: [...node.querySelectorAll('details[data-gap-record][open]')]
         .map(child => child.dataset.gapRecord),
+      finalAuditOpen:!!node.querySelector('.gap-final-audit[open]'),
     }));
   const active = jobs.filter(job => ['QUEUED', 'RUNNING'].includes(job.status)).length;
   const qualified = jobs.reduce((sum, job) => sum + qualifiedOptions(job).length, 0);
@@ -1059,6 +1060,10 @@ function renderJobs() {
       .find(node => node.dataset.gapKey === saved.key);
     if (!panel) continue;
     panel.open = true;
+    if (saved.finalAuditOpen) {
+      const finalAudit=panel.querySelector('.gap-final-audit');
+      if (finalAudit) finalAudit.open=true;
+    }
     for (const idx of saved.entries) {
       const child = [...panel.querySelectorAll('details[data-gap-record]')]
         .find(node => node.dataset.gapRecord === idx);
