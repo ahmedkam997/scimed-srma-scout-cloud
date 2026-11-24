@@ -321,11 +321,22 @@ class OSFRegistrationsSource:
                             ),
                         )
                     if isinstance(rows, list) and rows:
+                        # The indexes can disagree: Trove can return zero
+                        # for exact Boolean phrases while the official OSF
+                        # registration v2 title filter returns real records.
+                        # Previously these real citations were DISCARDED.
+                        # Preserve the records for manual checking; never
+                        # declare complete registration search coverage.
+                        v2_records = self._v2_records(rows)
                         return SearchResult(
                             self.name, original, SourceStatus.PARTIAL,
+                            v2_records, len(rows),
                             message=(
-                                f"OSF v2 found {len(rows)} matches for query '{focus}' "
-                                "despite Trove zero; audit indexes manually."
+                                f"OSF Trove returned zero for '{focus}' but v2 "
+                                f"found {len(rows)} title-filter matches "
+                                f"({len(v2_records)} parsed records). "
+                                "Citations retained for manual verification. "
+                                "Index disagreement prevents full search clearance."
                             ),
                         )
                 except (RuntimeError, ValueError, TypeError, KeyError, OSError):
@@ -358,35 +369,43 @@ class OSFRegistrationsSource:
             ),
         )
 
+
+    def _v2_records(self, rows: list[dict]) -> list[SearchRecord]:
+        """Parse actual registration citations from OSF v2 without inventing
+        a full-text protocol, eligibility result or last search date.
+        """
+            records = []
+            for item in rows:
+                if not isinstance(item, dict):
+                    continue
+                rid = str(item.get("id") or "")
+                attrs = item.get("attributes") or {}
+                if not rid:
+                    continue
+                registered = str(attrs.get("date_registered") or "")
+                year = int(registered[:4]) if re.match(r"^(?:19|20)\d{2}", registered) else None
+                records.append(SearchRecord(
+                    self.name, rid, title=str(attrs.get("title") or ""),
+                    url=str((item.get("links") or {}).get("html") or f"https://osf.io/{rid}/"),
+                    year=year,
+                    metadata={
+                        "abstract": str(attrs.get("description") or "")[:2000],
+                        "registry_search": "OSF v2 title-only fallback",
+                        "date_registered": registered,
+                        "date_modified": str(attrs.get("date_modified") or ""),
+                        "registry_status": str(attrs.get("reviews_state") or ""),
+                        "withdrawn": bool(attrs.get("withdrawn", False)),
+                    },
+                ))
+        return records
+
     def _search_v2(self, original: str, focus: str, limit: int) -> SearchResult:
         size = min(max(1, int(limit)), 20)
         data = self.http.get_json(self.endpoint, {"filter[title]": focus, "page[size]": size})
         rows = data.get("data")
         if not isinstance(rows, list):
             raise ValueError("OSF v2 response missing data")
-        records = []
-        for item in rows:
-            if not isinstance(item, dict):
-                continue
-            rid = str(item.get("id") or "")
-            attrs = item.get("attributes") or {}
-            if not rid:
-                continue
-            registered = str(attrs.get("date_registered") or "")
-            year = int(registered[:4]) if re.match(r"^(?:19|20)\d{2}", registered) else None
-            records.append(SearchRecord(
-                self.name, rid, title=str(attrs.get("title") or ""),
-                url=str((item.get("links") or {}).get("html") or f"https://osf.io/{rid}/"),
-                year=year,
-                metadata={
-                    "abstract": str(attrs.get("description") or "")[:2000],
-                    "registry_search": "OSF v2 title-only fallback",
-                    "date_registered": registered,
-                    "date_modified": str(attrs.get("date_modified") or ""),
-                    "registry_status": str(attrs.get("reviews_state") or ""),
-                    "withdrawn": bool(attrs.get("withdrawn", False)),
-                },
-            ))
+        records = self._v2_records(rows)
         next_link = (data.get("links") or {}).get("next")
         return SearchResult(
             self.name, original, SourceStatus.PARTIAL, records, len(records),
