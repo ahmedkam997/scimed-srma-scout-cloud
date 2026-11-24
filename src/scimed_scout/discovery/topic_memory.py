@@ -174,6 +174,7 @@ _EXPLORATION_THEME_STOP = {
     "oral", "ingestion", "supplementation", "supplement", "supplements",
     "treatment", "treatments", "therapy", "therapies", "and", "for",
     "versus", "standard", "patients", "patient", "adult", "adults",
+    "vitamin", "combination", "treating", "agent",
 }
 
 
@@ -182,7 +183,11 @@ def intervention_theme_tokens(value: Any) -> frozenset[str]:
     return frozenset(
         term for term in _tokens(value)
         if term not in _EXPLORATION_THEME_STOP
-        and len(term) >= 3
+        and (len(term) >= 3 or (
+            len(term) == 2
+            and any(char.isdigit() for char in term)
+            and any(char.isalpha() for char in term)
+        ))
         and not term.isdigit()
     )
 
