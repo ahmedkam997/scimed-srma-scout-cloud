@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/source-health.yml'
       - 'scripts/source_health.py'
+      - 'src/scimed_scout/sources/**'
+      - 'src/scimed_scout/verification/queries.py'
   workflow_dispatch:
   schedule:
     - cron: '17 6 * * *'
