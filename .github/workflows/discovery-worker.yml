@@ -11,7 +11,7 @@ on:
     - cron: '3-58/5 * * * *'
   workflow_dispatch:
   repository_dispatch:
-    types: [scimed-discovery-queued]
+    types: [scimed-discovery-queued, scimed-recheck-queued]
 
 permissions:
   contents: read
@@ -42,23 +42,34 @@ jobs:
       - name: Check worker configuration
         id: config
         run: |
-          if [ -z "$SCIMED_WORKER_TOKEN" ] || { [ -z "$SCIMED_AI_API_KEY" ] && [ -z "$GEMINI_API_KEY" ] && [ -z "$GROQ_API_KEY" ]; }; then
+          if [ -z "$SCIMED_WORKER_TOKEN" ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "Worker token or all free AI provider keys are missing."
+            echo "Worker token is missing."
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Check queue
+      - name: Check discovery and source recheck queues
         if: steps.config.outputs.ready == 'true'
         id: queue
         run: |
-          RESULT=$(curl --fail --silent --show-error             -H "apikey: $SUPABASE_ANON_KEY"             -H "Authorization: Bearer $SUPABASE_ANON_KEY"             -H "x-scimed-worker-token: $SCIMED_WORKER_TOKEN"             "$SUPABASE_URL/rest/v1/discovery_jobs?select=id&status=eq.QUEUED&order=created_at.asc&limit=1")
-          if [ "$RESULT" = "[]" ]; then
-            echo "has_job=false" >> "$GITHUB_OUTPUT"
-            echo "No queued discovery job."
-          else
+          AUTH=(-H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $SUPABASE_ANON_KEY" -H "x-scimed-worker-token: $SCIMED_WORKER_TOKEN")
+          RECHECK=$(curl --fail --silent --show-error "${AUTH[@]}" "$SUPABASE_URL/rest/v1/scimed_source_rechecks?select=id&status=eq.QUEUED&order=created_at.asc&limit=1")
+          DISCOVERY=$(curl --fail --silent --show-error "${AUTH[@]}" "$SUPABASE_URL/rest/v1/discovery_jobs?select=id&status=eq.QUEUED&order=created_at.asc&limit=1")
+          if [ "$RECHECK" != "[]" ]; then
             echo "has_job=true" >> "$GITHUB_OUTPUT"
+            echo "kind=recheck" >> "$GITHUB_OUTPUT"
+          elif [ "$DISCOVERY" != "[]" ]; then
+            if [ -z "$SCIMED_AI_API_KEY" ] && [ -z "$GEMINI_API_KEY" ] && [ -z "$GROQ_API_KEY" ]; then
+              echo "has_job=false" >> "$GITHUB_OUTPUT"
+              echo "No AI provider key configured for the discovery queue."
+            else
+              echo "has_job=true" >> "$GITHUB_OUTPUT"
+              echo "kind=discovery" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "has_job=false" >> "$GITHUB_OUTPUT"
+            echo "No queued work."
           fi
 
       - uses: actions/checkout@v4
@@ -88,5 +99,9 @@ jobs:
           echo "PROSPERO_CLI_JS=$RUNNER_TEMP/prospero-mcp/dist/cli.js" >> "$GITHUB_ENV"
 
       - name: Process next queued discovery job
-        if: steps.config.outputs.ready == 'true' && steps.queue.outputs.has_job == 'true'
+        if: steps.config.outputs.ready == 'true' && steps.queue.outputs.has_job == 'true' && steps.queue.outputs.kind == 'discovery'
         run: python -m scimed_scout.cloud.worker
+
+      - name: Recheck failed sources for one saved PICO without AI
+        if: steps.config.outputs.ready == 'true' && steps.queue.outputs.has_job == 'true' && steps.queue.outputs.kind == 'recheck'
+        run: python -m scimed_scout.cloud.source_recheck
