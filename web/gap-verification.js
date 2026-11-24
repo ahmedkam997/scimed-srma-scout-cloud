@@ -4,6 +4,7 @@
 (function () {
   'use strict';
   const PREFIX = 'scimed-gap-verification-v1:';
+  let cloudEvents = []; // Browser-scoped rows fetched through Supabase RLS.
   const ALLOWED = new Set([
     'UNREVIEWED', 'NEEDS_FULL_TEXT', 'POTENTIAL_OVERLAP',
     'DOCUMENTED_OVERLAP', 'DOCUMENTED_NON_OVERLAP',
@@ -96,7 +97,7 @@
   function storageKey(job, topic) {
     return PREFIX + String(job?.id || '') + ':' + String(topic?.candidate_id || '');
   }
-  function read(job, topic) {
+  function readLocal(job, topic) {
     try {
       const data = JSON.parse(localStorage.getItem(storageKey(job, topic)) || '{}');
       return {
@@ -107,6 +108,72 @@
     } catch {
       return {decisions: {}, history: []};
     }
+  }
+  function setCloudEvents(rows) {
+    cloudEvents = Array.isArray(rows) ? rows.filter(item =>
+      item && typeof item.job_id === 'string' && typeof item.candidate_id === 'string'
+    ).map(item => ({...item})) : [];
+  }
+  function cloudAsEvent(row) {
+    return {
+      id: row.id,
+      record_key: row.record_key,
+      record_type: row.record_type,
+      title_at_adjudication: row.title_at_adjudication,
+      source: row.source,
+      decision: row.decision,
+      evidence_url: row.evidence_url,
+      documented_last_search_date: row.documented_last_search_date,
+      rationale: row.rationale,
+      reviewer: 'Possessor of this browser device token (not an authenticated identity)',
+      recorded_at_utc: row.created_at,
+      cloud_synced: true,
+      scope: 'USER_DOCUMENTED_CLOUD_FINDING_NO_AUTOMATIC_CLEARANCE',
+    };
+  }
+  function read(job, topic) {
+    const local = readLocal(job, topic);
+    const remote = cloudEvents.filter(item =>
+      item.job_id === job?.id && item.candidate_id === topic?.candidate_id
+    ).map(cloudAsEvent);
+    const deduped = new Map();
+    for (const item of [...remote, ...local.history]) {
+      const key = item.id || [
+        item.record_key, item.recorded_at_utc, item.decision, item.evidence_url,
+      ].join('|');
+      // A locally synced copy with the same id is the same source finding.
+      const existing = deduped.get(key);
+      if (!existing || (!existing.cloud_synced && item.cloud_synced)) deduped.set(key, item);
+    }
+    // Stable sort: two human corrections saved within the same millisecond
+    // retain their append order. UUID order is not temporal evidence.
+    const history = [...deduped.values()].sort((a,b) =>
+      String(a.recorded_at_utc || '').localeCompare(String(b.recorded_at_utc || ''))
+    );
+    const decisions = {};
+    for (const item of history) if (item.record_key) decisions[item.record_key] = item;
+    return {decisions, history};
+  }
+  function assignPendingIds(job, topic) {
+    const local = readLocal(job, topic);
+    let changed = false;
+    for (const item of local.history) {
+      if (!item.id) {
+        item.id = crypto.randomUUID();
+        changed = true;
+      }
+    }
+    if (changed) {
+      localStorage.setItem(storageKey(job, topic), JSON.stringify(local));
+    }
+    return local.history.filter(item => !item.cloud_synced);
+  }
+  function markCloudSynced(job, topic, eventId) {
+    const data = readLocal(job, topic);
+    for (const event of data.history) {
+      if (event.id === eventId) event.cloud_synced = true;
+    }
+    localStorage.setItem(storageKey(job, topic), JSON.stringify(data));
   }
   function validEvidenceUrl(value) {
     try {
@@ -137,8 +204,10 @@
         Number.isNaN(Date.parse(searchDate)) || searchDate > new Date().toISOString().slice(0,10))) {
       return {ok:false, error:'The review search date must be a documented past YYYY-MM-DD date.'};
     }
-    const data = read(job, topic);
+    const data = readLocal(job, topic);
     const stamped = {
+      id: crypto.randomUUID(),
+      cloud_synced: false,
       record_key: record.key,
       record_type: record.kind,
       title_at_adjudication: record.title,
@@ -230,7 +299,7 @@
     return '<details class="gap-review" data-gap-key="' + esc(job.id + ':' + topic.candidate_id) + '">' +
       '<summary>Research Gap Verification · ' + decisions + ' saved manual finding(s)</summary>' +
       '<p class="help">Evidence review workbench. This never changes a source status, scientific gate or QUALIFIED decision automatically.</p>' +
-      '<p class="help">Notes are stored only in this browser profile. Export JSON as an offline backup; importing into another browser is not yet supported. Cloud job history remains unchanged.</p>' +
+      '<p class="help">Notes are saved locally first and synchronized with your private Supabase job when connected. The browser device token controls access, not an authenticated account. Export JSON backups; sharing across a different device is not available yet.</p>' +
       '<p><b>Question:</b> ' + esc(q.review_question || topic.title) + '</p>' +
       '<div class="gap-counts"><span>Reviews: ' + esc(check.published_review_records_discovered ?? 'unknown') + '</span>' +
       '<span>Review backlog: ' + esc(check.unassessed_published_review_count ?? 'unknown') + '</span>' +
@@ -243,9 +312,108 @@
       itemsHtml('review','Competing published reviews') +
       itemsHtml('registration','PROSPERO and OSF registrations') +
       '<p class="help">Review dates, true PICO overlap, trial-family independence and extractable outcomes require documented verification. Marking a citation here does not resolve full search coverage or qualify a topic.</p>' +
+      '<button type="button" class="secondary small" data-gap-reassess="' + esc(job.id) +
+      '" data-gap-topic="' + esc(topic.candidate_id) + '">Re-evaluate saved evidence (no new searches)</button>' +
       '<button type="button" class="secondary small" data-gap-export="' + esc(job.id) +
       '" data-gap-topic="' + esc(topic.candidate_id) + '">Export verification ledger (.json)</button>' +
+      '<div class="gap-reassessment" aria-live="polite"></div>' +
       '</details>';
+  }
+  function reassess(job, topic) {
+    // Deliberately a cached diagnostic, never a scientific or registry gate.
+    const records = evidenceOf(topic);
+    const latest = read(job, topic).decisions;
+    const quality = topic?.research_dossier?.verification_and_quality || {};
+    const sources = quality.source_statuses || topic.source_statuses || {};
+    const screening = quality.competing_review_screening || {};
+    const sourceIssues = Object.entries(sources)
+      .filter(([,status]) => ['PARTIAL','ACCESS_FAILED','NOT_SEARCHED','UNKNOWN'].includes(status))
+      .map(([source,status]) => ({source,status}));
+    if (!Object.keys(sources).length) {
+      sourceIssues.push({source:'Saved source audit',status:'UNKNOWN'});
+    }
+    const sourceBlockers = Array.isArray(quality.source_blockers)
+      ? quality.source_blockers : [];
+    const declaredReviewCount = screening.published_review_records_discovered == null
+      ? NaN : Number(screening.published_review_records_discovered);
+    const declaredRegistrationCount = screening.registration_records_discovered == null
+      ? NaN : Number(screening.registration_records_discovered);
+    const discovered = {
+      review: records.filter(row => row.kind === 'review').length,
+      registration: records.filter(row => row.kind === 'registration').length,
+    };
+    const expected = {
+      review: Number.isFinite(declaredReviewCount) && declaredReviewCount >= 0
+        ? Math.max(discovered.review,declaredReviewCount) : null,
+      registration: Number.isFinite(declaredRegistrationCount) && declaredRegistrationCount >= 0
+        ? Math.max(discovered.registration,declaredRegistrationCount) : null,
+    };
+    // Source-confirmed similarity and primary-study eligibility cannot be
+    // reconstructed from user's standalone judgments.
+    const closed = records.filter(row =>
+      ['DOCUMENTED_OVERLAP','DOCUMENTED_NON_OVERLAP'].includes(latest[row.key]?.decision)
+    );
+    const unresolvedRows = records.filter(row =>
+      !['DOCUMENTED_OVERLAP','DOCUMENTED_NON_OVERLAP'].includes(latest[row.key]?.decision)
+    );
+    const unresolved = {
+      review: expected.review === null ? null
+        : Math.max(0,expected.review - closed.filter(row=>row.kind === 'review').length),
+      registration: expected.registration === null ? null
+        : Math.max(0,expected.registration - closed.filter(row=>row.kind === 'registration').length),
+    };
+    const unresolvedCountKnown = unresolved.review !== null && unresolved.registration !== null;
+    const overlappingReviewWithoutSearchDate = closed.some(row =>
+      row.kind === 'review'
+      && latest[row.key]?.decision === 'DOCUMENTED_OVERLAP'
+      && !latest[row.key]?.documented_last_search_date
+    );
+    const status = sourceIssues.length || sourceBlockers.length
+      ? 'SOURCE_COVERAGE_INCOMPLETE'
+      : !unresolvedCountKnown || unresolved.review > 0 || unresolved.registration > 0
+        || !!screening.queue_truncated || overlappingReviewWithoutSearchDate
+        ? 'COMPETITOR_SCREENING_INCOMPLETE'
+        : 'READY_FOR_INDEPENDENT_STUDY_AUDIT_NOT_QUALIFIED';
+    return {
+      schema:'SCIMED_GAP_CACHED_REASSESSMENT_V1',
+      evaluated_at_utc:new Date().toISOString(),
+      job_id:String(job?.id||''),
+      candidate_id:String(topic?.candidate_id||''),
+      status,
+      source_issues:sourceIssues,
+      original_source_blockers_preserved:sourceBlockers,
+      overlapping_review_missing_search_date:overlappingReviewWithoutSearchDate,
+      records_in_export:discovered,
+      original_discovered_records:expected,
+      manually_closed_citations:closed.length,
+      unresolved_citations:unresolved,
+      unresolved_citations_in_export:unresolvedRows.length,
+      queue_truncated:!!screening.queue_truncated,
+      full_text_eligible_independent_studies:'NOT_VERIFIED',
+      extractable_outcomes:'NOT_VERIFIED',
+      search_queries_reexecuted:false,
+      scientific_qualification_changed:false,
+      original_qualification_status:topic?.research_dossier?.qualification_label ||
+        topic?.qualification_status || 'UNRESOLVED',
+      qualification_decision:'UNRESOLVED_PENDING_INDEPENDENT_VERIFICATION',
+      note:'Manual source-link records do not replace full registry coverage, original review text, study-family checks or a methods audit.',
+    };
+  }
+  function reassessmentHtml(result) {
+    const labels = {
+      SOURCE_COVERAGE_INCOMPLETE:'Incomplete registry/database coverage',
+      COMPETITOR_SCREENING_INCOMPLETE:'Competing review/protocol screening incomplete',
+      READY_FOR_INDEPENDENT_STUDY_AUDIT_NOT_QUALIFIED:'Competitors documented; independent study audit still required',
+    };
+    const remaining = result.unresolved_citations;
+    return '<article class="gap-result"><b>Cached verification: ' + esc(labels[result.status]) +
+      '</b><p>Missing/partial sources: ' + esc(result.source_issues.map(x=>x.source+' ('+x.status+')').join(', ') || 'none flagged') +
+      '</p><p>Unresolved review citations: ' + esc(remaining.review ?? 'unknown') +
+      '; unresolved registrations: ' + esc(remaining.registration ?? 'unknown') +
+      '.</p><p>Original source blockers: ' + esc(result.original_source_blockers_preserved.length) +
+      '. Human citation notes never clear incomplete automated search coverage.</p>' +
+      '<p>Full-text eligibility, independent populations and extractable outcomes: NOT VERIFIED.</p>' +
+      '<p>No new source queries were run. Original scientific qualification was not changed.</p></article>';
   }
   function exportLedger(job, topic) {
     const dossier = topic?.research_dossier || {};
@@ -259,7 +427,8 @@
       original_status: String(topic?.qualification_status || dossier.qualification_label || 'UNRESOLVED'),
       qualification_automatically_modified: false,
       manual_review_does_not_override_gates: true,
-      browser_local_storage_only: true,
+      browser_local_storage_only: false,
+      cloud_sync_scope: 'DEVICE_TOKEN_SCOPED; LOCAL_OFFLINE_NOTES_MAY_REMAIN_UNSYNCED',
       scientific_question: qOf(topic),
       saved_source_statuses: dossier.verification_and_quality?.source_statuses || {},
       unresolved_scientific_checks: dossier.verification_and_quality?.pending_verifications ||
@@ -270,6 +439,7 @@
       manual_decisions_latest: saved.decisions,
       append_only_local_adjudication_history: saved.history,
       history_is_not_cryptographically_immutable_or_authenticated: true,
+      cached_reassessment: reassess(job,topic),
       required_next_actions: dossier.next_actions || [
         'Resolve incomplete database and registry searches with provenance.',
         'Verify published-review PICO overlap and actual last literature search dates.',
@@ -279,7 +449,8 @@
     };
   }
   window.SCIMED_GAP = {
-    render, evidenceOf, read, saveDecision, exportLedger,
+    render, evidenceOf, read, saveDecision, exportLedger, reassess,
+    reassessmentHtml, setCloudEvents, assignPendingIds, markCloudSynced,
     recordKey, validEvidenceUrl,
   };
 })();

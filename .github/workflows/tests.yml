@@ -21,5 +21,6 @@ jobs:
       - run: node --test tests/web_legacy_dedup.mjs
       - run: node --test tests/web_topic_transfer.mjs
       - run: node --test tests/web_gap_verification.mjs
+      - run: node --test tests/web_cloud_gap_sync.mjs
       - run: node --test tests/web_startup_reconnect.mjs
       - run: scimed-scout health
