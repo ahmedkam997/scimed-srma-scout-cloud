@@ -17,6 +17,8 @@ jobs:
       - run: pytest -q
       - run: node --check web/app.js
       - run: node --check web/gap-verification.js
+      - run: node --check web/final-audit-evidence.js
+      - run: node --check web/final-evidence-audit.js
       - run: node --check web/sw.js
       - run: node --test tests/web_legacy_dedup.mjs
       - run: node --test tests/web_topic_transfer.mjs
@@ -24,5 +26,6 @@ jobs:
       - run: node --test tests/web_cloud_gap_sync.mjs
       - run: node --test tests/web_targeted_source_recheck.mjs
       - run: node --test tests/web_recheck_dispatch.mjs
+      - run: node --test tests/web_final_evidence_audit.mjs
       - run: node --test tests/web_startup_reconnect.mjs
       - run: scimed-scout health
