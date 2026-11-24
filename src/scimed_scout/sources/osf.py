@@ -97,36 +97,44 @@ class OSFRegistrationsSource:
                     result.status == SourceStatus.SEARCHED_NEGATIVE
                     or "no indexed matches" in (result.message or "")
                 )
-                and len(focus.split()) > 2
-                # A PICO-constrained OSF query must never silently broaden
-                # into an unrelated intervention-only search. Keep its
-                # limited coverage explicit rather than yielding 200+ hits.
-                and not focus.startswith('+"')
+                and (len(focus.split()) > 2 or focus.startswith('+"'))
             ):
-                broad = " ".join(focus.split()[:2])
+                # Retain the high-sensitivity intervention-only fallback
+                # for OSF titles that omit the disease. Extract the ACTUAL
+                # intervention phrase, not the former "oral low" substring.
+                anchor = re.match(r'^\+"([^"]+)"', focus)
+                broad = anchor.group(1) if anchor else " ".join(focus.split()[:2])
                 broad_result = self._search_trove(query, broad, limit)
+                cap = max(12, min(30, int(limit)))
+                records = list(broad_result.records)[:cap]
+                # Truncating a broad source result never counts as complete.
+                truncated = len(records) < len(broad_result.records)
                 if broad_result.status in (
                     SourceStatus.SEARCHED_POSITIVE, SourceStatus.SEARCHED_NEGATIVE
                 ):
                     return SearchResult(
-                        self.name, query, broad_result.status,
-                        broad_result.records, broad_result.total_count,
+                        self.name, query,
+                        SourceStatus.PARTIAL if truncated else broad_result.status,
+                        records, broad_result.total_count,
                         message=(
                             f"Focused phrase '{focus}' had no indexed matches; "
                             f"broader intervention search '{broad}' was "
                             f"{broad_result.status.value}. "
                             "The broader query is a scoped registration audit, "
                             "not independent PICO-overlap or novelty clearance. "
+                            + ("Broad results truncated for a manual evidence queue; "
+                               if truncated else "")
                             + broad_result.message
                         ),
                     )
                 if broad_result.records:
                     return SearchResult(
                         self.name, query, SourceStatus.PARTIAL,
-                        broad_result.records, broad_result.total_count,
+                        records, broad_result.total_count,
                         message=(
                             f"Focused phrase '{focus}' returned zero; "
                             f"broader '{broad}' found partial results. "
+                            "The returned citations are an incomplete manual queue. "
                             + broad_result.message
                         ),
                     )
