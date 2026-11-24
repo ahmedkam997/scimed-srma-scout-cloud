@@ -1,4 +1,5 @@
 name: discovery-worker
+# Targeted recheck launch verification: source-only queue remains separate from AI discovery.
 # Trigger controlled verification of the queued Cardiology job after competitor/coverage fixes.
 # One controlled Cardiology follow-up after the live OSF index-response and source-ranked review fixes.
 
