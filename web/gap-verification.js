@@ -328,8 +328,15 @@
     const sourceIssues = Object.entries(sources)
       .filter(([,status]) => ['PARTIAL','ACCESS_FAILED','NOT_SEARCHED','UNKNOWN'].includes(status))
       .map(([source,status]) => ({source,status}));
-    const declaredReviewCount = Number(screening.published_review_records_discovered);
-    const declaredRegistrationCount = Number(screening.registration_records_discovered);
+    if (!Object.keys(sources).length) {
+      sourceIssues.push({source:'Saved source audit',status:'UNKNOWN'});
+    }
+    const sourceBlockers = Array.isArray(quality.source_blockers)
+      ? quality.source_blockers : [];
+    const declaredReviewCount = screening.published_review_records_discovered == null
+      ? NaN : Number(screening.published_review_records_discovered);
+    const declaredRegistrationCount = screening.registration_records_discovered == null
+      ? NaN : Number(screening.registration_records_discovered);
     const discovered = {
       review: records.filter(row => row.kind === 'review').length,
       registration: records.filter(row => row.kind === 'registration').length,
@@ -355,9 +362,15 @@
         : Math.max(0,expected.registration - closed.filter(row=>row.kind === 'registration').length),
     };
     const unresolvedCountKnown = unresolved.review !== null && unresolved.registration !== null;
-    const status = sourceIssues.length
+    const overlappingReviewWithoutSearchDate = closed.some(row =>
+      row.kind === 'review'
+      && latest[row.key]?.decision === 'DOCUMENTED_OVERLAP'
+      && !latest[row.key]?.documented_last_search_date
+    );
+    const status = sourceIssues.length || sourceBlockers.length
       ? 'SOURCE_COVERAGE_INCOMPLETE'
       : !unresolvedCountKnown || unresolved.review > 0 || unresolved.registration > 0
+        || !!screening.queue_truncated || overlappingReviewWithoutSearchDate
         ? 'COMPETITOR_SCREENING_INCOMPLETE'
         : 'READY_FOR_INDEPENDENT_STUDY_AUDIT_NOT_QUALIFIED';
     return {
@@ -367,6 +380,8 @@
       candidate_id:String(topic?.candidate_id||''),
       status,
       source_issues:sourceIssues,
+      original_source_blockers_preserved:sourceBlockers,
+      overlapping_review_missing_search_date:overlappingReviewWithoutSearchDate,
       records_in_export:discovered,
       original_discovered_records:expected,
       manually_closed_citations:closed.length,
@@ -394,7 +409,9 @@
       '</b><p>Missing/partial sources: ' + esc(result.source_issues.map(x=>x.source+' ('+x.status+')').join(', ') || 'none flagged') +
       '</p><p>Unresolved review citations: ' + esc(remaining.review ?? 'unknown') +
       '; unresolved registrations: ' + esc(remaining.registration ?? 'unknown') +
-      '.</p><p>Full-text eligibility, independent populations and extractable outcomes: NOT VERIFIED.</p>' +
+      '.</p><p>Original source blockers: ' + esc(result.original_source_blockers_preserved.length) +
+      '. Human citation notes never clear incomplete automated search coverage.</p>' +
+      '<p>Full-text eligibility, independent populations and extractable outcomes: NOT VERIFIED.</p>' +
       '<p>No new source queries were run. Original scientific qualification was not changed.</p></article>';
   }
   function exportLedger(job, topic) {
