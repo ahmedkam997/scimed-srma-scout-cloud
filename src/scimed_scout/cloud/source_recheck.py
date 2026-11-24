@@ -81,8 +81,8 @@ def _dialysis_laao_pico(candidate: CandidateRecord | None) -> bool:
         candidate.intervention_exposure_index_test, candidate.title,
     ]).casefold()
     return bool(
-        re.search(r"\\b(dialysis|hemodialysis|haemodialysis|esrd|eskd|end.stage|kidney.failure|renal.failure)\\b",population)
-        and re.search(r"(left atrial appendage|\\blaao\\b|\\blaac\\b)",intervention)
+        re.search(r"\b(dialysis|hemodialysis|haemodialysis|esrd|eskd|end.stage|kidney.failure|renal.failure)\b",population)
+        and re.search(r"(left atrial appendage|\blaao\b|\blaac\b)",intervention)
     )
 
 
