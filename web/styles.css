@@ -66,3 +66,8 @@
 .gap-result b{font-size:12px}
 .gap-sync-warning{padding:9px 10px;border-radius:8px;border:1px solid #fed7aa;background:#fff8eb;color:#9a3412;font-size:12px;overflow-wrap:anywhere}
 .gap-review .gap-reassessment{margin:8px 0}
+
+.gap-source-recheck{border:1px solid #93b5d2;background:#f4faff;border-radius:9px;margin:10px 0;padding:10px}
+.gap-source-recheck>summary{color:#164e84;font-weight:800;cursor:pointer}
+.gap-source-recheck button:disabled{opacity:.6;cursor:default}
+.gap-source-message{overflow-wrap:anywhere;color:#125c75;font-size:12px}
