@@ -27,6 +27,9 @@ let jobs = [];
 let pollTimer = null;
 let connecting = false;
 let createCloudClient = null;
+let lastGapLoadedAt = 0;
+let gapSyncError = '';
+
 
 function backendState(kind, title, detail) {
   els.backend.className = `status-card status-${kind}`;
@@ -243,6 +246,78 @@ async function wakeWorker(jobId, { silent = false } = {}) {
   }
 }
 
+function completedGapTopics(job) {
+  const pkg = job?.result_json?.package || {};
+  const topics = [...(pkg.options || []), ...(pkg.provisional_options || [])];
+  return topics.filter(x => x && x.candidate_id);
+}
+
+async function syncGapNotes(job, topic, { maxItems = 35 } = {}) {
+  if (!supabase || !window.SCIMED_GAP || job?.status !== 'COMPLETED') {
+    return { synced: 0, pending: 0, error: 'No completed cloud job available.' };
+  }
+  let synced = 0;
+  try {
+    const pending = window.SCIMED_GAP.assignPendingIds(job, topic);
+    for (const note of pending.slice(0, maxItems)) {
+      const row = {
+        id: note.id, job_id: job.id, candidate_id: topic.candidate_id,
+        record_key: note.record_key, record_type: note.record_type,
+        title_at_adjudication: note.title_at_adjudication,
+        source: note.source, decision: note.decision,
+        evidence_url: note.evidence_url,
+        documented_last_search_date: note.documented_last_search_date || null,
+        rationale: note.rationale,
+      };
+      const { error } = await supabase.from('scimed_gap_verification_events').insert(row);
+      // A duplicate UUID means the identical append-only event was already
+      // committed before a timeout. Never upsert or overwrite older findings.
+      if (error && error.code !== '23505') throw error;
+      window.SCIMED_GAP.markCloudSynced(job, topic, note.id);
+      synced += 1;
+    }
+    return {synced, pending: Math.max(0,pending.length - synced), error: ''};
+  } catch (error) {
+    return {synced, pending: -1, error: error.message || String(error)};
+  }
+}
+
+async function loadGapEvents(force = false) {
+  if (!supabase || !window.SCIMED_GAP) return;
+  if (!force && Date.now() - lastGapLoadedAt < 20000) return;
+  lastGapLoadedAt = Date.now();
+  const complete = jobs.filter(job => job.status === 'COMPLETED');
+  if (!complete.length) {
+    window.SCIMED_GAP.setCloudEvents([]);
+    return;
+  }
+  try {
+    // Safe replay of unsent local events. Each event has a stable UUID.
+    // The server independently verifies job ownership and candidate scope.
+    for (const job of complete) {
+      for (const topic of completedGapTopics(job)) {
+        const progress = await syncGapNotes(job, topic, {maxItems:10});
+        if (progress.error) gapSyncError = progress.error;
+      }
+    }
+    const ids = complete.map(job => job.id);
+    const {data, error} = await supabase
+      .from('scimed_gap_verification_events')
+      .select('id,job_id,candidate_id,record_key,record_type,title_at_adjudication,source,decision,evidence_url,documented_last_search_date,rationale,created_at')
+      .in('job_id', ids)
+      .order('created_at',{ascending:false})
+      .limit(2000);
+    if (error) throw error;
+    window.SCIMED_GAP.setCloudEvents((data || []).reverse());
+    gapSyncError = (data || []).length >= 2000
+      ? 'The cloud ledger reached its 2000-record display limit. Export this job and narrow the review scope before relying on a complete ledger.'
+      : '';
+  } catch (error) {
+    gapSyncError = error.message || String(error);
+    // Keep all local work and last successfully cached cloud findings.
+  }
+}
+
 async function loadJobs() {
   if (!supabase) return;
   const { data, error } = await supabase
@@ -253,6 +328,7 @@ async function loadJobs() {
 
   if (error) throw error;
   jobs = data || [];
+  await loadGapEvents();
   renderJobs();
 }
 
@@ -681,6 +757,10 @@ function renderJobs() {
     const originalProvisionalOptions = Array.isArray(job.result_json?.package?.provisional_options)
       ? job.result_json.package.provisional_options : [];
     const provisionalOptions = uniqueProvisionalTopics(originalProvisionalOptions);
+    const gapCloudWarning = gapSyncError && job.status === 'COMPLETED'
+      ? '<p class="gap-sync-warning">Research Gap cloud sync: ' + escapeHtml(gapSyncError) +
+        '. Local notes are preserved; export a backup if this continues.</p>'
+      : '';
     const groupedCount = originalProvisionalOptions.length - provisionalOptions.length;
     const provisionalHtml = job.status === 'COMPLETED' && provisionalOptions.length
       ? `<details class="score-audit" open>
@@ -882,6 +962,7 @@ function renderJobs() {
         ${draftHtml}
         ${evidenceHtml}
         ${provisionalHtml}
+        ${gapCloudWarning}
         ${unverifiedGeneratedHtml}
         ${auditHtml}
         ${workerHelp}
@@ -1228,13 +1309,16 @@ els.refresh.addEventListener('click', async () => {
     backendState('error', 'Could not refresh jobs', error.message || String(error));
   }
 });
-els.jobs.addEventListener('click', event => {
+els.jobs.addEventListener('click', async event => {
   const gapSave = event.target.closest('[data-gap-save]');
   const gapExport = event.target.closest('[data-gap-export]');
-  if (gapSave || gapExport) {
-    const control = gapSave || gapExport;
-    const job = jobs.find(item => item.id === control.dataset.gapJob ||
-      item.id === control.dataset.gapExport);
+  const gapReassess = event.target.closest('[data-gap-reassess]');
+  if (gapSave || gapExport || gapReassess) {
+    const control = gapSave || gapExport || gapReassess;
+    const job = jobs.find(item => item.id === (
+      control.dataset.gapJob || control.dataset.gapExport ||
+      control.dataset.gapReassess
+    ));
     const topic = job && findTransferTopic(job, control.dataset.gapTopic);
     if (!job || !topic || !window.SCIMED_GAP) return;
     if (gapExport) {
@@ -1242,6 +1326,13 @@ els.jobs.addEventListener('click', event => {
       const fileName = topicFileName(topic).replace(/\.md$/i, '_Gap_Verification.json');
       saveTextFile(fileName, JSON.stringify(exportData, null, 2),
         'application/json;charset=utf-8');
+      return;
+    }
+    if (gapReassess) {
+      const result = window.SCIMED_GAP.reassess(job,topic);
+      const panel = gapReassess.closest('[data-gap-key]');
+      const output = panel?.querySelector('.gap-reassessment');
+      if (output) output.innerHTML = window.SCIMED_GAP.reassessmentHtml(result);
       return;
     }
     const index = Number(gapSave.dataset.gapSave);
@@ -1258,7 +1349,7 @@ els.jobs.addEventListener('click', event => {
     const message = entry.querySelector('.gap-message');
     if (message) {
       message.textContent = outcome.ok
-        ? 'Saved in this browser. Export the verification ledger to back it up.'
+        ? 'Saved locally; synchronizing with Supabase...'
         : outcome.error;
       message.className = outcome.ok ? 'gap-message gap-success' : 'gap-message gap-error';
     }
@@ -1268,6 +1359,15 @@ els.jobs.addEventListener('click', event => {
       if (summary) summary.textContent = 'Research Gap Verification · ' +
         Object.keys(window.SCIMED_GAP.read(job, topic).decisions).length +
         ' saved manual finding(s)';
+      const progress = await syncGapNotes(job,topic);
+      if (message) {
+        message.textContent = progress.error
+          ? 'Saved locally, cloud sync failed: ' + progress.error +
+            '. Keep this browser data and export your ledger as a backup.'
+          : 'Saved in Supabase and locally. Export a JSON backup when needed.';
+        message.className = progress.error ? 'gap-message gap-error' : 'gap-message gap-success';
+      }
+      if (!progress.error) await loadGapEvents(true);
     }
     return;
   }
