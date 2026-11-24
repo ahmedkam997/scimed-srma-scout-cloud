@@ -1,4 +1,9 @@
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+// Dynamic loading keeps the UI alive if a CDN fails on mobile networks.
+const CLOUD_SDK_SOURCES = [
+  'https://esm.sh/@supabase/supabase-js@2.119.2?bundle',
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2/+esm',
+];
+const CLOUD_REQUEST_TIMEOUT_MS = 18000;
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
@@ -20,10 +25,69 @@ const els = {
 let supabase = null;
 let jobs = [];
 let pollTimer = null;
+let connecting = false;
+let createCloudClient = null;
 
 function backendState(kind, title, detail) {
   els.backend.className = `status-card status-${kind}`;
   els.backend.innerHTML = `<b>${escapeHtml(title)}</b><span>${escapeHtml(detail)}</span>`;
+}
+
+async function withTimeout(promise, milliseconds, label) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(label)), milliseconds);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function loadCloudClient() {
+  if (createCloudClient) return createCloudClient;
+  for (let attempt = 0; attempt < CLOUD_SDK_SOURCES.length; attempt++) {
+    backendState('waiting', 'Loading cloud connection',
+      attempt === 0 ? 'Loading the cloud client.' : 'Trying an alternative secure library source.');
+    try {
+      const sdk = await withTimeout(
+        import(CLOUD_SDK_SOURCES[attempt]), 12000,
+        'Cloud client download timed out.'
+      );
+      if (typeof sdk.createClient !== 'function') throw new Error('Cloud client export missing.');
+      createCloudClient = sdk.createClient;
+      return createCloudClient;
+    } catch (_) {
+      // Do not leave the page on the original "Connecting backend" placeholder.
+      // The second CDN is independent; no credentials or session data are sent to it.
+    }
+  }
+  throw new Error('Unable to load the cloud library from either source. Check internet access, disable any blocking extension, then retry.');
+}
+
+async function cloudFetch(input, init = {}) {
+  const controller = new AbortController();
+  const abortUpstream = () => controller.abort();
+  const externalSignal = init.signal;
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener('abort', abortUpstream, { once: true });
+  }
+  const timer = setTimeout(() => controller.abort(), CLOUD_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted && !externalSignal?.aborted) {
+      throw new Error('Cloud request timed out. Check your connection and retry.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    if (externalSignal) externalSignal.removeEventListener('abort', abortUpstream);
+  }
 }
 
 function deviceToken() {
@@ -39,39 +103,53 @@ function deviceToken() {
 }
 
 async function init() {
-  if (!config.supabaseUrl || !config.supabaseAnonKey) {
-    backendState('error', 'Backend setup required', 'The Supabase project configuration is missing.');
-    return;
-  }
-
-  supabase = createClient(config.supabaseUrl, config.supabaseAnonKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-    global: {
-      headers: {
-        'x-scimed-client-token': deviceToken(),
-      },
-    },
-  });
+  if (connecting) return;
+  connecting = true;
+  els.start.disabled = true;
+  els.refresh.disabled = true;
+  backendState('waiting', 'Connecting backend', 'Checking cloud queue and session.');
 
   try {
+    if (!config.supabaseUrl || !config.supabaseAnonKey) {
+      throw new Error('The Supabase project configuration is missing.');
+    }
+    const clientFactory = await loadCloudClient();
+    supabase = clientFactory(config.supabaseUrl, config.supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+      global: {
+        headers: { 'x-scimed-client-token': deviceToken() },
+        fetch: cloudFetch,
+      },
+    });
+    backendState('waiting', 'Checking cloud queue', 'Reading saved discovery jobs.');
     await loadJobs();
-    backendState(
-      'ok',
-      'Cloud queue connected',
-      'Jobs continue in the background after you close this browser. Job history belongs to this browser profile.'
-    );
+    backendState('ok', 'Cloud queue connected',
+      'Jobs continue in the background after you close this browser. Job history belongs to this browser profile.');
     const stale = jobs.find(row => row.status === 'QUEUED' &&
       Date.now() - new Date(row.created_at).getTime() >= 120000);
     if (stale) wakeWorker(stale.id, { silent: true }).catch(() => {});
     els.start.disabled = false;
     els.refresh.disabled = false;
-    pollTimer = setInterval(loadJobs, 5000);
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(() => {
+      loadJobs().catch(error => {
+        // A transient polling failure must not produce unhandled rejections.
+        backendState('error', 'Cloud sync interrupted', error.message || String(error));
+      });
+    }, 5000);
   } catch (error) {
+    supabase = null;
     backendState('error', 'Backend connection failed', error.message || String(error));
+    els.backend.insertAdjacentHTML('beforeend',
+      '<button type="button" class="secondary small" data-reconnect>Retry connection</button>');
+    // Keep the Refresh control actionable for a failed startup.
+    els.refresh.disabled = false;
+  } finally {
+    connecting = false;
   }
 }
 
@@ -1111,10 +1189,18 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
+els.backend.addEventListener('click', event => {
+  if (event.target.closest('[data-reconnect]')) init();
+});
 els.start.addEventListener('click', startDiscovery);
 els.refresh.addEventListener('click', async () => {
+  if (!supabase) {
+    await init();
+    return;
+  }
   try {
     await loadJobs();
+    backendState('ok', 'Cloud queue connected', 'Discovery jobs updated.');
   } catch (error) {
     backendState('error', 'Could not refresh jobs', error.message || String(error));
   }
