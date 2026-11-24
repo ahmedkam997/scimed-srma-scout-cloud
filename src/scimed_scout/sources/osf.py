@@ -13,12 +13,35 @@ STOP = {
     "vs", "versus", "among", "on", "after", "before", "patients",
     "patient", "adult", "adults", "using", "effect", "effects", "study",
     "diagnostic", "accuracy", "systematic", "review", "meta", "analysis",
+    "oral", "low", "high", "dose", "doses", "daily", "weekly", "acute",
+    "supplementation", "ingestion", "administration", "percutaneous",
 }
 
 
 def _focus_query(query: str) -> str:
-    """Reduce a long PICO sentence to a reproducible registry keyword query."""
-    terms = re.findall(r"[a-z0-9\u0600-\u06ff]+", str(query or "").casefold())
+    """Preserve Boolean PICO anchors in OSF Trove's documented query syntax.
+
+    Trove supports '+' for AND and double quotes for phrases. The old
+    tokenizer dropped the Boolean AND and took just the first four
+    (often generic dose/route) words, leading to hundreds of unrelated
+    registrations and a consistently unfinishable semantic queue.
+    """
+    raw = str(query or "")
+    quoted = re.findall(r'"([^"]+)"', raw)
+    if len(quoted) >= 2 and re.search(r"\bAND\b", raw, flags=re.I):
+        groups = []
+        for value, limit in ((quoted[0], 4), (quoted[1], 3)):
+            words = re.findall(r"[a-z0-9\u0600-\u06ff]+", value.casefold())
+            useful = [
+                word for word in words
+                if word not in STOP and (
+                    len(word) > 2 or (len(word) == 2 and any(ch.isdigit() for ch in word))
+                )
+            ]
+            groups.append(" ".join(useful[:limit]))
+        if all(groups):
+            return '+"' + groups[0] + '" +"' + groups[1] + '"'
+    terms = re.findall(r"[a-z0-9\u0600-\u06ff]+", raw.casefold())
     useful = [term for term in terms if len(term) > 2 and term not in STOP]
     return " ".join(useful[:4]) or " ".join(terms[:3])
 
@@ -74,32 +97,44 @@ class OSFRegistrationsSource:
                     result.status == SourceStatus.SEARCHED_NEGATIVE
                     or "no indexed matches" in (result.message or "")
                 )
-                and len(focus.split()) > 2
+                and (len(focus.split()) > 2 or focus.startswith('+"'))
             ):
-                broad = " ".join(focus.split()[:2])
+                # Retain the high-sensitivity intervention-only fallback
+                # for OSF titles that omit the disease. Extract the ACTUAL
+                # intervention phrase, not the former "oral low" substring.
+                anchor = re.match(r'^\+"([^"]+)"', focus)
+                broad = anchor.group(1) if anchor else " ".join(focus.split()[:2])
                 broad_result = self._search_trove(query, broad, limit)
+                cap = max(12, min(30, int(limit)))
+                records = list(broad_result.records)[:cap]
+                # Truncating a broad source result never counts as complete.
+                truncated = len(records) < len(broad_result.records)
                 if broad_result.status in (
                     SourceStatus.SEARCHED_POSITIVE, SourceStatus.SEARCHED_NEGATIVE
                 ):
                     return SearchResult(
-                        self.name, query, broad_result.status,
-                        broad_result.records, broad_result.total_count,
+                        self.name, query,
+                        SourceStatus.PARTIAL if truncated else broad_result.status,
+                        records, broad_result.total_count,
                         message=(
                             f"Focused phrase '{focus}' had no indexed matches; "
                             f"broader intervention search '{broad}' was "
                             f"{broad_result.status.value}. "
                             "The broader query is a scoped registration audit, "
                             "not independent PICO-overlap or novelty clearance. "
+                            + ("Broad results truncated for a manual evidence queue; "
+                               if truncated else "")
                             + broad_result.message
                         ),
                     )
                 if broad_result.records:
                     return SearchResult(
                         self.name, query, SourceStatus.PARTIAL,
-                        broad_result.records, broad_result.total_count,
+                        records, broad_result.total_count,
                         message=(
                             f"Focused phrase '{focus}' returned zero; "
                             f"broader '{broad}' found partial results. "
+                            "The returned citations are an incomplete manual queue. "
                             + broad_result.message
                         ),
                     )
@@ -245,7 +280,13 @@ class OSFRegistrationsSource:
             if total == 0 and not remaining and malformed_hits == 0:
                 try:
                     confirmation = self.http.get_json(self.endpoint, {
-                        "filter[title]": focus,
+                        # OSF v2 title filter is plain text, not Trove's
+                        # '+' Boolean syntax; use only the exact index
+                        # intervention phrase for independent validation.
+                        "filter[title]": (
+                            re.search(r'^\+"([^"]+)"', focus).group(1)
+                            if re.search(r'^\+"([^"]+)"', focus) else focus
+                        ),
                         "page[size]": 20,
                     })
                     rows = confirmation.get("data")

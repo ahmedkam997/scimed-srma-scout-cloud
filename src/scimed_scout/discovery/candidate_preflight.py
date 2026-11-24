@@ -28,7 +28,13 @@ def _tokens(value: str) -> list[str]:
 
 
 def _anchor(candidate: CandidateRecord) -> list[str]:
-    terms = _tokens(candidate.intervention_exposure_index_test)
+    # Reuse the clinical registry anchor normalization. The earlier
+    # title-level preflight searched for literal "oral colchicine daily",
+    # yielding zero despite the wider colchicine literature. This search
+    # only prioritizes bibliographic leads, never estimates eligibility.
+    from scimed_scout.verification.queries import _registry_anchor
+
+    terms = _registry_anchor(candidate.intervention_exposure_index_test)
     if not terms:
         terms = _tokens(candidate.title)
     return terms[:5]
@@ -49,7 +55,7 @@ def search_query(candidate: CandidateRecord, *, current_year: int | None = None)
     year = current_year or datetime.now(timezone.utc).year
     # Keep a broad intervention anchor for sensitivity. Population/comparator
     # overlap is assessed on retrieved titles, NOT required in the query.
-    intervention = " ".join(terms[:3]).replace('"', "")
+    intervention = " ".join(terms[:4]).replace('"', "")
     return (
         f'"{intervention}"[Title/Abstract] AND '
         f'("{year - 5}/01/01"[Date - Publication] : '
@@ -70,7 +76,7 @@ def review_search_query(
     if not terms:
         return ""
     year = current_year or datetime.now(timezone.utc).year
-    intervention = " ".join(terms[:2]).replace('"', "")
+    intervention = " ".join(terms[:3]).replace('"', "")
     return (
         f'"{intervention}"[Title/Abstract] AND '
         f'("systematic review"[Publication Type] OR '

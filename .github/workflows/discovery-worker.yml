@@ -35,6 +35,7 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} # Google AI Studio, kept in Actions secrets
       GEMINI_FREE_MODEL: gemini-3.5-flash-lite # Free-only model allowlisted in code
       SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
+      OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }} # Optional free account key, server-side only
       PROSPERO_NETWORK_MODE: online
 
     steps:
