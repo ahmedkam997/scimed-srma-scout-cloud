@@ -513,6 +513,14 @@ function topicDetailHtml(job, topic) {
 }
 
 function renderJobs() {
+  // Do not erase an in-progress manual evidence note on 5-second cloud polling.
+  if (document.activeElement?.closest?.('.gap-record')) return;
+  const gapOpen = [...els.jobs.querySelectorAll('details[data-gap-key][open]')]
+    .map(node => ({
+      key: node.dataset.gapKey,
+      entries: [...node.querySelectorAll('details[data-gap-record][open]')]
+        .map(child => child.dataset.gapRecord),
+    }));
   const active = jobs.filter(job => ['QUEUED', 'RUNNING'].includes(job.status)).length;
   const qualified = jobs.reduce((sum, job) => sum + qualifiedOptions(job).length, 0);
   const leadCount = jobs.reduce((sum, job) => sum + (
@@ -625,6 +633,7 @@ function renderJobs() {
               data-copy-topic="${escapeHtml(job.id)}"
               data-topic-id="${escapeHtml(option.candidate_id || '')}">Copy idea + ChatGPT prompt</button></div>
             ${topicDetailHtml(job, option)}
+            ${window.SCIMED_GAP?.render?.(job, option) || ''}
           </article>
         `).join('')}</div>`
       : '';
@@ -691,6 +700,7 @@ function renderJobs() {
               data-copy-topic="${escapeHtml(job.id)}"
               data-topic-id="${escapeHtml(topic.candidate_id || '')}">Copy idea + ChatGPT prompt</button></div>
             ${topicDetailHtml(job, topic)}
+            ${window.SCIMED_GAP?.render?.(job, topic) || ''}
             ${topic.triage_tier ? `<p class="help">Bibliographic preflight: ${topic.triage_tier === 'PICO_SIGNAL_FOR_MANUAL_AUDIT'
               ? 'At least four titles mention both the intervention and clinical population; full-text eligibility and novelty remain unverified.'
               : 'Few titles match both the intervention and population. Recheck the search and comparator before accepting the PICO.'}</p>` : ''}
@@ -879,7 +889,20 @@ function renderJobs() {
         ${error}
       </article>
     `;
-  }).join('');
+  }).join('')
+  // Restore the verification accordions after cloud polling updates the card.
+  for (const saved of gapOpen) {
+    const panel = [...els.jobs.querySelectorAll('details[data-gap-key]')]
+      .find(node => node.dataset.gapKey === saved.key);
+    if (!panel) continue;
+    panel.open = true;
+    for (const idx of saved.entries) {
+      const child = [...panel.querySelectorAll('details[data-gap-record]')]
+        .find(node => node.dataset.gapRecord === idx);
+      if (child) child.open = true;
+    }
+  }
+;
 }
 
 function qualifiedOptions(job) {
@@ -1206,6 +1229,48 @@ els.refresh.addEventListener('click', async () => {
   }
 });
 els.jobs.addEventListener('click', event => {
+  const gapSave = event.target.closest('[data-gap-save]');
+  const gapExport = event.target.closest('[data-gap-export]');
+  if (gapSave || gapExport) {
+    const control = gapSave || gapExport;
+    const job = jobs.find(item => item.id === control.dataset.gapJob ||
+      item.id === control.dataset.gapExport);
+    const topic = job && findTransferTopic(job, control.dataset.gapTopic);
+    if (!job || !topic || !window.SCIMED_GAP) return;
+    if (gapExport) {
+      const exportData = window.SCIMED_GAP.exportLedger(job, topic);
+      const fileName = topicFileName(topic).replace(/\\.md$/i, '_Gap_Verification.json');
+      saveTextFile(fileName, JSON.stringify(exportData, null, 2),
+        'application/json;charset=utf-8');
+      return;
+    }
+    const index = Number(gapSave.dataset.gapSave);
+    const record = window.SCIMED_GAP.evidenceOf(topic)[index];
+    const entry = gapSave.closest('[data-gap-record]');
+    if (!entry || !record) return;
+    const field = name => entry.querySelector('[data-gap-field="' + name + '"]')?.value || '';
+    const outcome = window.SCIMED_GAP.saveDecision(job, topic, record, {
+      decision: field('decision'),
+      rationale: field('rationale'),
+      evidence_url: field('evidence_url'),
+      search_date: field('search_date'),
+    });
+    const message = entry.querySelector('.gap-message');
+    if (message) {
+      message.textContent = outcome.ok
+        ? 'Saved in this browser. Export the verification ledger to back it up.'
+        : outcome.error;
+      message.className = outcome.ok ? 'gap-message gap-success' : 'gap-message gap-error';
+    }
+    if (outcome.ok) {
+      const panel = entry.closest('[data-gap-key]');
+      const summary = panel?.querySelector(':scope > summary');
+      if (summary) summary.textContent = 'Research Gap Verification · ' +
+        Object.keys(window.SCIMED_GAP.read(job, topic).decisions).length +
+        ' saved manual finding(s)';
+    }
+    return;
+  }
   const retry = event.target.closest('[data-retry-job]');
   if (retry) {
     retryJob(retry.dataset.retryJob);
