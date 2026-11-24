@@ -264,6 +264,7 @@
       ['PARTIAL','ACCESS_FAILED','NOT_SEARCHED'].includes(status));
     const requests = rechecksOf(job,topic);
     const active = requests.some(r => ['QUEUED','RUNNING'].includes(r.status));
+    const queued = requests.find(r => r.status === 'QUEUED');
     const latest = requests[0];
     const result = latest?.result_json || {};
     const sources = Array.isArray(result.source_reports) ? result.source_reports : [];
@@ -300,6 +301,8 @@
       esc(job.id) + '" data-gap-topic="' + esc(topic.candidate_id) + '"' +
       ((active || !failed.length) ? ' disabled' : '') +
       '>Start Targeted Source Recheck</button>' +
+      (queued ? '<button type="button" class="secondary small" data-source-wake="' +
+        esc(queued.id) + '">Request GitHub worker for queued recheck</button>' : '') +
       (latest ? '<p class="help">Latest request: ' + esc(latest.status) +
         ' · ' + esc(latest.message || '') + '</p>' : '') +
       (latest?.status === 'FAILED' ? '<p class="gap-error">' +

@@ -27,9 +27,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (!/^[a-f0-9]{64}$/i.test(token)) return reply(403, { status: "invalid_session" });
   let body: unknown;
   try { body = await req.json(); } catch { return reply(400, { status: "invalid_request" }); }
-  const requestedId = typeof body === "object" && body !== null && "job_id" in body
-    ? (body as { job_id: unknown }).job_id : null;
-  if (!isUuid(requestedId)) return reply(400, { status: "invalid_job_id" });
+  // Exactly one owner-scoped queue row must be selected. The completed
+  // discovery job itself is never mutated by a source-recheck dispatch.
+  const args = typeof body === "object" && body !== null
+    ? body as Record<string, unknown> : {};
+  const hasJob = typeof args.job_id === "string";
+  const hasRecheck = typeof args.recheck_id === "string";
+  if (hasJob === hasRecheck) return reply(400,{status:"invalid_request_type"});
+  const isSourceRecheck = hasRecheck;
+  const requestedId = isSourceRecheck ? args.recheck_id : args.job_id;
+  if (!isUuid(requestedId)) return reply(400,{status:"invalid_request_id"});
 
   const apiUrl = Deno.env.get("SUPABASE_URL") || "";
   // Use the owner's low-privilege browser token and Supabase RLS instead
@@ -46,7 +53,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   let reserved = false;
   try {
-    const res = await fetch((apiUrl.endsWith("/") ? apiUrl.slice(0, -1) : apiUrl) + "/rest/v1/rpc/scimed_request_dispatch", {
+    const reserveRpc = isSourceRecheck
+      ? "scimed_request_recheck_dispatch"
+      : "scimed_request_dispatch";
+    const res = await fetch((apiUrl.endsWith("/") ? apiUrl.slice(0, -1) : apiUrl) + "/rest/v1/rpc/" + reserveRpc, {
       method: "POST",
       headers: {
         apikey: anonKey,
@@ -54,7 +64,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
         "x-scimed-client-token": token,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ p_job_id: requestedId }),
+      body: JSON.stringify(isSourceRecheck
+        ? { p_recheck_id: requestedId }
+        : { p_job_id: requestedId }),
       signal: AbortSignal.timeout(12000),
     });
     if (!res.ok) {
@@ -73,7 +85,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
   if (!reserved) return reply(202, {
     status: "already_requested_or_not_queued",
-    message: "This job was already submitted recently, started, or is no longer queued.",
+    message: "The selected queue entry was recently dispatched, started, or is no longer queued.",
   });
 
   try {
