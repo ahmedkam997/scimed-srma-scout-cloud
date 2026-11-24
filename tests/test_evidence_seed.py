@@ -38,3 +38,22 @@ def test_cues_fail_closed_without_fabricating_evidence():
     assert recent_pubmed_cues("ALL", "ALL", client=FakePubMed()) == []
     assert recent_pubmed_cues("Cardiology", "ALL", client=FakePubMed(SourceStatus.ACCESS_FAILED)) == []
     assert cue_prompt([]) == ""
+
+
+def test_cardiology_pubmed_seed_query_rotates_between_subspecialties():
+    client = FakePubMed()
+    recent_pubmed_cues(
+        "Cardiology", "ALL", client=client,
+        rotation_index=0, now=datetime(2026, 11, 23, tzinfo=timezone.utc),
+    )
+    recent_pubmed_cues(
+        "Cardiology", "ALL", client=client,
+        rotation_index=1, now=datetime(2026, 11, 23, tzinfo=timezone.utc),
+    )
+    first, second = client.queries[0][0], client.queries[1][0]
+    assert first != second
+    assert '"heart failure"[Title/Abstract]' in first
+    assert '"coronary artery disease"[Title/Abstract]' in second
+    assert '"myocardial infarction"[Title/Abstract]' in second
+    assert '"Cohort Studies"' in first
+    assert "2026/12/31" in second
