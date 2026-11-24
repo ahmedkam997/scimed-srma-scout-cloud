@@ -374,29 +374,29 @@ class OSFRegistrationsSource:
         """Parse actual registration citations from OSF v2 without inventing
         a full-text protocol, eligibility result or last search date.
         """
-            records = []
-            for item in rows:
-                if not isinstance(item, dict):
-                    continue
-                rid = str(item.get("id") or "")
-                attrs = item.get("attributes") or {}
-                if not rid:
-                    continue
-                registered = str(attrs.get("date_registered") or "")
-                year = int(registered[:4]) if re.match(r"^(?:19|20)\d{2}", registered) else None
-                records.append(SearchRecord(
-                    self.name, rid, title=str(attrs.get("title") or ""),
-                    url=str((item.get("links") or {}).get("html") or f"https://osf.io/{rid}/"),
-                    year=year,
-                    metadata={
-                        "abstract": str(attrs.get("description") or "")[:2000],
-                        "registry_search": "OSF v2 title-only fallback",
-                        "date_registered": registered,
-                        "date_modified": str(attrs.get("date_modified") or ""),
-                        "registry_status": str(attrs.get("reviews_state") or ""),
-                        "withdrawn": bool(attrs.get("withdrawn", False)),
-                    },
-                ))
+        records = []
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            rid = str(item.get("id") or "")
+            attrs = item.get("attributes") or {}
+            if not rid:
+                continue
+            registered = str(attrs.get("date_registered") or "")
+            year = int(registered[:4]) if re.match(r"^(?:19|20)\d{2}", registered) else None
+            records.append(SearchRecord(
+                self.name, rid, title=str(attrs.get("title") or ""),
+                url=str((item.get("links") or {}).get("html") or f"https://osf.io/{rid}/"),
+                year=year,
+                metadata={
+                    "abstract": str(attrs.get("description") or "")[:2000],
+                    "registry_search": "OSF v2 title-only fallback",
+                    "date_registered": registered,
+                    "date_modified": str(attrs.get("date_modified") or ""),
+                    "registry_status": str(attrs.get("reviews_state") or ""),
+                    "withdrawn": bool(attrs.get("withdrawn", False)),
+                },
+            ))
         return records
 
     def _search_v2(self, original: str, focus: str, limit: int) -> SearchResult:
