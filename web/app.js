@@ -292,12 +292,13 @@ async function loadGapEvents(force = false) {
     return;
   }
   try {
+    const syncErrors = [];
     // Safe replay of unsent local events. Each event has a stable UUID.
     // The server independently verifies job ownership and candidate scope.
     for (const job of complete) {
       for (const topic of completedGapTopics(job)) {
         const progress = await syncGapNotes(job, topic, {maxItems:10});
-        if (progress.error) gapSyncError = progress.error;
+        if (progress.error) syncErrors.push(progress.error);
       }
     }
     const ids = complete.map(job => job.id);
@@ -311,7 +312,7 @@ async function loadGapEvents(force = false) {
     window.SCIMED_GAP.setCloudEvents((data || []).reverse());
     gapSyncError = (data || []).length >= 2000
       ? 'The cloud ledger reached its 2000-record display limit. Export this job and narrow the review scope before relying on a complete ledger.'
-      : '';
+      : (syncErrors[0] || '');
   } catch (error) {
     gapSyncError = error.message || String(error);
     // Keep all local work and last successfully cached cloud findings.
