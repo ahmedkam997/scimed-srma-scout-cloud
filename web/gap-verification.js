@@ -405,6 +405,7 @@
       itemsHtml('registration','PROSPERO and OSF registrations') +
       '<p class="help">Review dates, true PICO overlap, trial-family independence and extractable outcomes require documented verification. Marking a citation here does not resolve full search coverage or qualify a topic.</p>' +
       sourceRecheckHtml(job,topic) +
+      (window.SCIMED_FINAL?.render?.(job,topic,window.SCIMED_GAP) || '') +
       '<button type="button" class="secondary small" data-gap-reassess="' + esc(job.id) +
       '" data-gap-topic="' + esc(topic.candidate_id) + '">Re-evaluate saved evidence (no new searches)</button>' +
       '<button type="button" class="secondary small" data-gap-export="' + esc(job.id) +
