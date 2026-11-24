@@ -167,7 +167,7 @@ def recent_topic_memory(
 # policy above. A draft is NOT a scientifically screened topic; repeated draft
 # themes only change what a subsequent brainstorming run prioritizes.
 _EXPLORATION_THEME_STOP = {
-    "exercise", "prior", "following", "post", "acute", "daily", "weekly",
+    "exercise", "prior", "before", "after", "following", "post", "acute", "daily", "weekly",
     "intervention", "investigation", "comparison", "efficacy", "extract",
     "standardized", "drug", "drugs", "care", "use", "in", "of",
     "high", "low", "mg", "dose", "doses", "participants",
