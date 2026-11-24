@@ -151,3 +151,40 @@ test('DTA Final Audit reuses saved per-topic bibliography without fabricating fu
   assert.equal(r.prioritized_published_reviews[0].overlap,'UNASSESSED');
   assert.equal(r.eligible_independent_study_count,null);
 });
+
+test('Targeted primary study full-text ledger distinguishes LM 2x2 from mixed vessels',()=>{
+  const {e}=create();
+  const a=e.build(job,ctTopic(),emptyGap);
+  assert.equal(a.study_family_screening_ledger.length,11);
+  assert.equal(a.curated_report_screening_scope,'BOUNDED_NON_EXHAUSTIVE_PRIMARY_SOURCE_AUDIT');
+  assert.equal(a.curated_reports_with_full_text_source_inspected,5);
+  assert.equal(a.verified_eligible_independent_reports_in_this_curated_screen,0);
+  assert.equal(a.this_screen_cannot_establish_total_global_eligible_count,true);
+  assert.equal(a.eligible_independent_study_count,null);
+  const studies=a.study_family_screening_ledger;
+  const accu=studies.find(x=>x.family==='ACCUFFRCT_2021_ZHEJIANG');
+  assert.ok(accu.comparator.includes('TP20/TN50/FP6/FN2'));
+  assert.match(accu.exact_pico_eligibility_decision,/NOT_EXTRACTABLE/);
+  const riedl=studies.find(x=>x.family==='RIEDL_2021_LM_COHORT');
+  assert.match(riedl.exact_pico_eligibility_decision,/MISSING_PAIRED_LM_INVASIVE_FFR/);
+  const tavi=studies.find(x=>x.family==='PRE_TAVI_CTFFR_2025');
+  assert.match(tavi.exact_pico_eligibility_decision,/ICA_NOT_INVASIVE_FFR/);
+  const han=studies.find(x=>x.family==='HAN_2024_QFR_CTFFR');
+  assert.match(han.exact_pico_eligibility_decision,/LM_LESIONS_EXPLICITLY_EXCLUDED/);
+  const pending=studies.filter(x=>x.exact_pico_eligibility_decision.startsWith('PENDING_'));
+  assert.equal(pending.length,2);
+  assert.ok(studies.every(x=>x.fulltext_eligibility_verified===false));
+  assert.equal(a.recommendation,'REFINE');
+  assert.equal(a.registration_recommendation,'DO_NOT_REGISTER_NOW');
+  assert.equal(ctTopic().qualification_status,'PROVISIONAL_BACKUP');
+});
+test('The mobile final audit displays basis and specific extraction decision, not a misleading positive',()=>{
+  const {e}=create();
+  const html=e.render(job,ctTopic(),emptyGap);
+  assert.match(html,/Exact PICO screening status/);
+  assert.match(html,/Full-text source directly inspected/);
+  assert.match(html,/NOT_EXTRACTABLE_AS_PUBLISHED_LM_LAD_COMBINED/);
+  assert.match(html,/PENDING_FULL_TEXT_LM_SUBGROUP_AND_2X2/);
+  assert.match(html,/UNKNOWN/);
+  assert.doesNotMatch(html,/DOAC_ONLY_DIALYSIS_COMPARATIVE_OUTCOMES/);
+});
