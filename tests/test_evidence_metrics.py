@@ -159,3 +159,65 @@ def test_old_published_review_without_actual_search_date_has_no_proven_informati
     assert metrics["new_information_gain"] == 0.0
     assert metrics["latest_related_review_publication_year"] == 2019
     assert metrics["latest_related_review_search_year"] is None
+
+
+def test_scoring_prohibits_fake_eligible_trial_counts_from_bibliography():
+    from scimed_scout.discovery.scoring import _prompt, _safe_model_rationale, SYSTEM_PROMPT
+    candidate = SimpleNamespace(
+        title="Ketone monoester in HFpEF", question_type="EFFECTIVENESS",
+        review_question="Is ketone ingestion clinically effective in HFpEF?",
+        population="Adults with HFpEF", intervention_exposure_index_test="Ketone monoester",
+        comparator_reference="Placebo", outcomes=["VO2 peak"],
+        eligible_designs=["RCTs"], rationale="", novelty_hypothesis="",
+    )
+    wording = _prompt(
+        candidate, unique_primary_studies=100,
+        published_review_hits=35, registration_hits=6,
+        competitor_summary="Still unresolved",
+    )
+    assert "LEADS retrieved: 100" in wording
+    assert "CONFIRMED: NOT ASSESSED" in wording
+    assert "Never call the 100 bibliography records eligible" in wording
+    assert "UNSCREENED LEADS" in SYSTEM_PROMPT
+    bad = "The search yields 100 eligible primary studies, sufficient data for meta-analysis."
+    assert "withheld" in _safe_model_rationale(bad)
+    assert "100 eligible primary" not in _safe_model_rationale(bad)
+    good = _safe_model_rationale("Potential clinical relevance but the evidence is uncertain.")
+    assert good.startswith("PRELIMINARY MODEL OPINION")
+
+
+def test_unresolved_novelty_displays_unknown_without_changing_gate_safety():
+    response = {
+        "design_framework_defined": True,
+        "meaningful_synthesis_plausible": True,
+        "question_framework_coherent": True,
+        "feasibility": "HIGH",
+        "fatal_methodological_flaw": False,
+        "clinical_importance": 5,
+        "publication_potential": 5,
+        "editorial_grade": "A",
+        "rationale": "90 eligible primary studies prove meta-analysis feasibility",
+    }
+    candidate = SimpleNamespace(
+        title="Treatment question", question_type="EFFECTIVENESS",
+        review_question="Research question", population="Adults",
+        intervention_exposure_index_test="Drug X",
+        comparator_reference="Standard care", outcomes=["mortality"],
+        eligible_designs=["RCT"], rationale="", novelty_hypothesis="",
+    )
+    unresolved = reviewed(unresolved=True)
+    result = DiscoveryScoringService(StaticAIProvider(json.dumps(response))).score(
+        candidate, unique_primary_studies=90,
+        published_review_hits=1, registration_hits=0,
+        competitor_summary="Competing review unresolved",
+        review_records=[unresolved],
+        primary_records=[study("Unverified bibliographic record", 2025)],
+        semantically_capped=True,
+    )
+    assert result["overall_novelty"] == 0
+    assert result["new_information_gain"] == 0
+    assert result["scoring_trace"]["display_novelty"] is None
+    assert result["scoring_trace"]["display_information_gain"] is None
+    assert result["scoring_trace"]["confirmed_independent_study_count"] is None
+    assert result["scoring_trace"]["bibliographic_lead_count"] == 90
+    assert "withheld" in result["rationale"]
