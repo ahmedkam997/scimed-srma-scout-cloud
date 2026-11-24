@@ -27,5 +27,6 @@ jobs:
       - run: node --test tests/web_targeted_source_recheck.mjs
       - run: node --test tests/web_recheck_dispatch.mjs
       - run: node --test tests/web_final_evidence_audit.mjs
+      - run: node --test tests/web_final_evidence_dta.mjs
       - run: node --test tests/web_startup_reconnect.mjs
       - run: scimed-scout health
