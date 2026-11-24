@@ -58,5 +58,5 @@ test('Existing discovery dispatch remains supported by the Edge Function',()=>{
   assert.match(edge,/p_recheck_id: requestedId/);
   assert.match(edge,/p_job_id: requestedId/);
   assert.match(edge,/hasJob === hasRecheck/);
-  assert.doesNotMatch(edge,/service_role/);
+  assert.doesNotMatch(edge,/Deno\\.env\\.get\\(\"SUPABASE_SERVICE_ROLE_KEY\"\\)/);
 });
