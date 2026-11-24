@@ -163,3 +163,52 @@ test('PWA loads source seeds and final audit module before app and includes expo
   assert.match(appSource,/SCIMED_FINAL\.build/);
   assert.match(index,/Final Evidence Audit/);
 });
+
+test('Duplicate reports of one verified population are counted once, not twice',()=>{
+  const {final,gap,window}=setup();
+  const curated=window.SCIMED_AUDIT_SEEDS[jobId+':'+candidateId];
+  const reports=curated.study_reports;
+  const original=[...reports];
+  const verified={
+    id:'TEMP_FULLTEXT_1', title:'Verified test report A',
+    url:'https://pubmed.ncbi.nlm.nih.gov/41085503/',
+    family:'TEST_SHARED_FAMILY',
+    targeted_fit:'DIRECT_DOAC_COMPARATOR_VERIFIED',
+    possible_overlaps:[],
+    fulltext_eligibility_verified:true,
+    independent_population_verified:true,
+    endpoint_extraction_verified:true,
+  };
+  reports.push(verified,{...verified,id:'TEMP_FULLTEXT_2',title:'Verified test report B'});
+  try {
+    const result=final.build(job,topic,gap);
+    assert.equal(result.studied_full_text_eligible_independent_populations_verified_in_this_audit,1);
+    assert.equal(result.eligible_independent_study_count,null);
+    assert.equal(result.recommendation,'REFINE');
+  } finally {
+    reports.length=0;
+    reports.push(...original);
+  }
+});
+
+test('Even confirmed fulltext report cannot be counted with unresolved family overlap',()=>{
+  const {final,gap,window}=setup();
+  const curated=window.SCIMED_AUDIT_SEEDS[jobId+':'+candidateId];
+  const records=curated.study_reports;
+  const report={
+    id:'TEMP', title:'Test only',url:'https://pubmed.ncbi.nlm.nih.gov/41085503/',
+    family:'TEST_NEW_FAMILY', targeted_fit:'DIRECT_DOAC_COMPARATOR_VERIFIED',
+    possible_overlaps:['ANOTHER_UNRESOLVED_FAMILY'],
+    fulltext_eligibility_verified:true,
+    independent_population_verified:true,
+    endpoint_extraction_verified:true,
+  };
+  records.push(report);
+  try {
+    const result=final.build(job,topic,gap);
+    assert.equal(result.studied_full_text_eligible_independent_populations_verified_in_this_audit,0);
+    assert.equal(result.eligible_independent_study_count,null);
+  } finally {
+    records.pop();
+  }
+});
