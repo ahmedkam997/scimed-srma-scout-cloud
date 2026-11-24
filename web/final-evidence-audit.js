@@ -237,10 +237,8 @@
         .filter(r=>String(r.exact_pico_eligibility_decision||'').startsWith('EXCLUDE')
           || String(r.exact_pico_eligibility_decision||'').startsWith('NOT_EXTRACTABLE')
           || String(r.exact_pico_eligibility_decision||'').startsWith('LM_ONLY_COUNTS_NOT_REPORTED')).length,
-      this_curated_audit_confirms_no_eligible_LM_2x2_in_inspected_reports: !!curated
-        && Array.isArray(curated.study_reports) && curated.study_reports.length>0
-        && !(curated.study_reports.some(r=>verifiedIndependence(r))),
-      this_does_not_establish_total_global_eligible_count: true,
+      verified_eligible_independent_reports_in_this_curated_screen:verifiedIndependent.length,
+      this_screen_cannot_establish_total_global_eligible_count:true,
       saved_citation_shortlist_count:savedCitations.length,
       noncurated_bibliography_fallback_not_full_text:true,
       evidence_methods:[...methodsFor(type),...(curated?.sources_and_methods||[])],
