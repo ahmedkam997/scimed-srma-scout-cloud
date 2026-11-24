@@ -172,6 +172,22 @@ The browser workflow is:
 
 The browser never receives the Supabase service-role key, worker token, or AI credentials. The production worker does not use the service-role key at all.
 
+### Research Gap Verification: cloud notes and cached reassessment
+
+Each completed topic exposes a source-linked manual adjudication panel. The PWA:
+- saves a note locally first, preserving it during interrupted connectivity;
+- uses an append-only UUID event record to retry an upload without rewriting earlier decisions;
+- syncs notes to the existing Supabase project when the browser's device token matches the owning discovery job;
+- displays the latest recorded source-linked decision while preserving earlier corrections in the exported JSON ledger;
+- re-evaluates saved coverage blockers and bibliographic-citation decisions without rerunning PubMed, PROSPERO, OSF, Europe PMC, or other literature searches.
+
+The DB schema is documented in `sql/2026-11-24_gap_verification_events.sql` and was applied to the existing project using a Supabase migration. The new table has RLS enabled and forced; anonymous roles receive SELECT and limited INSERT only, never UPDATE/DELETE. Client writes are restricted to COMPLETED jobs of the same high-entropy device token and to candidate IDs present in the saved results.
+
+The token is a browser-scoped bearer credential, **not an account authentication system**. Notes do not automatically appear on another phone or teammate's browser, even though they are stored in Supabase. Never share the token, clear browser storage without a backup, or publish a raw note export containing sensitive research material. If cloud sync fails, the note remains local and the UI reports the problem. The JSON export is a backup, not a presently supported import format.
+
+Cached reassessment returns SOURCE_COVERAGE_INCOMPLETE, COMPETITOR_SCREENING_INCOMPLETE, or READY_FOR_INDEPENDENT_STUDY_AUDIT_NOT_QUALIFIED. None is a GO decision. A user's citation judgment does not establish a completed source search or eligible independent studies, and the original discovery job status and qualification gates are never mutated by this feature.
+
+
 ### One-time cloud setup
 
 The production Supabase project and queue schema are already configured. Anonymous Auth is not required.
