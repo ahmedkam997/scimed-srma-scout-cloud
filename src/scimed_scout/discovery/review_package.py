@@ -364,6 +364,35 @@ def _build_research_dossier(
             "source_blockers": list(verification.coverage.blockers),
             "coverage_warnings": list(verification.coverage.warnings),
             "pending_verifications": list(verification.pending),
+            "competing_review_screening": {
+                "published_review_records_discovered": len(review_records),
+                "registration_records_discovered": len(registrations),
+                "published_reviews_semantically_resolved": int(
+                    meta.get("discovery_competitor_resolved_count") or 0
+                ),
+                "registrations_semantically_resolved": int(
+                    meta.get("discovery_registration_resolved_count") or 0
+                ),
+                "unassessed_published_review_count": int(
+                    meta.get("discovery_unassessed_review_count") or 0
+                ),
+                "unassessed_registration_count": int(
+                    meta.get("discovery_unassessed_registration_count") or 0
+                ),
+                "unassessed_review_queue": list(
+                    meta.get("discovery_unassessed_review_queue") or []
+                ),
+                "unassessed_registration_queue": list(
+                    meta.get("discovery_unassessed_registration_queue") or []
+                ),
+                "queue_truncated": bool(
+                    meta.get("discovery_unassessed_queue_truncated")
+                ),
+                "uncertainty_rule": (
+                    "UNASSESSED entries remain unresolved potential competitors; "
+                    "keyword prioritization never establishes non-overlap."
+                ),
+            },
             "scientific_gate_results": verification.final_gate_result,
             "preliminary_scoring": scorecard,
             "score_role": "EXPLORATORY_NOT_VALIDATED_PUBLICATION_PROBABILITY",
