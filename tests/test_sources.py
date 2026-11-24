@@ -162,3 +162,62 @@ def test_clinicaltrials_duplicate_page_token_fails_closed():
     result = ClinicalTrialsGovSource(JsonHttpClient(loader=load)).search("blood pressure")
     assert result.status == SourceStatus.PARTIAL
     assert len(result.records) == 1
+
+
+def test_clinicaltrials_later_pages_do_not_require_total_count():
+    """v2 returns totalCount only on the first page when requested."""
+    from urllib.parse import parse_qs, urlsplit
+    calls = []
+
+    def load(url):
+        query = parse_qs(urlsplit(url).query)
+        calls.append(query)
+        page = 1 if "pageToken" not in query else 2
+        payload = {
+            "studies": [{"protocolSection": {"identificationModule": {
+                "nctId": f"NCT{page:08d}",
+                "briefTitle": f"Trial {page}",
+            }}}],
+        }
+        if page == 1:
+            payload["totalCount"] = 2
+            payload["nextPageToken"] = "PAGE_2"
+        return payload
+
+    result = ClinicalTrialsGovSource(
+        JsonHttpClient(loader=load, retries=0)
+    ).search("heart failure")
+
+    assert result.status == SourceStatus.SEARCHED_POSITIVE
+    assert result.total_count == 2
+    assert [r.record_id for r in result.records] == [
+        "NCT00000001", "NCT00000002",
+    ]
+    assert len(calls) == 2
+    assert calls[0]["countTotal"] == ["true"]
+    assert "countTotal" not in calls[1]
+    assert calls[1]["pageToken"] == ["PAGE_2"]
+
+
+def test_clinicaltrials_changed_count_remains_partial():
+    """Inconsistent optional counts must never become confirmed coverage."""
+    from urllib.parse import parse_qs, urlsplit
+
+    def load(url):
+        page = 1 if "pageToken" not in parse_qs(urlsplit(url).query) else 2
+        return {
+            "totalCount": 2 if page == 1 else 3,
+            "studies": [{"protocolSection": {"identificationModule": {
+                "nctId": f"NCT{page:08d}",
+                "briefTitle": f"Trial {page}",
+            }}}],
+            "nextPageToken": "PAGE_2" if page == 1 else None,
+        }
+
+    result = ClinicalTrialsGovSource(
+        JsonHttpClient(loader=load, retries=0)
+    ).search("heart failure")
+
+    assert result.status == SourceStatus.PARTIAL
+    assert result.total_count == 3
+    assert "count changed" in result.message
