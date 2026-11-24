@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from scimed_scout.domain import SourceStatus
 from .base import SearchRecord, SearchResult
 from .http import JsonHttpClient
@@ -9,12 +11,25 @@ class OpenAlexSource:
     name = "OpenAlex"
     endpoint = "https://api.openalex.org/works"
 
-    def __init__(self, http: JsonHttpClient | None = None):
+    def __init__(self, http: JsonHttpClient | None = None, api_key: str | None = None):
         self.http = http or JsonHttpClient()
+        self.api_key = api_key if api_key is not None else os.getenv("OPENALEX_API_KEY", "")
+        self._rate_limited = False
 
     def search(self, query: str, *, limit: int = 20) -> SearchResult:
+        if self._rate_limited:
+            return SearchResult(
+                self.name, query, SourceStatus.ACCESS_FAILED,
+                message="OpenAlex 429 earlier in this job; remaining queries skipped to respect API quota",
+            )
         try:
-            data = self.http.get_json(self.endpoint, {"search": query, "per-page": min(max(1, limit), 100)})
+            data = self.http.get_json(
+                self.endpoint, {
+                    "search": query,
+                    "per-page": min(max(1, limit), 100),
+                    "api_key": self.api_key or None,
+                },
+            )
             meta = data.get("meta") or {}
             count = meta.get("count")
             if count is None:
@@ -39,6 +54,8 @@ class OpenAlexSource:
                 ))
             return SearchResult(self.name, query, SourceStatus.SEARCHED_POSITIVE, records, total)
         except Exception as exc:
+            if "429" in str(exc):
+                self._rate_limited = True
             return SearchResult(self.name, query, SourceStatus.ACCESS_FAILED, message=str(exc))
 
 
