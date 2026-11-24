@@ -50,12 +50,20 @@ def build_search_plan(candidate: CandidateRecord, *, max_queries: int = 4) -> Se
         question,
     ])[:max_queries]
 
+    # These searches find potential competing reviews, not all primary
+    # reports. Require a named index intervention AND an additional PICO
+    # concept before adding review terms. The old intervention-only
+    # "meta-analysis" search returned unrelated animal/cancer reviews.
+    review_anchor = " ".join(_registry_anchor(concept)) or concept
+    review_condition = " ".join(_registry_focus(subject)[:3]) or subject
+    review_outcome = " ".join(_registry_focus(outcome)[:3]) or outcome
+    review_comparator = " ".join(_registry_focus(comparator)[:3])
     review = _dedupe([
-        _join(broad[0], "systematic review"),
-        _join(broad[1] if len(broad) > 1 else broad[0], "meta-analysis"),
-        *[_join(term, "systematic review") for term in keywords[:1]],
-        _join(title, "systematic review"),
-        _join(concept, "meta-analysis"),
+        _join(review_anchor, review_condition, "systematic review"),
+        _join(review_anchor, review_condition, "meta-analysis"),
+        _join(review_anchor, review_outcome, "systematic review"),
+        _join(review_anchor, review_condition, review_comparator, "meta-analysis")
+        if review_comparator else "",
     ])[:max_queries]
 
     # Official PROSPERO search accepts quoted phrases combined using AND.
@@ -149,6 +157,9 @@ _REGISTRY_NOISE = {
     "before", "after", "min", "minute", "minutes", "daily", "weekly",
     "monthly", "biannually", "at", "on", "high", "low", "inhibitor",
     "inhibitors", "agonist", "agonists", "receiving", "prior",
+    "oral", "intravenous", "intramuscular", "percutaneous",
+    "derived", "administered", "diagnosed", "suspected", "known",
+    "newly", "treated", "implantation", "device", "devices",
 }
 
 
@@ -156,7 +167,10 @@ def _registry_focus(value: str) -> list[str]:
     """Clinical terms, without dose/time and generic Boolean noise."""
     raw = re.sub(r"\([^)]*\)", " ", str(value or ""))
     raw = raw.replace("‑", "-").replace("–", "-").replace("—", "-")
-    tokens = re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", raw.casefold())
+    # Split hyphenated dose modifiers before filtering. Previously
+    # "Oral low-dose colchicine" became ["oral", "low-dose"] and
+    # completely lost the drug name from registry searches.
+    tokens = re.findall(r"[a-z0-9]+", raw.casefold())
     return list(dict.fromkeys(
         token for token in tokens
         if token not in _REGISTRY_NOISE
@@ -171,13 +185,15 @@ def _registry_focus(value: str) -> list[str]:
 
 def _registry_anchor(intervention: str) -> list[str]:
     terms = _registry_focus(intervention)
-    return terms[:2]
+    # Four specific tokens retain such essential clinical entities as
+    # "left atrial appendage occlusion" and "computed tomography angiography".
+    return terms[:4]
 
 
 def _registry_phrase(words: list[str]) -> str:
     if not words:
         return ""
-    return '"' + " ".join(words[:3]).replace('"', "") + '"'
+    return '"' + " ".join(words[:4]).replace('"', "") + '"'
 
 
 def _and_query(anchor: list[str], supplementary: list[str]) -> str:
