@@ -29,6 +29,8 @@ let connecting = false;
 let createCloudClient = null;
 let lastGapLoadedAt = 0;
 let gapSyncError = '';
+let lastRecheckLoadedAt = 0;
+
 
 
 function backendState(kind, title, detail) {
@@ -319,6 +321,46 @@ async function loadGapEvents(force = false) {
   }
 }
 
+async function loadSourceRechecks(force = false) {
+  if (!supabase || !window.SCIMED_GAP) return;
+  if (!force && Date.now() - lastRecheckLoadedAt < 15000) return;
+  const ids = jobs.filter(job => job.status === 'COMPLETED').map(job => job.id);
+  if (!ids.length) {
+    window.SCIMED_GAP.setSourceRechecks([]);
+    return;
+  }
+  lastRecheckLoadedAt = Date.now();
+  try {
+    const {data,error} = await supabase.from('scimed_source_rechecks')
+      .select('id,job_id,candidate_id,status,stage,progress,message,error_text,result_json,created_at,completed_at')
+      .in('job_id',ids)
+      .order('created_at',{ascending:false})
+      .limit(200);
+    if (error) throw error;
+    window.SCIMED_GAP.setSourceRechecks(data || []);
+  } catch (error) {
+    // Source-recheck diagnostics must never block the existing job history.
+    console.warn('Could not retrieve source recheck results:',error?.message || error);
+  }
+}
+
+async function requestTargetedRecheck(job, topic) {
+  if (!supabase || !job || !topic || job.status !== 'COMPLETED')
+    throw new Error('The selected saved topic is not part of a completed discovery job.');
+  const current = window.SCIMED_GAP?.rechecksOf?.(job,topic) || [];
+  if (current.some(item => ['QUEUED','RUNNING'].includes(item.status)))
+    throw new Error('This topic already has a recheck queued or running.');
+  const {error} = await supabase.from('scimed_source_rechecks').insert({
+    job_id:job.id,
+    candidate_id:topic.candidate_id,
+  });
+  if (error) throw new Error(error.code === '23505'
+    ? 'Another recheck for this topic is already queued.'
+    : error.message);
+  await loadSourceRechecks(true);
+  return 'Queued successfully. The scheduled GitHub worker will inspect the saved PICO and only its failed/partial sources.';
+}
+
 async function loadJobs() {
   if (!supabase) return;
   const { data, error } = await supabase
@@ -330,6 +372,7 @@ async function loadJobs() {
   if (error) throw error;
   jobs = data || [];
   await loadGapEvents();
+  await loadSourceRechecks();
   renderJobs();
 }
 
@@ -1311,6 +1354,26 @@ els.refresh.addEventListener('click', async () => {
   }
 });
 els.jobs.addEventListener('click', async event => {
+  const targetedButton = event.target.closest('[data-source-recheck]');
+  if (targetedButton) {
+    const job = jobs.find(item => item.id === targetedButton.dataset.sourceRecheck);
+    const topic = job && findTransferTopic(job,targetedButton.dataset.gapTopic);
+    const panel = targetedButton.closest('.gap-source-recheck');
+    const message = panel?.querySelector('.gap-source-message');
+    targetedButton.disabled = true;
+    try {
+      const info = await requestTargetedRecheck(job,topic);
+      if (message) message.textContent = info;
+      backendState('ok','Targeted source recheck queued',
+        'Only the saved topic will be inspected. Refresh the job to see source-by-source findings.');
+    } catch(error) {
+      if (message) message.textContent = error.message || String(error);
+      backendState('error','Could not queue source recheck',
+        error.message || String(error));
+      targetedButton.disabled = false;
+    }
+    return;
+  }
   const gapSave = event.target.closest('[data-gap-save]');
   const gapExport = event.target.closest('[data-gap-export]');
   const gapReassess = event.target.closest('[data-gap-reassess]');
