@@ -5,6 +5,7 @@
   'use strict';
   const PREFIX = 'scimed-gap-verification-v1:';
   let cloudEvents = []; // Browser-scoped rows fetched through Supabase RLS.
+  let sourceRechecks = []; // Separate, device-token-owned source recheck results.
   const ALLOWED = new Set([
     'UNREVIEWED', 'NEEDS_FULL_TEXT', 'POTENTIAL_OVERLAP',
     'DOCUMENTED_OVERLAP', 'DOCUMENTED_NON_OVERLAP',
@@ -246,6 +247,70 @@
       return esc(record.title);
     }
   }
+  function setSourceRechecks(rows) {
+    sourceRechecks = Array.isArray(rows) ? rows.filter(row =>
+      row && typeof row.job_id === 'string' && typeof row.candidate_id === 'string'
+    ).map(row => ({...row})) : [];
+  }
+  function rechecksOf(job, topic) {
+    return sourceRechecks.filter(row => row.job_id === job?.id &&
+      row.candidate_id === topic?.candidate_id
+    ).sort((a,b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  }
+  function sourceRecheckHtml(job, topic) {
+    const quality = topic?.research_dossier?.verification_and_quality || {};
+    const statuses = quality.source_statuses || topic.source_statuses || {};
+    const failed = Object.entries(statuses).filter(([,status]) =>
+      ['PARTIAL','ACCESS_FAILED','NOT_SEARCHED'].includes(status));
+    const requests = rechecksOf(job,topic);
+    const active = requests.some(r => ['QUEUED','RUNNING'].includes(r.status));
+    const latest = requests[0];
+    const result = latest?.result_json || {};
+    const sources = Array.isArray(result.source_reports) ? result.source_reports : [];
+    const reports = sources.map(report => {
+      const attempts = (report.attempted_queries || []).map(a => {
+        const citations = (a.citations || []).slice(0,5).map(item =>
+          '<li>' + href({...item,kind:'review'}) + '</li>'
+        ).join('');
+        return '<details class="gap-record"><summary>' + esc(a.evidence_type) +
+          ': ' + esc(a.status) + '</summary>' +
+          '<p class="help">Query: ' + esc(a.query) +
+          '. Original source result count: ' + esc(a.total_count ?? 'unknown') +
+          '. ' + esc(a.message || '') + '</p>' +
+          (citations ? '<ul>' + citations + '</ul>' : '<p>No citations returned in this attempt.</p>') +
+          (a.citations_truncated ? '<p class="help">Additional citations not shown: ' +
+            esc(a.citations_truncated) + '</p>' : '') +
+          '</details>';
+      }).join('');
+      return '<details class="gap-queue"><summary>' + esc(report.source) +
+        ': ' + esc(report.targeted_search_status) + '</summary>' +
+        '<p class="help">Previous source status: ' + esc(report.previous_status) +
+        '. These new queries do not certify full systematic source coverage.</p>' +
+        attempts + '</details>';
+    }).join('');
+    return '<details class="gap-queue gap-source-recheck"><summary>Targeted Source Recheck' +
+      (latest ? ' · ' + esc(latest.status) : '') + '</summary>' +
+      '<p class="help">Check only the failed/partial sources for this saved PICO. ' +
+      'No new AI-generated topic, no changes to original discovery or qualification. ' +
+      'A completed source recheck is still an exploratory bibliography audit.</p>' +
+      '<p class="help">Sources identified in original dossier: ' +
+      esc(failed.map(([name,status]) => name + ' (' + status + ')').join('; ') || 'none') +
+      '</p>' +
+      '<button type="button" class="secondary small" data-source-recheck="' +
+      esc(job.id) + '" data-gap-topic="' + esc(topic.candidate_id) + '"' +
+      ((active || !failed.length) ? ' disabled' : '') +
+      '>Start Targeted Source Recheck</button>' +
+      (latest ? '<p class="help">Latest request: ' + esc(latest.status) +
+        ' · ' + esc(latest.message || '') + '</p>' : '') +
+      (latest?.status === 'FAILED' ? '<p class="gap-error">' +
+        esc(latest.error_text || 'Unknown worker error') + '</p>' : '') +
+      reports +
+      (latest?.status === 'COMPLETED' ? '<p class="help">Original source flags remain unchanged. ' +
+        'Review citation results, competitor overlap, study eligibility and search dates before a GO decision.</p>' : '') +
+      '<p class="gap-source-message" aria-live="polite"></p>' +
+      '</details>';
+  }
+
   function render(job, topic) {
     if (!topic?.candidate_id || !job?.id) return '';
     const records = evidenceOf(topic);
@@ -336,6 +401,7 @@
       itemsHtml('review','Competing published reviews') +
       itemsHtml('registration','PROSPERO and OSF registrations') +
       '<p class="help">Review dates, true PICO overlap, trial-family independence and extractable outcomes require documented verification. Marking a citation here does not resolve full search coverage or qualify a topic.</p>' +
+      sourceRecheckHtml(job,topic) +
       '<button type="button" class="secondary small" data-gap-reassess="' + esc(job.id) +
       '" data-gap-topic="' + esc(topic.candidate_id) + '">Re-evaluate saved evidence (no new searches)</button>' +
       '<button type="button" class="secondary small" data-gap-export="' + esc(job.id) +
@@ -494,6 +560,7 @@
   window.SCIMED_GAP = {
     render, evidenceOf, read, saveDecision, exportLedger, reassess,
     reassessmentHtml, setCloudEvents, assignPendingIds, markCloudSynced,
+    setSourceRechecks, rechecksOf, sourceRecheckHtml,
     recordKey, validEvidenceUrl,
   };
 })();
