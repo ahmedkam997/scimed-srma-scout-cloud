@@ -343,6 +343,35 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     },
                     "unique_primary_study_candidates": verified.evidence.unique_primary_study_candidates,
                     "scorecard": scorecard,
+                    "competitor_audit": ({
+                        "published_reviews_discovered": (checked.metadata or {}).get(
+                            "discovery_competitor_records_discovered", 0
+                        ),
+                        "published_reviews_semantically_resolved": (checked.metadata or {}).get(
+                            "discovery_competitor_resolved_count", 0
+                        ),
+                        "registrations_discovered": (checked.metadata or {}).get(
+                            "discovery_registration_records_discovered", 0
+                        ),
+                        "registrations_semantically_resolved": (checked.metadata or {}).get(
+                            "discovery_registration_resolved_count", 0
+                        ),
+                        "unassessed_reviews": (checked.metadata or {}).get(
+                            "discovery_unassessed_review_count", 0
+                        ),
+                        "unassessed_registrations": (checked.metadata or {}).get(
+                            "discovery_unassessed_registration_count", 0
+                        ),
+                        "review_queue": (checked.metadata or {}).get(
+                            "discovery_unassessed_review_queue", []
+                        ),
+                        "registration_queue": (checked.metadata or {}).get(
+                            "discovery_unassessed_registration_queue", []
+                        ),
+                        "queue_truncated": (checked.metadata or {}).get(
+                            "discovery_unassessed_queue_truncated", False
+                        ),
+                    } if checked else {}),
                     "registration_age_audit": (
                         (checked.metadata or {}).get("discovery_registration_age_audit") or []
                     ) if checked else [],

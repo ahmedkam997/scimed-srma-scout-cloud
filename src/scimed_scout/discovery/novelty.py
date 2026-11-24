@@ -22,8 +22,8 @@ class DiscoveryNoveltyService:
         ledger: SQLiteLedger,
         assessor: SemanticCompetitorAssessor,
         *,
-        max_reviews: int = 5,
-        max_registrations: int = 4,
+        max_reviews: int = 10,
+        max_registrations: int = 6,
         batch_size: int = 3,
         search_date_resolver: OpenAccessSearchDateResolver | None = None,
         max_fulltext_reviews: int = 2,
@@ -84,6 +84,13 @@ class DiscoveryNoveltyService:
 
         review_unresolved = sum(bool(item.get("unresolved")) for item in review_assessments)
         registration_unresolved = sum(bool(item.get("unresolved")) for item in registration_assessments)
+        # Full bibliographic backlog remains visible and blocks clearance.
+        # The first-pass lexical PICO ranking decides only which records are
+        # assessed within the free inference budget, never eligibility.
+        review_backlog = _unassessed_citation_queue(all_reviews, review_records)
+        registration_backlog = _unassessed_citation_queue(
+            all_registrations, registration_records,
+        )
         # The LLM's "recent review" judgment is not a verified last
         # search date. Avoid automatically rejecting an update opportunity
         # based only on model-supplied recent/adequate fields. Retain the
@@ -106,8 +113,12 @@ class DiscoveryNoveltyService:
         metadata = dict(candidate.metadata or {})
         metadata.update({
             "discovery_ai_competitor_analysis_deferred": not allow_ai,
-            "discovery_competitor_assessment_complete": allow_ai and review_unresolved == 0,
-            "discovery_registration_assessment_complete": allow_ai and registration_unresolved == 0,
+            "discovery_competitor_assessment_complete": (
+                allow_ai and review_unresolved == 0 and not review_backlog
+            ),
+            "discovery_registration_assessment_complete": (
+                allow_ai and registration_unresolved == 0 and not registration_backlog
+            ),
             "discovery_fatal_redundancy": fatal_redundancy,
             "discovery_potential_fatal_review_overlap_ids": potential_fatal_review_ids,
             "discovery_registration_age_audit": registration_freshness,
@@ -118,9 +129,21 @@ class DiscoveryNoveltyService:
             "discovery_competitor_records_semantically_assessed": len(review_records),
             "discovery_registration_records_discovered": len(all_registrations),
             "discovery_registration_records_semantically_assessed": len(registration_records),
-            "discovery_semantic_scope_capped": (
-                len(review_records) < len(_dedupe_records(all_reviews))
-                or len(registration_records) < len(_dedupe_records(all_registrations))
+            "discovery_unassessed_review_count": len(review_backlog),
+            "discovery_unassessed_registration_count": len(registration_backlog),
+            "discovery_unassessed_review_queue": review_backlog[:40],
+            "discovery_unassessed_registration_queue": registration_backlog[:40],
+            "discovery_unassessed_queue_truncated": (
+                len(review_backlog) > 40 or len(registration_backlog) > 40
+            ),
+            "discovery_competitor_resolved_count": (
+                len(review_assessments) - review_unresolved
+            ),
+            "discovery_registration_resolved_count": (
+                len(registration_assessments) - registration_unresolved
+            ),
+            "discovery_semantic_scope_capped": bool(
+                review_backlog or registration_backlog
             ),
         })
         candidate.metadata = metadata
@@ -130,17 +153,16 @@ class DiscoveryNoveltyService:
             "published_reviews_discovered": len(all_reviews),
             "published_reviews_assessed": len(review_assessments),
             "published_reviews_unresolved": review_unresolved,
-            "published_reviews_prefiltered_out": max(
-                0,
-                len(_dedupe_records(all_reviews)) - len(review_records),
+            "published_reviews_prefiltered_out": len(review_backlog),
+            "published_reviews_unassessed_queue": review_backlog[:40],
+            "unassessed_queue_truncated": (
+                len(review_backlog) > 40 or len(registration_backlog) > 40
             ),
             "registrations_discovered": len(all_registrations),
             "registrations_assessed": len(registration_assessments),
             "registrations_unresolved": registration_unresolved,
-            "registrations_prefiltered_out": max(
-                0,
-                len(_dedupe_records(all_registrations)) - len(registration_records),
-            ),
+            "registrations_prefiltered_out": len(registration_backlog),
+            "registrations_unassessed_queue": registration_backlog[:40],
             "fatal_redundancy": fatal_redundancy,
             "potential_fatal_review_overlap_ids": potential_fatal_review_ids,
             "registration_age_audit": registration_freshness,
@@ -318,41 +340,73 @@ def _deferred_competitor(record: dict) -> dict:
     }
 
 
+def _unassessed_citation_queue(all_records: list[dict], selected: list[dict]) -> list[dict]:
+    """Trace every unreviewed bibliographic hit without assuming non-overlap.
+
+    The output is a prioritized manual verification queue, not an exclusion
+    table. Metadata-only absence of a PICO phrase never clears a competitor.
+    """
+    checked = {_record_identity(record) for record in selected}
+    queue: list[dict] = []
+    for record in _dedupe_records(all_records):
+        if _record_identity(record) in checked:
+            continue
+        payload = record.get("payload") or {}
+        queue.append({
+            "record_id": str(record.get("source_record_id") or ""),
+            "title": str(record.get("title") or "")[:300],
+            "source": str(record.get("source") or ""),
+            "url": str(payload.get("url") or ""),
+            "doi": str(payload.get("doi") or ""),
+            "year": payload.get("year"),
+            "status": "UNASSESSED_BIBLIOGRAPHIC_COMPETITOR",
+            "reason": (
+                "Outside the free semantic assessment budget. "
+                "PICO relevance and review overlap NOT VERIFIED."
+            ),
+        })
+    return queue
+
+
 def _select_records(candidate, records: list[dict], limit: int) -> list[dict]:
     unique = _dedupe_records(records)
     if len(unique) <= limit:
         return unique
 
-    candidate_text = " ".join([
-        str(candidate.title or ""),
-        str(candidate.review_question or ""),
-        str(candidate.population or ""),
-        str(candidate.intervention_exposure_index_test or ""),
-        str(candidate.comparator_reference or ""),
-        " ".join(str(x) for x in (candidate.outcomes or [])),
-    ])
-    candidate_tokens = _tokens(candidate_text)
+    # Prioritize explicit intervention and comparator concepts over shared
+    # generic disease words. This ranks what the limited LLM budget sees
+    # first, but never automatically excludes any remaining competitor.
+    priority_stop = {
+        "intervention", "interventions", "supplementation", "supplement",
+        "treatment", "treatments", "therapy", "therapies", "effect",
+        "effects", "efficacy", "clinical", "use", "using", "dose",
+        "doses", "oral", "patients", "placebo", "control",
+    }
+    concepts = [
+        (0.55, _tokens(candidate.intervention_exposure_index_test) - priority_stop),
+        (0.18, _tokens(candidate.population) - priority_stop),
+        (0.12, _tokens(candidate.comparator_reference) - priority_stop),
+        (0.10, _tokens(" ".join(str(x) for x in (candidate.outcomes or []))) - priority_stop),
+        (0.05, _tokens(candidate.title) - priority_stop),
+    ]
     current_year = datetime.now(timezone.utc).year
 
     scored: list[tuple[float, int, dict]] = []
     for index, record in enumerate(unique):
         record_text = _record_text(record)
         record_tokens = _tokens(record_text)
-        overlap = (
-            len(candidate_tokens & record_tokens) / max(1, len(candidate_tokens))
-            if candidate_tokens
-            else 0.0
+        weighted_overlap = sum(
+            weight * len(tokens & record_tokens) / len(tokens)
+            for weight, tokens in concepts if tokens
         )
         year = _record_year(record)
-        recency = 0.0
-        if year is not None:
-            if year >= current_year - 5:
-                recency = 0.15
-            elif year >= current_year - 10:
-                recency = 0.05
-        evidence_bonus = min(0.10, len(record_text) / 50000.0)
-        score = overlap + recency + evidence_bonus
-        scored.append((score, -index, record))
+        recency = (
+            0.10 if year is not None and year >= current_year - 5
+            else 0.03 if year is not None and year >= current_year - 10
+            else 0.0
+        )
+        evidence_bonus = min(0.04, len(record_text) / 50000.0)
+        scored.append((weighted_overlap + recency + evidence_bonus, -index, record))
 
     scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
     return [record for _, _, record in scored[:limit]]

@@ -258,3 +258,72 @@ def test_missing_mandatory_registration_source_defers_preliminary_ai_scoring(tmp
         assert metadata["discovery_scoring_deferred"] is True
         assert metadata["discovery_scoring_deferred_reason"] == "Mandatory source coverage unavailable"
         assert result.candidate_status == CandidateStatus.PROVISIONAL_BACKUP
+
+
+def test_scoring_uses_newly_persisted_competitor_assessment(tmp_path):
+    """Do not score stale citation snapshots taken before semantic assessment."""
+    class OneReviewSource:
+        name = "PubMed"
+
+        def search(self, query, *, limit=20):
+            if "systematic review" in query.casefold() or "meta-analysis" in query.casefold():
+                return SearchResult(
+                    self.name, query, SourceStatus.SEARCHED_POSITIVE,
+                    [SearchRecord(
+                        self.name, "REVIEW-1",
+                        title="Systematic review of Test A in disease X",
+                        doi="10.1000/review-a",
+                        metadata={"abstract": "Test A in adults with disease X"},
+                    )], 1,
+                )
+            return SearchResult(
+                self.name, query, SourceStatus.SEARCHED_POSITIVE,
+                primary_records(4), 4,
+            )
+
+    with SQLiteLedger(tmp_path / "fresh_competitor.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Radiology", question_type="DIAGNOSTIC_ACCURACY"))
+        ledger.upsert_candidate(candidate())
+
+        class PersistingNovelty:
+            def assess_candidate(self, candidate_id, *, allow_ai=True):
+                reviews = ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
+                assert reviews
+                record = reviews[0]
+                ledger.upsert_external_evidence(
+                    candidate_id, "PUBLISHED_REVIEW", record["source_record_id"],
+                    source=record["source"], title=record["title"],
+                    payload={
+                        **record["payload"],
+                        "discovery_semantic_assessment": {
+                            "overall_overlap": "LOW", "unresolved": False,
+                            "confidence": 0.91,
+                        },
+                    },
+                )
+                item = ledger.get_candidate(candidate_id)
+                item.metadata = {
+                    **(item.metadata or {}),
+                    "discovery_competitor_assessment_complete": True,
+                    "discovery_registration_assessment_complete": True,
+                    "discovery_semantic_scope_capped": False,
+                }
+                ledger.upsert_candidate(item)
+                return {"summary": "Source-backed assessment persisted"}
+
+        class CapturingScore:
+            def score(self, *args, **kwargs):
+                reviews = kwargs["review_records"]
+                assert len(reviews) == 1
+                assert reviews[0]["payload"]["discovery_semantic_assessment"]["overall_overlap"] == "LOW"
+                return gate_inputs()
+
+        all_clients = clients()
+        all_clients[0] = OneReviewSource()
+        result = ReviewDiscoveryOrchestrator(
+            ledger, all_clients,
+            novelty_service=PersistingNovelty(),
+            scoring_service=CapturingScore(),
+        ).verify_candidate("C1")
+        assert result.coverage.complete
+        assert not any("competing published reviews are not fully assessed" in p for p in result.pending)
