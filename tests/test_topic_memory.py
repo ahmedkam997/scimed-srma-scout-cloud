@@ -96,3 +96,97 @@ def test_legacy_reports_with_only_title_use_exact_title_match():
 def test_user_selecting_shorter_cooldown_also_shortens_provisional_period():
     rows = recent_topic_memory([previous(status="PROVISIONAL_BACKUP", age_days=4)], now=NOW, revisit_days=3)
     assert rows == []
+
+
+def test_generated_drafts_in_completed_jobs_are_used_for_exploration_only():
+    from scimed_scout.discovery.topic_memory import (
+        recent_generated_topic_memory, recent_topic_memory,
+        saturated_intervention_themes, same_intervention_theme,
+        intervention_theme_tokens, filter_saturated_evidence_cues,
+    )
+    assert intervention_theme_tokens("Oral ketone monoester ingestion before exercise") == frozenset({
+        "ketone", "monoester",
+    })
+    assert intervention_theme_tokens("Vitamin D3") != intervention_theme_tokens("Vitamin C")
+
+    def archived_job(number, topic_title, population):
+        at = (NOW - timedelta(days=number)).isoformat()
+        return {
+            "id": f"JOB-{number}",
+            "status": "COMPLETED",
+            "completed_at": at,
+            "result_json": {
+                "package": {
+                    "options": [],
+                    "provisional_options": [],
+                    "unverified_generated_options": [{
+                        "candidate_id": f"TOPIC-{number}",
+                        "title": topic_title,
+                        "specialty": "Cardiology",
+                        "question_type": "EFFECTIVENESS",
+                        "population": population,
+                        "intervention_exposure_index_test": "Ketone monoester supplementation",
+                        "comparator_reference": "Placebo",
+                        "outcomes": ["Cardiac performance"],
+                    }],
+                },
+                "run_summary": {"topic_history": []},
+            },
+        }
+
+    jobs = [
+        archived_job(1, "Ketone monoester during exercise-heat stress", "Endurance athletes"),
+        archived_job(2, "Ketone monoester for cardiac output", "Heart failure patients"),
+    ]
+    assert recent_topic_memory(jobs, now=NOW) == []
+    generated = recent_generated_topic_memory(jobs, now=NOW)
+    assert len(generated) == 2
+    assert all(row["role"] == "PRIOR_GENERATED_TOPIC_EXPLORATION_ONLY" for row in generated)
+    themes = saturated_intervention_themes(generated)
+    assert len(themes) == 1
+    assert themes[0]["distinct_prior_jobs"] == 2
+    new_proposal = {
+        "intervention_exposure_index_test": "Oral ketone monoester ingestion prior to exercise",
+    }
+    assert same_intervention_theme(new_proposal, themes[0])
+    seeds = [
+        {"title": "Ketone monoester ingestion during exercise-heat stress", "pmid": "12"},
+        {"title": "Randomized study of an atrial fibrillation treatment", "pmid": "13"},
+    ]
+    kept, deferred = filter_saturated_evidence_cues(seeds, themes)
+    assert [row["pmid"] for row in kept] == ["13"]
+    assert [row["pmid"] for row in deferred] == ["12"]
+
+
+def test_exploration_saturation_requires_multiple_distinct_completed_jobs():
+    from scimed_scout.discovery.topic_memory import (
+        saturated_intervention_themes, recent_generated_topic_memory,
+    )
+    at = (NOW - timedelta(days=2)).isoformat()
+    one = {
+        "id": "ONLY-JOB",
+        "status": "COMPLETED",
+        "completed_at": at,
+        "result_json": {
+            "package": {
+                "options": [],
+                "provisional_options": [],
+                "unverified_generated_options": [
+                    {
+                        "candidate_id": str(i),
+                        "title": f"Ketone monoester analysis {i}",
+                        "specialty": "Cardiology",
+                        "intervention_exposure_index_test": "Ketone monoester",
+                    } for i in range(4)
+                ],
+            },
+            "run_summary": {},
+        },
+    }
+    history = recent_generated_topic_memory([one], now=NOW)
+    assert len(history) == 4
+    assert saturated_intervention_themes(history) == []
+    assert recent_generated_topic_memory([one], revisit_days=0, now=NOW) == []
+    assert recent_generated_topic_memory([{
+        **one, "completed_at": (NOW - timedelta(days=9)).isoformat(),
+    }], now=NOW) == []
