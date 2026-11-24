@@ -10,7 +10,10 @@ from datetime import datetime, timezone
 
 from scimed_scout.ai import CandidateDiscoveryService, FreeProviderFallback
 from scimed_scout.competitors import SemanticCompetitorAssessor
-from scimed_scout.discovery.topic_memory import recent_topic_memory
+from scimed_scout.discovery.topic_memory import (
+    recent_topic_memory, recent_generated_topic_memory,
+    saturated_intervention_themes, filter_saturated_evidence_cues,
+)
 from scimed_scout.discovery.open_access_dates import OpenAccessSearchDateResolver
 from scimed_scout.discovery.candidate_preflight import FocusedEvidencePreflight
 from scimed_scout.discovery.evidence_seed import (
@@ -101,6 +104,14 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
         revisit_days=job.revisit_days,
     )
     prior_topics = recent_topic_memory(history_rows, revisit_days=job.revisit_days)
+    generated_history = recent_generated_topic_memory(
+        history_rows, revisit_days=job.revisit_days,
+    )
+    saturated_themes = saturated_intervention_themes(generated_history)
+    # The same broad "latest PubMed" search kept feeding Ketone Monoester
+    # and exercise-trial titles into every Cardiology batch. Rotate the
+    # search subject across clinical subfields by recent completed run count.
+    seed_rotation_index = len(history_rows)
     recently_skipped: list[dict[str, Any]] = []
     provider = FreeProviderFallback.from_env()
     if not provider.primary.endpoint or not provider.primary.model or not provider.primary.api_key:
@@ -126,12 +137,20 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 message="Generating review-topic candidates",
             )
             generator = CandidateDiscoveryService(provider, ledger)
-            evidence_cues = recent_pubmed_cues(job.specialty, job.question_type)
+            raw_evidence_cues = recent_pubmed_cues(
+                job.specialty, job.question_type,
+                rotation_index=seed_rotation_index,
+                max_records=12,
+            )
+            evidence_cues, deferred_seed_cues = filter_saturated_evidence_cues(
+                raw_evidence_cues, saturated_themes,
+            )
             # Campbell/3ie-style evidence-gap cues from *actual review
             # abstracts*, not model-generated claims of novelty. One free
             # Europe PMC query, with a safe empty result on source outages.
             review_gap_cues = recent_review_gap_cues(
                 job.specialty, job.question_type, max_records=5,
+                rotation_index=seed_rotation_index,
             )
             # Save real bibliographic leads BEFORE any paid/free AI endpoint
             # is called. A quota or malformed JSON must not erase the evidence
@@ -175,6 +194,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 ).strip(),
                 progress_callback=generation_progress,
                 recent_topics=prior_topics,
+                generated_history=generated_history,
                 skipped_recent=recently_skipped,
             )
             store.ensure_active(job.id)
@@ -201,7 +221,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                             "recent_topics_skipped": recently_skipped[:40],
                             "recent_topics_skipped_count": len(recently_skipped),
                             "revisit_days": job.revisit_days,
-                            "message": "Only recently checked questions were generated. No redundant literature searches were run.",
+                            "message": "Only previously explored or recently checked questions were generated. No redundant literature searches were run.",
                         },
                     }
                 raise RuntimeError("Candidate generation produced no new review topics")
@@ -411,6 +431,11 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "duplicate_topics_skipped_count": len(result.duplicate_topics_skipped),
                     "recent_pubmed_cues": evidence_cues,
                     "published_review_gap_cues": review_gap_cues,
+                    "seed_rotation_index": seed_rotation_index,
+                    "saturated_prior_intervention_themes": saturated_themes[:20],
+                    "deferred_repeated_seed_cues": deferred_seed_cues[:20],
+                    "deferred_repeated_seed_cue_count": len(deferred_seed_cues),
+                    "prior_generated_topic_count": len(generated_history),
                     "ai_failover_count": provider.total_failover_count,
                     "configured_free_ai_route": provider.configured_free_route,
                     "unavailable_free_providers": provider.unavailable_free_providers,
