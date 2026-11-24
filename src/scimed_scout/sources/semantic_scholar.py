@@ -12,14 +12,20 @@ class SemanticScholarSource:
     name = "Semantic Scholar"
     endpoint = "https://api.semanticscholar.org/graph/v1/paper/search"
 
-    def __init__(self, http: JsonHttpClient | None = None, api_key: str | None = None):
+    def __init__(self, http: JsonHttpClient | None = None, api_key: str | None = None, *, allow_keyless_probe: bool = True):
         self.http = http or JsonHttpClient()
         self.api_key = api_key if api_key is not None else os.getenv("SEMANTIC_SCHOLAR_API_KEY", "")
+        self.allow_keyless_probe = allow_keyless_probe
         self._rate_limited = False
         self._last_request_started_at: float | None = None
         self._unauthenticated_probe_sent = False
 
     def search(self, query: str, *, limit: int = 20) -> SearchResult:
+        if not self.api_key and not self.allow_keyless_probe:
+            return SearchResult(
+                self.name, query, SourceStatus.NOT_SEARCHED,
+                message="Optional Semantic Scholar not searched: no personal API key; use independent literature sources. Not a negative result.",
+            )
         if self._rate_limited:
             return SearchResult(
                 self.name, query, SourceStatus.ACCESS_FAILED,
@@ -85,6 +91,8 @@ class SemanticScholarSource:
             if "429" in str(exc):
                 self._rate_limited = True
             description = str(exc)
+            if self.api_key:
+                description = description.replace(self.api_key, "[SECRET_REDACTED]")
             if "429" in description:
                 description += "; shared quota or personal-key rate limit hit; requests halted for this worker job."
             return SearchResult(self.name, query, SourceStatus.ACCESS_FAILED, message=description)

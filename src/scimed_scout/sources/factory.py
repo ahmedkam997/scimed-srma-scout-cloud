@@ -10,13 +10,13 @@ from .pubmed import PubMedSource
 from .semantic_scholar import SemanticScholarSource
 
 
-def build_default_source_clients() -> list:
+def build_default_source_clients(*, allow_semantic_scholar_keyless_probe: bool = False) -> list:
     return [
         PubMedSource(),
         EuropePMCSource(),
         OpenAlexSource(),
         CrossrefSource(),
-        SemanticScholarSource(),
+        SemanticScholarSource(allow_keyless_probe=allow_semantic_scholar_keyless_probe),
         ProsperoCliSource(),
         OSFRegistrationsSource(),
         ClinicalTrialsGovSource(),

@@ -47,6 +47,9 @@ def evaluate_coverage(logs: list[SearchLogRecord], policy: VerificationPolicy) -
             f"{policy.min_complete_literature_sources} required"
         )
 
+    if "Semantic Scholar" in policy.literature_sources and statuses.get("Semantic Scholar") not in DEFINITIVE:
+        warnings.append("Optional Semantic Scholar coverage is incomplete; no negative inference. Other independent literature sources must meet the coverage requirement.")
+
     if policy.require_prospero and statuses.get("PROSPERO") not in DEFINITIVE:
         blockers.append("TYPE-A: PROSPERO coverage is incomplete or unavailable")
 

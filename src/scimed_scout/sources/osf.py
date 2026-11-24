@@ -85,6 +85,34 @@ class OSFRegistrationsSource:
             return SearchResult(self.name, query, SourceStatus.PARTIAL, message="No suitable OSF search terms")
         try:
             result = self._search_trove(query, focus, limit)
+            # Compare the same intervention scope in both indexes.
+            anchor = re.match(r'^\+"([^"]+)"', focus)
+            if (anchor and result.status == SourceStatus.PARTIAL
+                    and result.records and "Index disagreement" in result.message):
+                broad = '"' + anchor.group(1) + '"'
+                try:
+                    recovered = self._search_trove(query, broad, limit, confirm_zero=False)
+                except (RuntimeError, ValueError, TypeError, KeyError, OSError):
+                    return result
+                v2_ids = {r.record_id for r in result.records}
+                trove_ids = {r.record_id for r in recovered.records}
+                merged = {r.record_id: r for r in result.records}
+                merged.update({r.record_id: r for r in recovered.records})
+                reconciled = (
+                    recovered.status == SourceStatus.SEARCHED_POSITIVE
+                    and "v2_pages_complete=True" in result.message
+                    and v2_ids.issubset(trove_ids)
+                )
+                return SearchResult(
+                    self.name, query,
+                    SourceStatus.SEARCHED_POSITIVE if reconciled else SourceStatus.PARTIAL,
+                    list(merged.values()), len(merged),
+                    message=(result.message + f" Same-anchor Trove retry {broad}: "
+                             f"{len(v2_ids & trove_ids)}/{len(v2_ids)} v2 IDs reconciled; "
+                             f"scope_reconciled={reconciled}. "
+                             + recovered.message
+                             + " Scoped registration retrieval only; not novelty clearance."),
+                )
             # Exact intervention+population phrases are often too narrow for
             # public OSF registration titles. A focused zero must never be
             # mistaken for proof that no competing review exists. Retry one
@@ -164,7 +192,7 @@ class OSFRegistrationsSource:
                          f"OSF v2 title-filter fallback. {fallback.message}"),
             )
 
-    def _search_trove(self, original: str, focus: str, limit: int) -> SearchResult:
+    def _search_trove(self, original: str, focus: str, limit: int, *, confirm_zero: bool = True) -> SearchResult:
         # Registry verification needs complete matching pages, not a small
         # screening display limit. 50 per page reduces partials and API calls.
         size = 50
@@ -277,7 +305,7 @@ class OSFRegistrationsSource:
         # Ask OSF's separate v2 registration index for an explicit zero and
         # retain the narrower query scope in the audit.
         if not records:
-            if total == 0 and not remaining and malformed_hits == 0:
+            if confirm_zero and total == 0 and not remaining and malformed_hits == 0:
                 try:
                     confirmation = self.http.get_json(self.endpoint, {
                         # OSF v2 title filter is plain text, not Trove's
@@ -327,16 +355,16 @@ class OSFRegistrationsSource:
                         # Previously these real citations were DISCARDED.
                         # Preserve the records for manual checking; never
                         # declare complete registration search coverage.
-                        v2_records = self._v2_records(rows)
+                        v2_records, v2_complete = self._collect_v2_pages(confirmation)
                         return SearchResult(
                             self.name, original, SourceStatus.PARTIAL,
-                            v2_records, len(rows),
+                            v2_records, len(v2_records),
                             message=(
                                 f"OSF Trove returned zero for '{focus}' but v2 "
-                                f"found {len(rows)} title-filter matches "
+                                f"found {len(v2_records)} title-filter matches "
                                 f"({len(v2_records)} parsed records). "
                                 "Citations retained for manual verification. "
-                                "Index disagreement prevents full search clearance."
+                                f"Index disagreement prevents full search clearance. v2_pages_complete={v2_complete}"
                             ),
                         )
                 except (RuntimeError, ValueError, TypeError, KeyError, OSError):
@@ -399,16 +427,54 @@ class OSFRegistrationsSource:
             ))
         return records
 
+    def _collect_v2_pages(self, first: dict) -> tuple[list[SearchRecord], bool]:
+        """Exhaust bounded v2 pagination; retain earlier results on errors."""
+        page = first
+        records: dict[str, SearchRecord] = {}
+        visited: set[str] = set()
+        valid = True
+        expected_total = None
+        for index in range(self.max_pages):
+            rows = page.get("data")
+            links = page.get("links")
+            if not isinstance(rows, list) or not isinstance(links, dict):
+                return list(records.values()), False
+            parsed = self._v2_records(rows)
+            if len(parsed) != len(rows) or any(not r.title.strip() for r in parsed):
+                valid = False
+            records.update({r.record_id: r for r in parsed})
+            meta = page.get("meta") or {}
+            if isinstance(meta, dict) and isinstance(meta.get("total"), int):
+                count = meta["total"]
+                if expected_total is not None and count != expected_total:
+                    valid = False
+                expected_total = count
+            nxt = links.get("next")
+            if isinstance(nxt, dict):
+                nxt = nxt.get("href")
+            if not nxt:
+                return list(records.values()), bool(
+                    valid and (expected_total is None or expected_total == len(records))
+                )
+            if (index + 1 >= self.max_pages or not isinstance(nxt, str) or nxt in visited
+                    or not _safe_next(nxt, "api.osf.io", "/v2/registrations/")):
+                return list(records.values()), False
+            visited.add(nxt)
+            try:
+                page = self.http.get_json(nxt)
+            except (RuntimeError, ValueError, TypeError, KeyError, OSError):
+                return list(records.values()), False
+        return list(records.values()), False
+
     def _search_v2(self, original: str, focus: str, limit: int) -> SearchResult:
         size = min(max(1, int(limit)), 20)
         data = self.http.get_json(self.endpoint, {"filter[title]": focus, "page[size]": size})
         rows = data.get("data")
         if not isinstance(rows, list):
             raise ValueError("OSF v2 response missing data")
-        records = self._v2_records(rows)
-        next_link = (data.get("links") or {}).get("next")
+        records, complete = self._collect_v2_pages(data)
         return SearchResult(
             self.name, original, SourceStatus.PARTIAL, records, len(records),
             message=f"OSF v2 title-only query '{focus}', {len(records)} matches; "
-                    + ("pagination not exhausted" if next_link else "title-only scope; manual broader check required"),
+                    + ("title-only scope; manual broader check required" if complete else "pagination not exhausted"),
         )

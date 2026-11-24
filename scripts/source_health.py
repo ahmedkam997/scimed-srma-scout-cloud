@@ -25,7 +25,7 @@ QUERIES = {
 }
 
 def main() -> None:
-    sources = build_default_source_clients()
+    sources = build_default_source_clients(allow_semantic_scholar_keyless_probe=True)
     report = {
         "schema": "SCIMED_SOURCE_HEALTH_V1",
         "checked_at_utc": datetime.now(timezone.utc).isoformat(),

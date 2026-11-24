@@ -44,7 +44,7 @@ def test_live_osf_index_disagreement_retains_registered_citations():
     assert all(r.metadata["registry_search"]=="OSF v2 title-only fallback" for r in result.records)
     assert "Index disagreement" in result.message
     assert "Citations retained" in result.message
-    assert len(calls)==2
+    assert len(calls)==3  # includes the same-anchor Trove recovery attempt
 
 
 def test_osf_v2_index_disagreement_is_not_a_false_absence():
