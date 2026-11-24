@@ -13,12 +13,30 @@ STOP = {
     "vs", "versus", "among", "on", "after", "before", "patients",
     "patient", "adult", "adults", "using", "effect", "effects", "study",
     "diagnostic", "accuracy", "systematic", "review", "meta", "analysis",
+    "oral", "low", "high", "dose", "doses", "daily", "weekly", "acute",
+    "supplementation", "ingestion", "administration", "percutaneous",
 }
 
 
 def _focus_query(query: str) -> str:
-    """Reduce a long PICO sentence to a reproducible registry keyword query."""
-    terms = re.findall(r"[a-z0-9\u0600-\u06ff]+", str(query or "").casefold())
+    """Preserve Boolean PICO anchors in OSF Trove's documented query syntax.
+
+    Trove supports '+' for AND and double quotes for phrases. The old
+    tokenizer dropped the Boolean AND and took just the first four
+    (often generic dose/route) words, leading to hundreds of unrelated
+    registrations and a consistently unfinishable semantic queue.
+    """
+    raw = str(query or "")
+    quoted = re.findall(r'"([^"]+)"', raw)
+    if len(quoted) >= 2 and re.search(r"\bAND\b", raw, flags=re.I):
+        groups = []
+        for value, limit in ((quoted[0], 4), (quoted[1], 3)):
+            words = re.findall(r"[a-z0-9\u0600-\u06ff]+", value.casefold())
+            useful = [word for word in words if word not in STOP and len(word) > 2]
+            groups.append(" ".join(useful[:limit]))
+        if all(groups):
+            return '+"' + groups[0] + '" +"' + groups[1] + '"'
+    terms = re.findall(r"[a-z0-9\u0600-\u06ff]+", raw.casefold())
     useful = [term for term in terms if len(term) > 2 and term not in STOP]
     return " ".join(useful[:4]) or " ".join(terms[:3])
 
@@ -75,6 +93,10 @@ class OSFRegistrationsSource:
                     or "no indexed matches" in (result.message or "")
                 )
                 and len(focus.split()) > 2
+                # A PICO-constrained OSF query must never silently broaden
+                # into an unrelated intervention-only search. Keep its
+                # limited coverage explicit rather than yielding 200+ hits.
+                and not focus.startswith('+"')
             ):
                 broad = " ".join(focus.split()[:2])
                 broad_result = self._search_trove(query, broad, limit)
@@ -245,7 +267,13 @@ class OSFRegistrationsSource:
             if total == 0 and not remaining and malformed_hits == 0:
                 try:
                     confirmation = self.http.get_json(self.endpoint, {
-                        "filter[title]": focus,
+                        # OSF v2 title filter is plain text, not Trove's
+                        # '+' Boolean syntax; use only the exact index
+                        # intervention phrase for independent validation.
+                        "filter[title]": (
+                            re.search(r'^\+"([^"]+)"', focus).group(1)
+                            if re.search(r'^\+"([^"]+)"', focus) else focus
+                        ),
                         "page[size]": 20,
                     })
                     rows = confirmation.get("data")
