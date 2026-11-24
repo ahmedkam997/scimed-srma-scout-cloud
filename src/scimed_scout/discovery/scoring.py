@@ -12,7 +12,7 @@ from .evidence_metrics import composite_score, evidence_metrics
 
 SYSTEM_PROMPT = """Score a candidate systematic-review/meta-analysis topic for discovery prioritization.
 This is topic discovery only. Do not claim that studies are eligible, synthesis-ready, or extracted.
-Use the supplied deterministic search counts and competitor summaries as context, but never alter them.
+Use bibliographic retrieval counts as UNSCREENED LEADS only. Never describe them as eligible independent studies, confirmed clinical trials, extractable RCTs, or proof of meta-analysis feasibility.
 Return strict JSON only. Be conservative. A fatal methodological flaw means the proposed review question itself
 is not defensible as framed. AI ratings of importance, methodological feasibility and editorial quality are preliminary
 and require human review. Novelty, information gain proxy and MCDA composite are calculated
@@ -85,7 +85,11 @@ class DiscoveryScoringService:
             "new_information_gain": _bounded(raw.get("new_information_gain"), 0, 5),
             "publication_oriented_score": _bounded(raw.get("publication_oriented_score"), 0, 100),
             "editorial_grade": str(raw.get("editorial_grade") or "").strip().upper(),
-            "rationale": str(raw.get("rationale") or "").strip(),
+            # A model's unsupported study-eligibility claim must not be
+            # presented as verified evidence. Preserve conservative reasons
+            # for triage but replace unsupported claims with an explicit
+            # traceable warning, without inventing screening outcomes.
+            "rationale": _safe_model_rationale(raw.get("rationale")),
             "scored_by": f"{response.provider}:{response.model}",
         }
         metrics = evidence_metrics(
@@ -109,6 +113,22 @@ class DiscoveryScoringService:
         result["scoring_trace"] = {
             **metrics,
             **composite,
+            "eligibility_confirmed": False,
+            "confirmed_independent_study_count": None,
+            "bibliographic_lead_count": int(unique_primary_studies),
+            "display_novelty": (
+                None if metrics["novelty_status"] == "NOT_ESTIMABLE"
+                else metrics["overall_novelty"]
+            ),
+            "display_information_gain": (
+                None if str(metrics["information_gain_status"]).startswith("NOT_ESTIMABLE")
+                else metrics["new_information_gain"]
+            ),
+            "interpretation": (
+                "Novelty/information gain is UNKNOWN when assessment is incomplete. "
+                "Numeric 0 is an internal fail-closed gate sentinel, NOT a verified "
+                "scientific zero. Bibliographic leads are not eligible independent studies."
+            ),
             "model_only_judgments": [
                 "clinical_importance",
                 "publication_potential",
@@ -120,6 +140,24 @@ class DiscoveryScoringService:
             "human_confirmation_needed": True,
         }
         return result
+
+
+def _safe_model_rationale(raw: Any) -> str:
+    """Fail closed when the model upgrades bibliographic leads into eligible studies."""
+    text = str(raw or "").strip()
+    if not text:
+        return "No supported model rationale supplied. Study eligibility and novelty not established."
+    unsupported = [
+        r"\b\d[\d,]*\s+(?:eligible|independent|included|confirmed)\s+(?:primary\s+)?(?:studies|trials|populations)\b",
+        r"\b(?:sufficient|enough|adequate)\s+(?:eligible\s+)?(?:data|studies|trials)\s+for\s+(?:a\s+)?meta[ -]analysis\b",
+    ]
+    if any(re.search(pattern, text, re.IGNORECASE) for pattern in unsupported):
+        return (
+            "Model rationale withheld: it asserted unverified study eligibility "
+            "or synthesis feasibility. Search results here are bibliographic "
+            "leads only; screen full texts and independent populations first."
+        )
+    return "PRELIMINARY MODEL OPINION, NOT VERIFIED EVIDENCE: " + text
 
 
 def _prompt(
@@ -143,9 +181,17 @@ Rationale: {candidate.rationale}
 Novelty hypothesis: {candidate.novelty_hypothesis}
 
 Deterministic discovery evidence:
-Unique primary-study candidates found: {unique_primary_studies}
-Published-review records found: {published_review_hits}
-Review/protocol registrations found: {registration_hits}
+Distinct bibliographic primary-study LEADS retrieved: {unique_primary_studies}
+Full-text-eligible independent studies CONFIRMED: NOT ASSESSED
+Outcome data extractability: NOT ASSESSED
+Published-review bibliographic leads (not all PICO overlaps): {published_review_hits}
+Review/protocol registration leads (not all PICO overlaps): {registration_hits}
+
+IMPORTANT: Never call the {unique_primary_studies} bibliography records eligible
+studies/trials. Some records belong to different patients, interventions or
+outcomes; duplicates and multiple reports remain possible. Do NOT infer enough
+studies for a meta-analysis from this number. Limit the rationale to question
+coherence, clinical relevance and preliminary methodological risks.
 
 Competitor summary:
 {competitor_summary or "No assessed competitor summary available."}
