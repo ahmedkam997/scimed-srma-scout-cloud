@@ -230,7 +230,7 @@
     return '<details class="gap-review" data-gap-key="' + esc(job.id + ':' + topic.candidate_id) + '">' +
       '<summary>Research Gap Verification · ' + decisions + ' saved manual finding(s)</summary>' +
       '<p class="help">Evidence review workbench. This never changes a source status, scientific gate or QUALIFIED decision automatically.</p>' +
-      '<p class="help">Notes are stored only in this browser profile. Export JSON to back them up or move them to another device; job history remains in Supabase.</p>' +
+      '<p class="help">Notes are stored only in this browser profile. Export JSON as an offline backup; importing into another browser is not yet supported. Cloud job history remains unchanged.</p>' +
       '<p><b>Question:</b> ' + esc(q.review_question || topic.title) + '</p>' +
       '<div class="gap-counts"><span>Reviews: ' + esc(check.published_review_records_discovered ?? 'unknown') + '</span>' +
       '<span>Review backlog: ' + esc(check.unassessed_published_review_count ?? 'unknown') + '</span>' +
@@ -268,7 +268,8 @@
       source_search_audit: dossier.evidence_search_audit || [],
       bibliographic_candidates_ordered_for_manual_review: evidenceOf(topic),
       manual_decisions_latest: saved.decisions,
-      immutable_local_adjudication_history: saved.history,
+      append_only_local_adjudication_history: saved.history,
+      history_is_not_cryptographically_immutable_or_authenticated: true,
       required_next_actions: dossier.next_actions || [
         'Resolve incomplete database and registry searches with provenance.',
         'Verify published-review PICO overlap and actual last literature search dates.',
