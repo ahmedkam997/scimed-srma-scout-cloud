@@ -26,7 +26,7 @@ test('startup does not depend on an eager CDN import', () => {
   assert.ok(app.includes('data-reconnect'), 'Failed connection must show retry');
   assert.ok(html.includes('reloadCloudApp'), 'Independent HTML startup watchdog must be active');
   assert.ok(html.includes('gap-verification'));
-  assert.ok(sw.includes('scimed-review-scout-v24'));
+  assert.ok(sw.includes('scimed-review-scout-v25'));
 });
 
 test('startup timeout produces a recoverable error instead of waiting forever', async () => {
