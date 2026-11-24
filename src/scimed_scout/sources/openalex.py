@@ -20,7 +20,16 @@ class OpenAlexSource:
         if self._rate_limited:
             return SearchResult(
                 self.name, query, SourceStatus.ACCESS_FAILED,
-                message="OpenAlex 429 earlier in this job; remaining queries skipped to respect API quota",
+                message="OpenAlex 429 earlier in this job; remaining queries skipped to respect API quota. Check OPENALEX_API_KEY quota.",
+            )
+        # OpenAlex's Nov 2026 API uses free personal keys to provide reliable
+        # access. A worker without a key must not hammer the public endpoint
+        # repeatedly, pretend the registry was searched or inflate latency.
+        # Keep injected offline fixture clients usable for regression tests.
+        if not self.api_key and self.http.loader is None:
+            return SearchResult(
+                self.name, query, SourceStatus.ACCESS_FAILED,
+                message="OPENALEX_API_KEY is not configured for this worker; OpenAlex search not executed. Obtain the free key from openalex.org/settings/api. Other literature sources continue independently.",
             )
         try:
             data = self.http.get_json(
@@ -56,7 +65,12 @@ class OpenAlexSource:
         except Exception as exc:
             if "429" in str(exc):
                 self._rate_limited = True
-            return SearchResult(self.name, query, SourceStatus.ACCESS_FAILED, message=str(exc))
+            description=str(exc)
+            if "429" in description:
+                description += "; OpenAlex quota reached; no further requests will be made during this worker job."
+            elif "401" in description or "403" in description:
+                description += "; verify OPENALEX_API_KEY in GitHub Actions Secrets."
+            return SearchResult(self.name, query, SourceStatus.ACCESS_FAILED, message=description)
 
 
 
