@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { randomUUID } from 'node:crypto';
 import { runInNewContext } from 'node:vm';
 
 const source = readFileSync('web/gap-verification.js', 'utf8');
@@ -15,7 +16,7 @@ function setup() {
     setItem: (key, val) => values.set(key, String(val)),
   };
   const window = {};
-  runInNewContext(source, {window, localStorage, URL, Date, Set, Map});
+  runInNewContext(source, {window, localStorage, URL, Date, Set, Map, crypto:{randomUUID}});
   return {gap:window.SCIMED_GAP, values};
 }
 
@@ -139,4 +140,87 @@ test('HTML-escaped titles and non-whitelisted links cannot inject markup', () =>
   assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'));
   assert.ok(!html.includes('<img src=x'));
   assert.ok(!html.includes('href="https://example-attacker.org/phish"'));
+});
+
+test('Cloud events for one browser-scoped job merge with locally unsent notes', () => {
+  const {gap} = setup();
+  const record = gap.evidenceOf(topic)[0];
+  const local = gap.saveDecision(job,topic,record,{
+    decision:'NEEDS_FULL_TEXT', evidence_url:'https://pubmed.ncbi.nlm.nih.gov/123/',
+    rationale:'Need full-text review methods before deciding on comparator',
+  });
+  assert.equal(local.ok,true);
+  assert.equal(gap.assignPendingIds(job,topic).length,1);
+  const remoteId = randomUUID();
+  gap.setCloudEvents([{
+    id:remoteId,job_id:job.id,candidate_id:topic.candidate_id,
+    record_key:record.key,record_type:'review',
+    title_at_adjudication:record.title,source:record.source,
+    decision:'DOCUMENTED_OVERLAP',
+    evidence_url:'https://pubmed.ncbi.nlm.nih.gov/123/',
+    documented_last_search_date:'2024-08-30',
+    rationale:'Published methods show matching PICO with a dated search',
+    created_at:'2026-11-24T13:51:00Z',
+  },{
+    id:randomUUID(),job_id:'ANOTHER-JOB',candidate_id:topic.candidate_id,
+    record_key:'review|unrelated',decision:'DOCUMENTED_NON_OVERLAP',
+    rationale:'Other browser scoped job',created_at:'2026-11-24T14:00:00Z',
+  }]);
+  const result = gap.read(job,topic);
+  assert.equal(result.history.length,2);
+  assert.equal(result.decisions[record.key].decision,'DOCUMENTED_OVERLAP');
+  const pending = gap.assignPendingIds(job,topic);
+  gap.markCloudSynced(job,topic,pending[0].id);
+  assert.equal(gap.assignPendingIds(job,topic).length,0);
+  assert.equal(gap.read(job,topic).history.length,2);
+  assert.equal(topic.qualification_status,'PROVISIONAL_BACKUP');
+});
+
+test('Cached reassessment never clears unresolved sources or qualifies a topic', () => {
+  const {gap} = setup();
+  const candidate = structuredClone(topic);
+  const evidence = gap.evidenceOf(candidate);
+  for(const record of evidence) {
+    assert.equal(gap.saveDecision(job,candidate,record,{
+      decision:'DOCUMENTED_NON_OVERLAP',
+      evidence_url:'https://pubmed.ncbi.nlm.nih.gov/123/',
+      rationale:'Manual source review suggests no overlap for this PICO',
+    }).ok,true);
+  }
+  const result = gap.reassess(job,candidate);
+  assert.equal(result.status,'SOURCE_COVERAGE_INCOMPLETE');
+  assert.equal(result.scientific_qualification_changed,false);
+  assert.equal(result.search_queries_reexecuted,false);
+  assert.equal(result.full_text_eligible_independent_studies,'NOT_VERIFIED');
+  assert.ok(result.unresolved_citations.review > 0);
+  assert.ok(result.unresolved_citations.registration > 0);
+  assert.match(gap.reassessmentHtml(result),/Original source blockers/);
+  const output = gap.exportLedger(job,candidate);
+  assert.equal(output.cached_reassessment.status,'SOURCE_COVERAGE_INCOMPLETE');
+});
+
+test('Cached reassessment with missing coverage metadata is unknown, not a zero', () => {
+  const {gap} = setup();
+  const missing = {candidate_id:'MISSING',title:'Sparse prior topic',qualification_status:'PROVISIONAL_BACKUP'};
+  const report = gap.reassess(job,missing);
+  assert.equal(report.status,'SOURCE_COVERAGE_INCOMPLETE');
+  assert.equal(report.unresolved_citations.review,null);
+  assert.equal(report.unresolved_citations.registration,null);
+});
+
+test('Existing local event ids are stable across retry and cloud acknowledgement', () => {
+  const {gap} = setup();
+  const candidate = structuredClone(topic);
+  const row = gap.evidenceOf(candidate)[0];
+  const saved = gap.saveDecision(job,candidate,row,{
+    decision:'NEEDS_FULL_TEXT', evidence_url:'https://pubmed.ncbi.nlm.nih.gov/123/',
+    rationale:'Clinical decision endpoint is not reported in the citation',
+  });
+  assert.equal(saved.ok,true);
+  const first = gap.assignPendingIds(job,candidate)[0];
+  const second = gap.assignPendingIds(job,candidate)[0];
+  assert.equal(first.id,second.id);
+  assert.match(first.id,/^[0-9a-f-]{36}$/i);
+  gap.markCloudSynced(job,candidate,first.id);
+  assert.equal(gap.assignPendingIds(job,candidate).length,0);
 });
