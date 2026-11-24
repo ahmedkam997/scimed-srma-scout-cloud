@@ -161,3 +161,169 @@ def recent_topic_memory(
             if len(out) >= 500:
                 return out
     return out
+
+
+# Generation diversity is deliberately separate from the strict PICO recheck
+# policy above. A draft is NOT a scientifically screened topic; repeated draft
+# themes only change what a subsequent brainstorming run prioritizes.
+_EXPLORATION_THEME_STOP = {
+    "exercise", "prior", "before", "after", "following", "post", "acute", "daily", "weekly",
+    "intervention", "investigation", "comparison", "efficacy", "extract",
+    "standardized", "drug", "drugs", "care", "use", "in", "of",
+    "high", "low", "mg", "dose", "doses", "participants",
+    "oral", "ingestion", "supplementation", "supplement", "supplements",
+    "treatment", "treatments", "therapy", "therapies", "and", "for",
+    "versus", "standard", "patients", "patient", "adult", "adults",
+    "vitamin", "combination", "treating", "agent",
+}
+
+
+def intervention_theme_tokens(value: Any) -> frozenset[str]:
+    """Non-generic keywords used only for rotating brainstorming subjects."""
+    return frozenset(
+        term for term in _tokens(value)
+        if term not in _EXPLORATION_THEME_STOP
+        and (len(term) >= 3 or (
+            len(term) == 2
+            and any(char.isdigit() for char in term)
+            and any(char.isalpha() for char in term)
+        ))
+        and not term.isdigit()
+    )
+
+
+def same_intervention_theme(a: Any, b: Any) -> bool:
+    """Comparable intervention identity, not clinical PICO equivalence."""
+    left = intervention_theme_tokens(_field(a, "intervention_exposure_index_test"))
+    right = intervention_theme_tokens(_field(b, "intervention_exposure_index_test"))
+    return bool(left and right) and len(left & right) / min(len(left), len(right)) >= 0.8
+
+
+def recent_generated_topic_memory(
+    completed_jobs: Iterable[dict[str, Any]],
+    *,
+    revisit_days: int = 30,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Source-authentic generated drafts from this browser's completed jobs.
+
+    Include verified and unverified generated PICOs, unlike the strict
+    recent_topic_memory() filter. Use only for exploration diversity within
+    at most seven days. Never label these topics screened or non-novel.
+    """
+    days = min(7, max(0, min(180, int(revisit_days))))
+    if days == 0:
+        return []
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    output: list[dict[str, Any]] = []
+    for row in completed_jobs:
+        if str(row.get("status") or "").upper() != "COMPLETED":
+            continue
+        completed_at = _parse_dt(row.get("completed_at")) or _parse_dt(row.get("updated_at"))
+        if completed_at is None or completed_at + timedelta(days=days) <= current:
+            continue
+        result = row.get("result_json") or {}
+        if not isinstance(result, dict):
+            continue
+        package = result.get("package") or {}
+        summary = result.get("run_summary") or {}
+        if not isinstance(package, dict) or not isinstance(summary, dict):
+            continue
+        topics = [
+            *(package.get("options") or []),
+            *(package.get("provisional_options") or []),
+            *(package.get("unverified_generated_options") or []),
+            *(summary.get("topic_history") or []),
+        ]
+        seen: set[str] = set()
+        for topic in topics:
+            if not isinstance(topic, dict):
+                continue
+            if not topic.get("intervention_exposure_index_test") or not topic.get("title"):
+                continue
+            key = str(topic.get("candidate_id") or topic["title"]).casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            output.append({
+                "job_id": str(row.get("id") or ""),
+                "title": str(topic["title"]),
+                "specialty": str(topic.get("specialty") or ""),
+                "question_type": str(topic.get("question_type") or ""),
+                "population": str(topic.get("population") or ""),
+                "intervention_exposure_index_test": str(topic["intervention_exposure_index_test"]),
+                "comparator_reference": str(topic.get("comparator_reference") or ""),
+                "outcomes": list(topic.get("outcomes") or []),
+                "eligible_designs": list(topic.get("eligible_designs") or []),
+                "checked_at": completed_at.isoformat(),
+                "recheck_at": (completed_at + timedelta(days=days)).isoformat(),
+                "role": "PRIOR_GENERATED_TOPIC_EXPLORATION_ONLY",
+            })
+            if len(output) >= 600:
+                return output
+    return output
+
+
+def saturated_intervention_themes(
+    generated_history: Iterable[dict[str, Any]],
+    *,
+    minimum_distinct_jobs: int = 2,
+) -> list[dict[str, Any]]:
+    """Group themes recurring across runs; do not count variants in one job."""
+    themes: list[dict[str, Any]] = []
+    for row in generated_history:
+        if not intervention_theme_tokens(row.get("intervention_exposure_index_test")):
+            continue
+        matching = next(
+            (item for item in themes if same_intervention_theme(row, item)),
+            None,
+        )
+        if matching is None:
+            matching = {
+                "intervention_exposure_index_test": str(
+                    row.get("intervention_exposure_index_test") or ""
+                ),
+                "example_title": str(row.get("title") or ""),
+                "job_ids": set(),
+            }
+            themes.append(matching)
+        matching["job_ids"].add(str(row.get("job_id") or ""))
+    output = [
+        {
+            "intervention_exposure_index_test": item["intervention_exposure_index_test"],
+            "example_title": item["example_title"],
+            "distinct_prior_jobs": len(item["job_ids"]),
+        }
+        for item in themes
+        if len(item["job_ids"]) >= minimum_distinct_jobs
+        and "" not in item["job_ids"]
+    ]
+    return sorted(output, key=lambda item: (
+        -item["distinct_prior_jobs"], item["intervention_exposure_index_test"].casefold()
+    ))
+
+
+def filter_saturated_evidence_cues(
+    cues: list[dict[str, Any]],
+    themes: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Avoid repeatedly priming the LLM with the same source study titles.
+
+    Every excluded cue is a preserved bibliographic item, not an excluded
+    clinical study. This filter affects the brainstorm prompt only.
+    """
+    kept: list[dict[str, Any]] = []
+    deferred: list[dict[str, Any]] = []
+    for cue in cues:
+        title_tokens = _tokens(cue.get("title"))
+        matched = next((
+            item for item in themes
+            if (
+                anchor := intervention_theme_tokens(
+                    item["intervention_exposure_index_test"]
+                )
+            )
+            and len(anchor & title_tokens) / len(anchor) >= 0.8
+        ), None)
+        (deferred if matched else kept).append(cue)
+    return kept, deferred

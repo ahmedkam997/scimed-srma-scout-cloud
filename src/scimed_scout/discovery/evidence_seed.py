@@ -25,6 +25,28 @@ TERMS = {
 }
 
 
+# Rotate scoped cardiovascular evidence sources across jobs. The earlier
+# static, broad query returned the same recent Ketone Monoester, Vitamin D3,
+# electroacupuncture and exercise citations on every discovery run.
+# These are source-search angles, NOT assumed evidence gaps or eligible RCTs.
+_CARDIOLOGY_SEED_ANGLES = (
+    ("heart failure", "cardiomyopathy"),
+    ("coronary artery disease", "myocardial infarction"),
+    ("atrial fibrillation", "arrhythmia"),
+    ("hypertension", "blood pressure"),
+    ("valvular heart disease", "aortic stenosis"),
+    ("dyslipidemia", "hyperlipidemia"),
+    ("cardiac rehabilitation", "exercise tolerance"),
+    ("pulmonary hypertension", "right ventricular dysfunction"),
+    ("cardiotoxicity", "cardio oncology"),
+    ("peripheral artery disease", "vascular outcomes"),
+)
+
+
+def cardiology_evidence_focus(rotation_index: int = 0) -> tuple[str, str]:
+    return _CARDIOLOGY_SEED_ANGLES[int(rotation_index) % len(_CARDIOLOGY_SEED_ANGLES)]
+
+
 _NONPRIMARY_SEED_TITLE = re.compile(
     r"\b(?:rationale and design|trial design|study protocol|protocol for|"
     r"expert consensus|consensus statement|clinical practice guideline|"
@@ -41,6 +63,7 @@ def recent_pubmed_cues(
     client: Any | None = None,
     now: datetime | None = None,
     max_records: int = 10,
+    rotation_index: int = 0,
 ) -> list[dict[str, Any]]:
     specialty = str(specialty or "").strip()
     if not specialty or specialty.upper() == "ALL":
@@ -48,11 +71,22 @@ def recent_pubmed_cues(
 
     year = (now or datetime.now(timezone.utc)).year
     subject = TERMS.get(specialty.casefold(), f'"{specialty.replace(chr(34), "")}"[Title/Abstract]')
+    if specialty.casefold() == "cardiology":
+        focus = cardiology_evidence_focus(rotation_index)
+        subject = "(" + " OR ".join(
+            f'"{term}"[Title/Abstract]' for term in focus
+        ) + ")"
     topic = str(question_type or "").strip().upper()
     if topic == "DIAGNOSTIC_ACCURACY":
         design_filter = '("diagnosis"[MeSH Subheading] OR "diagnostic accuracy"[Title/Abstract])'
     elif topic in ("ETIOLOGY_RISK", "PREVALENCE_INCIDENCE", "PROGNOSIS"):
         design_filter = '("Cohort Studies"[MeSH Terms] OR "observational"[Title/Abstract])'
+    elif topic == "ALL":
+        design_filter = (
+            '("Randomized Controlled Trial"[Publication Type] '
+            'OR "Cohort Studies"[MeSH Terms] OR "diagnostic accuracy"[Title/Abstract] '
+            'OR "prospective study"[Title/Abstract])'
+        )
     else:
         design_filter = '("Randomized Controlled Trial"[Publication Type] OR "clinical trial"[Title/Abstract])'
 
@@ -110,6 +144,7 @@ def recent_review_gap_cues(
     specialty: str, question_type: str = "ALL", *,
     client: Any | None = None,
     now: datetime | None = None, max_records: int = 6,
+    rotation_index: int = 0,
 ) -> list[dict[str, Any]]:
     """Extract evidence gap *leads* directly from published review abstracts.
 
@@ -126,6 +161,9 @@ def recent_review_gap_cues(
     current_year = (now or datetime.now(timezone.utc)).year
     subject = TERMS.get(specialty.casefold(), '"' + specialty.replace('"', '') + '"')
     subject = re.sub(r"\[(?:Title/Abstract|MeSH Terms)\]", "", subject)
+    if specialty.casefold() == "cardiology":
+        focus = cardiology_evidence_focus(rotation_index)
+        subject = "(" + " OR ".join(f'"{term}"' for term in focus) + ")"
     query = (
         f"{subject} AND PUB_TYPE:review "
         f"AND PUB_YEAR:[{current_year - 5} TO {current_year}]"

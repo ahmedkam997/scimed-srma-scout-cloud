@@ -29,11 +29,13 @@ def test_pubmed_checkpoint_saved_before_unavailable_ai(monkeypatch):
         primary=SimpleNamespace(endpoint="https://api.example/v1", model="openrouter/free", api_key="mock"),
     )
     monkeypatch.setattr(discovery_worker.FreeProviderFallback, "from_env", lambda: fake_provider)
-    monkeypatch.setattr(discovery_worker, "recent_pubmed_cues", lambda *args: [
+    monkeypatch.setattr(discovery_worker, "recent_pubmed_cues", lambda *args, **kwargs: [
         {"title": "Real clinical trial from PubMed", "year": 2026, "source": "PubMed",
          "pmid": "12345", "url": "https://pubmed.ncbi.nlm.nih.gov/12345/",
          "verified_inclusion": False}
     ])
+    monkeypatch.setattr(discovery_worker, "recent_review_gap_cues",
+                        lambda *args, **kwargs: [])
 
     def fail_generation(self, **kwargs):
         raise RuntimeError("free AI unreachable")

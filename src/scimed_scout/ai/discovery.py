@@ -152,6 +152,7 @@ class CandidateDiscoveryService:
         allow_rejected_revisit: bool = False,
         progress_callback: Callable[[int, int], None] | None = None,
         recent_topics: list[dict] | None = None,
+        generated_history: list[dict] | None = None,
         skipped_recent: list[dict] | None = None,
     ) -> list[CandidateRecord]:
         # Small JSON batches avoid incomplete output from free reasoning models.
@@ -159,12 +160,33 @@ class CandidateDiscoveryService:
         # short retries); no paid models or external JSON-repair service.
         # A short-lived historical guard prevents re-running source searches on
         # recently checked PICO questions without permanently blacklisting them.
-        from scimed_scout.discovery.topic_memory import is_recently_checked, _overlap
+        from scimed_scout.discovery.topic_memory import (
+            is_recently_checked, _overlap, same_intervention_theme,
+            saturated_intervention_themes,
+        )
         from scimed_scout.discovery.topic_diversity import (
             same_clinical_question, same_discovery_family,
         )
 
         recent = recent_topics or []
+        generated = generated_history or []
+        # A repeatedly generated but unverified theme is a temporary
+        # brainstorming saturation signal, NOT scientific PICO redundancy.
+        saturation = saturated_intervention_themes(generated)
+        if saturation:
+            additional_context = (
+                additional_context
+                + "\nExploration rotation: previous jobs repeatedly generated "
+                "the following intervention themes. Do not propose more "
+                "variants of these themes in this batch, even with different "
+                "populations or endpoints: "
+                + "; ".join(
+                    str(item["intervention_exposure_index_test"])[:75]
+                    for item in saturation[:14]
+                )
+                + ". This is a temporary generation priority, not a "
+                "scientific novelty verdict."
+            ).strip()
         previous_families = "; ".join(
             (
                 str(item.get("intervention_exposure_index_test") or "")[:43] + " / "
@@ -203,6 +225,22 @@ class CandidateDiscoveryService:
                     and same_discovery_family(proposal, item)
                 ):
                     return item, "RECENT_RELATED_CLINICAL_FAMILY_COOLDOWN"
+            # Drafts left unverified in previous completed jobs are absent
+            # from recent_topic_memory(), but exact repeated PICOs still
+            # waste the next generation and verification budgets.
+            for item in generated:
+                if is_recently_checked(proposal, item):
+                    return item, "RECENT_GENERATED_PICO_NOT_PREVIOUSLY_VERIFIED"
+            # Temporarily rotate a family appearing in two or more distinct
+            # earlier jobs. Clinically different comparators and endpoints
+            # stay valid candidate PICOs in their original dossiers and are
+            # NOT declared excluded or scientifically redundant here.
+            for theme in saturation:
+                if same_intervention_theme(proposal, theme):
+                    return {
+                        **theme,
+                        "title": theme["example_title"],
+                    }, "RECENT_SATURATED_INTERVENTION_THEME_EXPLORATION_ONLY"
             return None, ""
 
         target = max(1, min(50, int(count)))
