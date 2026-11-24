@@ -344,21 +344,59 @@ async function loadSourceRechecks(force = false) {
   }
 }
 
+async function wakeSourceRecheck(recheckId) {
+  if (!supabase || !/^[a-f0-9-]{36}$/i.test(String(recheckId || '')))
+    throw new Error('Select a saved source recheck first.');
+  try {
+    const {data,error} = await supabase.functions.invoke('wake-discovery-worker',{
+      body:{recheck_id:recheckId},
+      headers:{'x-scimed-client-token':deviceToken()},
+    });
+    if (error) {
+      let detail={};
+      try {detail=await error.context?.json?.() || {};} catch {}
+      const status=String(detail.status || '');
+      if (status==='configuration_required')
+        return {dispatched:false,message:
+          'Queue saved, but immediate GitHub dispatch needs SCIMED_GITHUB_DISPATCH_TOKEN in Supabase Edge Function Secrets. The scheduled worker remains a fallback.'};
+      if (status==='github_dispatch_failed')
+        return {dispatched:false,message:
+          'GitHub rejected the dispatch. Check the repository-scoped Actions token permissions. The recheck remains queued.'};
+      return {dispatched:false,message:
+        'Source recheck remains queued; worker dispatch error: ' +
+        (status || error.message || 'unknown')};
+    }
+    if (data?.status==='dispatched')
+      return {dispatched:true,message:
+        'GitHub accepted the worker dispatch. Refresh the source recheck to see when processing starts.'};
+    if (data?.status==='already_requested_or_not_queued')
+      return {dispatched:false,message:
+        'This source recheck has already requested a worker recently, or is no longer queued. Refresh its status.'};
+    return {dispatched:false,message:
+      'The source recheck remains queued. GitHub dispatch was not confirmed.'};
+  } catch(error) {
+    return {dispatched:false,message:
+      'Unable to reach the dispatch function. The source recheck remains queued: ' +
+      (error.message || String(error))};
+  }
+}
+
 async function requestTargetedRecheck(job, topic) {
   if (!supabase || !job || !topic || job.status !== 'COMPLETED')
     throw new Error('The selected saved topic is not part of a completed discovery job.');
   const current = window.SCIMED_GAP?.rechecksOf?.(job,topic) || [];
   if (current.some(item => ['QUEUED','RUNNING'].includes(item.status)))
     throw new Error('This topic already has a recheck queued or running.');
-  const {error} = await supabase.from('scimed_source_rechecks').insert({
+  const {data,error} = await supabase.from('scimed_source_rechecks').insert({
     job_id:job.id,
     candidate_id:topic.candidate_id,
-  });
+  }).select('id').single();
   if (error) throw new Error(error.code === '23505'
     ? 'Another recheck for this topic is already queued.'
     : error.message);
   await loadSourceRechecks(true);
-  return 'Queued successfully. The scheduled GitHub worker will inspect the saved PICO and only its failed/partial sources.';
+  // Important: queue insertion is not proof of GitHub worker dispatch.
+  return await wakeSourceRecheck(data?.id);
 }
 
 async function loadJobs() {
@@ -1354,6 +1392,19 @@ els.refresh.addEventListener('click', async () => {
   }
 });
 els.jobs.addEventListener('click', async event => {
+  const wakeButton = event.target.closest('[data-source-wake]');
+  if (wakeButton) {
+    const panel=wakeButton.closest('.gap-source-recheck');
+    const message=panel?.querySelector('.gap-source-message');
+    wakeButton.disabled=true;
+    const outcome=await wakeSourceRecheck(wakeButton.dataset.sourceWake);
+    if (message) message.textContent=outcome.message;
+    backendState(outcome.dispatched ? 'ok' : 'waiting',
+      outcome.dispatched ? 'Source worker dispatched' : 'Source worker not yet dispatched',
+      outcome.message);
+    wakeButton.disabled=false;
+    return;
+  }
   const targetedButton = event.target.closest('[data-source-recheck]');
   if (targetedButton) {
     const job = jobs.find(item => item.id === targetedButton.dataset.sourceRecheck);
@@ -1362,10 +1413,11 @@ els.jobs.addEventListener('click', async event => {
     const message = panel?.querySelector('.gap-source-message');
     targetedButton.disabled = true;
     try {
-      const info = await requestTargetedRecheck(job,topic);
-      if (message) message.textContent = info;
-      backendState('ok','Targeted source recheck queued',
-        'Only the saved topic will be inspected. Refresh the job to see source-by-source findings.');
+      const outcome = await requestTargetedRecheck(job,topic);
+      if (message) message.textContent = outcome.message;
+      backendState(outcome.dispatched ? 'ok' : 'waiting',
+        outcome.dispatched ? 'Source worker dispatched' : 'Source recheck queued',
+        outcome.message);
     } catch(error) {
       if (message) message.textContent = error.message || String(error);
       backendState('error','Could not queue source recheck',
