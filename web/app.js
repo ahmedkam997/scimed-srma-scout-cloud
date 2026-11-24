@@ -1392,6 +1392,16 @@ els.refresh.addEventListener('click', async () => {
   }
 });
 els.jobs.addEventListener('click', async event => {
+  const finalAuditExport = event.target.closest('[data-final-audit-export]');
+  if (finalAuditExport) {
+    const job = jobs.find(row => row.id === finalAuditExport.dataset.finalAuditExport);
+    const topic = job && findTransferTopic(job,finalAuditExport.dataset.gapTopic);
+    if (!job || !topic || !window.SCIMED_FINAL || !window.SCIMED_GAP) return;
+    const audit = window.SCIMED_FINAL.build(job,topic,window.SCIMED_GAP);
+    const filename = topicFileName(topic).replace(/\.md$/i,'_Final_Evidence_Audit.json');
+    saveTextFile(filename,JSON.stringify(audit,null,2),'application/json;charset=utf-8');
+    return;
+  }
   const wakeButton = event.target.closest('[data-source-wake]');
   if (wakeButton) {
     const panel=wakeButton.closest('.gap-source-recheck');
