@@ -61,3 +61,8 @@
 .gap-message{min-height:15px;font-size:11px}
 .gap-success{color:#047857}
 .gap-error{color:#b42318}
+
+.gap-result{padding:10px;border:1px solid #bfdbfe;border-radius:9px;margin-top:12px;background:#eff6ff;color:#1e3a8a;line-height:1.55}
+.gap-result b{font-size:12px}
+.gap-sync-warning{padding:9px 10px;border-radius:8px;border:1px solid #fed7aa;background:#fff8eb;color:#9a3412;font-size:12px;overflow-wrap:anywhere}
+.gap-review .gap-reassessment{margin:8px 0}
