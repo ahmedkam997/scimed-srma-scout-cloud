@@ -3,6 +3,11 @@
 Discovery-only engine for high-value systematic review and meta-analysis topics.
 
 
+
+## Live source health and recovery
+
+Scholarly API accessibility is monitored separately from research novelty. Run the [Source Health workflow](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/workflows/source-health.yml) to test PubMed, Europe PMC, OpenAlex, Crossref, Semantic Scholar, PROSPERO, OSF and ClinicalTrials.gov without generating candidates. Download its JSON artifact and review exact missing-key, quota, or partial-index diagnostics. See the [research-backed source health runbook](docs/SOURCE_HEALTH_RUNBOOK.md) for no-cost credential setup and limitations. Source-health success is never a GO decision.
+
 ## Research-first novelty checks and Final Evidence Audit
 
 All future SciMed Scout research decisions and code changes follow [the research-first evidence audit SOP](docs/RESEARCH_FIRST_EVIDENCE_AUDIT_SOP.md). Consult maintained comparable projects, methodological guidelines and primary/independent clinical sources before selecting a new implementation.
