@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111827">
   <link rel="manifest" href="manifest.webmanifest">
   <title>SciMed Review Scout</title>
-  <link rel="stylesheet" href="styles.css?v=20261124-recheck-dispatch">
+  <link rel="stylesheet" href="styles.css?v=20261124-final-evidence-audit">
 </head>
 <body>
 <main>
@@ -122,14 +122,17 @@
       <li>Apply discovery qualification gates</li>
       <li>Export detailed research dossiers and ready-to-use ChatGPT verification prompts for each topic</li>
       <li>Research Gap Verification: prioritize unresolved competitors and document source-linked manual findings without changing scientific qualification gates</li>
+      <li>Final Evidence Audit: compare competing protocols, published reviews and study families before any GO/REFINE/NO-GO recommendation</li>
     </ol>
   </section>
 
   <p class="foot">A failed source is never interpreted as a negative search.</p>
 </main>
-<script src="config.js?v=20261124-recheck-dispatch"></script>
-<script src="gap-verification.js?v=20261124-recheck-dispatch"></script>
-<script type="module" src="app.js?v=20261124-recheck-dispatch"></script>
+<script src="config.js?v=20261124-final-evidence-audit"></script>
+<script src="gap-verification.js?v=20261124-final-evidence-audit"></script>
+<script src="final-audit-evidence.js?v=20261124-final-evidence-audit"></script>
+<script src="final-evidence-audit.js?v=20261124-final-evidence-audit"></script>
+<script type="module" src="app.js?v=20261124-final-evidence-audit"></script>
 <script>
   // Runs independently of app.js: a failed module import cannot strand
   // the Android UI on a permanently disabled Start button.
