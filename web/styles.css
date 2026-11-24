@@ -42,3 +42,22 @@
 .registry-audit-compact .registry-evidence>b{display:block;line-height:1.4;overflow-wrap:anywhere}
 .registry-audit-compact details{border-top:1px solid #eaecf0;margin-top:9px;padding-top:8px}
 .registry-audit-compact details>summary{cursor:pointer;font-weight:600}
+
+/* Research Gap Verification, readable on narrow Android screens. */
+.gap-review{border:1px solid #bfd4e7;border-radius:11px;margin:13px 0;padding:12px;background:#f7fbff;font-size:12px;overflow-wrap:anywhere}
+.gap-review>summary{cursor:pointer;font-weight:800;color:#164e84;line-height:1.5}
+.gap-review p{font-size:12px;line-height:1.5;margin:8px 0}
+.gap-review .gap-counts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:11px 0}
+.gap-counts span{background:#fff;border:1px solid #dae4ec;border-radius:7px;padding:7px;font-size:11px}
+.gap-queue{background:#fff;border:1px solid #dce6ef;border-radius:8px;padding:9px;margin:8px 0}
+.gap-queue>summary{cursor:pointer;font-weight:700;color:#344054;line-height:1.5}
+.gap-record{border-top:1px solid #eaecf0;padding:9px 0;margin-top:8px}
+.gap-record>summary{font-size:12px;line-height:1.5;font-weight:650;cursor:pointer}
+.gap-record a{color:#175cd3}
+.gap-record label{font-size:12px;display:block;margin:10px 0}
+.gap-record select,.gap-record input,.gap-record textarea{width:100%;font:inherit;margin-top:6px;padding:9px;border:1px solid #bcc8d4;border-radius:8px;background:#fff;box-sizing:border-box;color:#111827}
+.gap-record textarea{min-height:85px;resize:vertical}
+.gap-record button,.gap-review>button{white-space:normal;line-height:1.4;margin-top:7px}
+.gap-message{min-height:15px;font-size:11px}
+.gap-success{color:#047857}
+.gap-error{color:#b42318}
