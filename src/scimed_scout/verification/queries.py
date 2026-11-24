@@ -75,11 +75,17 @@ def build_search_plan(candidate: CandidateRecord, *, max_queries: int = 4) -> Se
     disease = _registry_focus(subject)
     comparator_focus = _registry_focus(comparator)
     outcome_focus = _registry_focus(outcome)
+    # Keep registry searches focused rather than splitting the population
+    # into unrelated generic fragments ("suspected stable" and "coronary
+    # artery" separately). The old 4-variant plan flooded PROSPERO with
+    # 100s of irrelevant records, often changing totals during pagination.
+    # These are prioritized discovery queries, NOT an exhaustive registry
+    # search or evidence that the PICO has no competing registration.
+    condition_anchor = _registry_condition_anchor(disease)
     registry = _dedupe([
-        _and_query(anchor, disease[:2]),
-        _and_query(anchor, disease[2:4]) if len(disease) > 2 else "",
-        _and_query(anchor, comparator_focus[:2]),
-        _and_query(anchor, outcome_focus[:2]),
+        _and_query(anchor, condition_anchor),
+        _and_query(anchor, comparator_focus[:2]) if comparator_focus else "",
+        _and_query(anchor, outcome_focus[:2]) if outcome_focus else "",
     ])[:max_queries]
     if not registry:
         registry = [_registry_phrase(anchor)] if anchor else list(primary[:1])
@@ -189,6 +195,36 @@ def _registry_focus(value: str) -> list[str]:
         )
         and not token.isdigit()
     ))
+
+
+def _registry_condition_anchor(terms: list[str]) -> list[str]:
+    """Prioritize a contiguous, clinically meaningful condition concept.
+
+    Do not break a population into stray generic fragments. Specific paired
+    concepts improve registry index precision without claiming exhaustive
+    sensitivity or equivalence to a librarian-reviewed search strategy.
+    """
+    words = list(terms)
+    priority_pairs = (
+        ("left", "main"),
+        ("atrial", "fibrillation"),
+        ("heart", "failure"),
+        ("myocardial", "infarction"),
+        ("coronary", "artery"),
+        ("renal", "failure"),
+        ("kidney", "disease"),
+        ("endurance", "athletes"),
+    )
+    for first, second in priority_pairs:
+        for position in range(len(words) - 1):
+            if words[position:position + 2] == [first, second]:
+                # Coronary artery disease is a useful 3-token condition;
+                # retaining 'disease' avoids mixing CAD with all arteries.
+                if (first, second) == ("coronary", "artery") and position + 2 < len(words):
+                    if words[position + 2] == "disease":
+                        return ["coronary", "artery", "disease"]
+                return [first, second]
+    return words[:2]
 
 
 def _registry_anchor(intervention: str) -> list[str]:
