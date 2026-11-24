@@ -32,7 +32,12 @@ def _focus_query(query: str) -> str:
         groups = []
         for value, limit in ((quoted[0], 4), (quoted[1], 3)):
             words = re.findall(r"[a-z0-9\u0600-\u06ff]+", value.casefold())
-            useful = [word for word in words if word not in STOP and len(word) > 2]
+            useful = [
+                word for word in words
+                if word not in STOP and (
+                    len(word) > 2 or (len(word) == 2 and any(ch.isdigit() for ch in word))
+                )
+            ]
             groups.append(" ".join(useful[:limit]))
         if all(groups):
             return '+"' + groups[0] + '" +"' + groups[1] + '"'
