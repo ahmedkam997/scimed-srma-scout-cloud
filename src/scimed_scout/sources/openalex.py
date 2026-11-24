@@ -15,6 +15,7 @@ class OpenAlexSource:
         self.http = http or JsonHttpClient()
         self.api_key = api_key if api_key is not None else os.getenv("OPENALEX_API_KEY", "")
         self._rate_limited = False
+        self._unauthenticated_probe_sent = False
 
     def search(self, query: str, *, limit: int = 20) -> SearchResult:
         if self._rate_limited:
@@ -22,15 +23,18 @@ class OpenAlexSource:
                 self.name, query, SourceStatus.ACCESS_FAILED,
                 message="OpenAlex 429 earlier in this job; remaining queries skipped to respect API quota. Check OPENALEX_API_KEY quota.",
             )
-        # OpenAlex's Nov 2026 API uses free personal keys to provide reliable
-        # access. A worker without a key must not hammer the public endpoint
-        # repeatedly, pretend the registry was searched or inflate latency.
-        # Keep injected offline fixture clients usable for regression tests.
-        if not self.api_key and self.http.loader is None:
+        # The basic OpenAlex API currently allows keyless first-page calls,
+        # but those share a small daily budget. Use at most ONE real keyless
+        # probe per worker instance; a free personal key is recommended for
+        # reliable larger searches. No unverified no-results inference.
+        live_http = getattr(self.http, "loader", None) is None
+        if live_http and not self.api_key and self._unauthenticated_probe_sent:
             return SearchResult(
-                self.name, query, SourceStatus.ACCESS_FAILED,
-                message="OPENALEX_API_KEY is not configured for this worker; OpenAlex search not executed. Obtain the free key from openalex.org/settings/api. Other literature sources continue independently.",
+                self.name, query, SourceStatus.PARTIAL,
+                message="OpenAlex keyless discovery probe already used in this worker job; remaining queries not executed. Add a free OPENALEX_API_KEY in GitHub Actions Secrets to search further.",
             )
+        if live_http and not self.api_key:
+            self._unauthenticated_probe_sent = True
         try:
             data = self.http.get_json(
                 self.endpoint, {

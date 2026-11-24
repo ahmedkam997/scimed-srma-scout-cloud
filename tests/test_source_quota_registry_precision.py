@@ -12,19 +12,29 @@ from scimed_scout.storage import CandidateRecord
 from scimed_scout.verification.queries import build_search_plan
 
 
-def test_openalex_keyless_live_request_is_explicitly_unavailable(monkeypatch):
+def test_openalex_keyless_basic_api_one_real_probe_then_partial(monkeypatch):
+    # 2026 OpenAlex docs explicitly allow basic anonymous searches. Avoid
+    # hammering the shared budget across many clinical topic variants.
     monkeypatch.delenv("OPENALEX_API_KEY",raising=False)
-    def forbid_network(*a,**kw): raise AssertionError("Should never access a public API without key")
     import urllib.request
-    monkeypatch.setattr(urllib.request,"urlopen",forbid_network)
+    calls=[]
+    class FakeResponse:
+        def __enter__(self): return self
+        def __exit__(self,*args): return False
+        def read(self): return b'{"meta":{"count":1},"results":[{"id":"https://openalex.org/W42","title":"Research"}]}'
+    def fake(request,timeout=None):
+        calls.append(request.full_url)
+        return FakeResponse()
+    monkeypatch.setattr(urllib.request,"urlopen",fake)
     client=OpenAlexSource(JsonHttpClient(retries=0),api_key="")
     first=client.search("left main FFR")
     second=client.search("another PICO")
-    assert first.status == SourceStatus.ACCESS_FAILED
-    assert second.status == SourceStatus.ACCESS_FAILED
-    assert "OPENALEX_API_KEY" in first.message
-    assert "not executed" in first.message
-    assert not first.records
+    assert first.status == SourceStatus.SEARCHED_POSITIVE
+    assert first.records[0].record_id.endswith("W42")
+    assert second.status == SourceStatus.PARTIAL
+    assert "OPENALEX_API_KEY" in second.message
+    assert "not executed" in second.message
+    assert len(calls)==1
 
 
 def test_openalex_with_free_key_preserves_source_provenance():

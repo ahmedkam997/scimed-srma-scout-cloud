@@ -228,6 +228,11 @@ def _registry_condition_anchor(terms: list[str]) -> list[str]:
 
 
 def _registry_anchor(intervention: str) -> list[str]:
+    # If clinical modifiers consume the four-token phrase budget, dropping
+    # "reserve" turns a CT-FFR diagnostic search into broad CT imaging.
+    # Retain the full 3-token named physiological measurement as one unit.
+    if re.search(r"\bfractional\s+flow\s+reserve\b", str(intervention), re.I):
+        return ["fractional", "flow", "reserve"]
     terms = _registry_focus(intervention)
     # Four specific tokens retain such essential clinical entities as
     # "left atrial appendage occlusion" and "computed tomography angiography".
