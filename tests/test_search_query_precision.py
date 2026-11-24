@@ -72,7 +72,7 @@ def test_osf_trove_query_preserves_documented_boolean_and():
     ) == '+"left atrial appendage occlusion" +"atrial fibrillation"'
 
 
-def test_focused_osf_no_match_does_not_cascade_to_generic_broad_search():
+def test_focused_osf_no_match_uses_specific_intervention_fallback_without_false_clearance():
     class RecordingOSF(OSFRegistrationsSource):
         def __init__(self):
             super().__init__(JsonHttpClient(loader=lambda _: {}))
@@ -88,9 +88,14 @@ def test_focused_osf_no_match_does_not_cascade_to_generic_broad_search():
 
     osf = RecordingOSF()
     result = osf.search('"colchicine" AND "myocardial infarction"', limit=15)
-    assert osf.queries == ['+"colchicine" +"myocardial infarction"']
+    assert osf.queries == [
+        '+"colchicine" +"myocardial infarction"',
+        "colchicine",
+    ]
+    assert "oral" not in osf.queries[-1]
     assert result.status == SourceStatus.PARTIAL
     assert not result.records
+    assert "Do not infer a negative" in result.message
 
 
 def test_openalex_uses_optional_key_and_stops_after_http429():
