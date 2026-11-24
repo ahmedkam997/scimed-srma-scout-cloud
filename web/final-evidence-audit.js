@@ -11,7 +11,9 @@
     'www.crd.york.ac.uk','www.cochrane.org','www.3ieimpact.org',
     'www.jacc.org','jamanetwork.com','www.sciencedirect.com',
     'academic.oup.com','www.ebi.ac.uk','europepmc.org',
-    'www.semanticscholar.org',
+    'www.semanticscholar.org','www.prisma-statement.org','github.com',
+    'link.springer.com','www.journalofcardiovascularct.com',
+    'heart.bmj.com',
   ]);
   function esc(v) {
     return String(v ?? '').replace(/[&<>"']/g,
@@ -185,6 +187,7 @@
       original_qualification_status:String(topic.qualification_status ||
         topic.research_dossier?.qualification_label || 'UNRESOLVED'),
       evidence_basis:curated?.evidence_grade || 'UNVERIFIED_SAVED_DISCOVERY_DOSSIER_ONLY',
+      audit_rules_version:'2026-11-24-question-specific-gates-v2',
       question_type_verified_from_saved_pico:type,
       method_guidance:methodsFor(type),
       minimum_independent_study_target_for_scout:4,
