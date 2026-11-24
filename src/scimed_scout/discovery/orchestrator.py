@@ -57,6 +57,7 @@ class ReviewDiscoveryOrchestrator:
         final_options: int = 3,
         limit_per_query: int = 20,
         adaptive_extra: int = 0,
+        recovery_pass: bool = False,
     ) -> DiscoveryRunResult:
         if min_verify < 1 or max_verify < min_verify:
             raise ValueError("Require 1 <= min_verify <= max_verify")
@@ -122,6 +123,29 @@ class ReviewDiscoveryOrchestrator:
             if index >= min_verify and len(qualified) >= final_options:
                 break
 
+        # One targeted recovery pass for the most promising incomplete audit,
+        # not another broad search of every generated topic.
+        if recovery_pass and len(qualified) < final_options:
+            provisional = [
+                (i, item) for i, item in enumerate(results)
+                if item.candidate_status == CandidateStatus.PROVISIONAL_BACKUP
+                and item.evidence.unique_primary_study_candidates >= MIN_DISCOVERY_STUDIES
+                and not any("materially overlapping" in reason or "potentially redundant" in reason
+                            for reason in item.pending)
+            ]
+            if provisional:
+                i, item = min(provisional, key=lambda pair: (
+                    len(pair[1].coverage.blockers), len(pair[1].pending), -pair[1].ranking_score,
+                ))
+                self._progress(92, "DISCOVERY_RECOVERY", "Rechecking unresolved evidence for the best provisional topic")
+                recovered = self.verify_candidate(
+                    item.candidate_id, ranking_score=item.ranking_score,
+                    limit_per_query=limit_per_query, recover_only=True,
+                )
+                results[i] = recovered
+                if recovered.candidate_status == CandidateStatus.QUALIFIED:
+                    qualified.append(recovered.candidate_id)
+
         final_ids = qualified[:final_options]
         final_stage = "DISCOVERY_EXPORT" if final_ids else "REVIEW_DISCOVERY"
         final_progress = 95 if final_ids else 75
@@ -161,7 +185,7 @@ class ReviewDiscoveryOrchestrator:
             )
         return ""
 
-    def verify_candidate(self, candidate_id: str, *, ranking_score: float = 0.0, limit_per_query: int = 20) -> DiscoveryCandidateResult:
+    def verify_candidate(self, candidate_id: str, *, ranking_score: float = 0.0, limit_per_query: int = 20, recover_only: bool = False) -> DiscoveryCandidateResult:
         candidate = self.ledger.get_candidate(candidate_id)
         if candidate is None:
             raise ValueError(f"Candidate not found: {candidate_id}")
@@ -169,11 +193,11 @@ class ReviewDiscoveryOrchestrator:
         self._check_cancellation()
         policy = policy_for_question_type(candidate.question_type)
         plan = build_search_plan(candidate)
-        self._search_sources(candidate, policy.literature_sources, plan.review_queries, evidence_type="PUBLISHED_REVIEW", purpose="published-review novelty", limit_per_query=limit_per_query)
-        self._search_sources(candidate, policy.literature_sources, plan.primary_queries, evidence_type="PRIMARY_STUDY", purpose="primary-study feasibility discovery", limit_per_query=limit_per_query)
-        self._search_sources(candidate, policy.registry_sources, plan.registry_queries, evidence_type="REGISTRATION", purpose="review/protocol registration novelty", limit_per_query=limit_per_query)
+        self._search_sources(candidate, policy.literature_sources, plan.review_queries, evidence_type="PUBLISHED_REVIEW", purpose="published-review novelty", limit_per_query=limit_per_query, recover_only=recover_only)
+        self._search_sources(candidate, policy.literature_sources, plan.primary_queries, evidence_type="PRIMARY_STUDY", purpose="primary-study feasibility discovery", limit_per_query=limit_per_query, recover_only=recover_only)
+        self._search_sources(candidate, policy.registry_sources, plan.registry_queries, evidence_type="REGISTRATION", purpose="review/protocol registration novelty", limit_per_query=limit_per_query, recover_only=recover_only)
         if policy.require_pipeline_source:
-            self._search_sources(candidate, policy.pipeline_sources, plan.pipeline_queries, evidence_type="ONGOING_STUDY", purpose="future evidence pipeline", limit_per_query=limit_per_query)
+            self._search_sources(candidate, policy.pipeline_sources, plan.pipeline_queries, evidence_type="ONGOING_STUDY", purpose="future evidence pipeline", limit_per_query=limit_per_query, recover_only=recover_only)
 
         self._check_cancellation()
         logs = self.ledger.list_search_log(candidate_id)
@@ -335,11 +359,14 @@ class ReviewDiscoveryOrchestrator:
         })
         return DiscoveryCandidateResult(candidate_id, ranking_score, coverage, evidence, pending, decision, status, final_gate_result)
 
-    def _search_sources(self, candidate, source_names: tuple[str, ...], queries: tuple[str, ...], *, evidence_type: str, purpose: str, limit_per_query: int) -> None:
+    def _search_sources(self, candidate, source_names: tuple[str, ...], queries: tuple[str, ...], *, evidence_type: str, purpose: str, limit_per_query: int, recover_only: bool = False) -> None:
         if not source_names or not queries:
             return
 
         configured: list[tuple[str, SourceClient]] = []
+        source_queries: dict[str, tuple[str, ...]] = {}
+        latest = {(log.source, log.query): log.status
+                  for log in self.ledger.list_search_log(candidate.candidate_id)} if recover_only else {}
         for source_name in source_names:
             client = self.clients.get(source_name)
             if client is None:
@@ -355,8 +382,13 @@ class ReviewDiscoveryOrchestrator:
                 )
                 continue
 
+            selected = tuple(q for q in queries if not recover_only
+                             or latest.get((source_name, q)) not in DEFINITIVE)
+            if not selected:
+                continue
             configured.append((source_name, client))
-            for query in queries:
+            source_queries[source_name] = selected
+            for query in selected:
                 self.ledger.add_query(
                     candidate.project_id,
                     candidate.candidate_id,
@@ -377,7 +409,7 @@ class ReviewDiscoveryOrchestrator:
                 source_name: executor.submit(
                     _run_source_queries,
                     client,
-                    queries,
+                    source_queries[source_name],
                     limit_per_query,
                 )
                 for source_name, client in configured

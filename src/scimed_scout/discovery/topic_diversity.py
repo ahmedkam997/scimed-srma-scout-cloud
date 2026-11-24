@@ -107,6 +107,26 @@ def _clinical_focus(value: Any) -> set[str]:
             if word not in _FAMILY_STOP and not word.isdigit() and len(word) >= 2}
 
 
+def _same_cross_design_prediction_family(a: Any, b: Any) -> bool:
+    """Schedule one audit for a repeated index/population across prediction designs."""
+    types = {str(_field(x, "question_type") or "").upper() for x in (a, b)}
+    if not types <= {"PROGNOSIS", "DIAGNOSTIC_ACCURACY", "PREDICTION"}:
+        return False
+    if not types:
+        return False
+    ia, ib = (_field(x, "intervention_exposure_index_test") for x in (a, b))
+    pa, pb = (_field(x, "population") for x in (a, b))
+    if {x for x in _tokens(ia) if x.isdigit()} != {x for x in _tokens(ib) if x.isdigit()}:
+        return False
+    if (_tokens(pa) & _YOUNG and _tokens(pb) & _ADULT) or (_tokens(pb) & _YOUNG and _tokens(pa) & _ADULT):
+        return False
+    if _containment(ia, ib) < 0.85 or _containment(pa, pb) < 0.8:
+        return False
+    # Population and index match, but unlike exact PICO deduplication this
+    # only controls the deep-audit budget. Preserve all scientific drafts.
+    return len(_clinical_focus(ia) & _clinical_focus(ib)) >= 2
+
+
 def same_discovery_family(a: Any, b: Any) -> bool:
     """Group high-overlap clinical opportunity families for source-audit budgets.
 
@@ -165,7 +185,8 @@ def select_diverse_ranked(
         matching = next(
             (chosen for chosen in kept
              if same_clinical_question(candidate, by_id[chosen.candidate_id])
-             or same_discovery_family(candidate, by_id[chosen.candidate_id])),
+             or same_discovery_family(candidate, by_id[chosen.candidate_id])
+             or _same_cross_design_prediction_family(candidate, by_id[chosen.candidate_id])),
             None,
         )
         if matching is not None:

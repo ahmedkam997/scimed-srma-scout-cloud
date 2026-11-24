@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
       OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
       SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
       PROSPERO_NETWORK_MODE: online

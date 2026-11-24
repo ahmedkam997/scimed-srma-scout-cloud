@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from scimed_scout.domain import SourceStatus
 from .base import SearchRecord, SearchResult
 from .http import JsonHttpClient
@@ -10,13 +12,22 @@ class PubMedSource:
     base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
 
     def __init__(self, http: JsonHttpClient | None = None):
-        self.http = http or JsonHttpClient()
+        self.api_key = os.getenv("NCBI_API_KEY", "").strip()
+        self.email = os.getenv("SCIMED_CONTACT_EMAIL", "").strip()
+        self.http = http or JsonHttpClient(
+            service="ncbi", min_interval=0.45 if not self.api_key else 0.15,
+            retry_rate_limit=True, retries=2, delay=1.0,
+        )
+
+    def _params(self, params: dict) -> dict:
+        return {**params, "api_key": self.api_key or None,
+                "email": self.email or None, "tool": "scimed_review_scout"}
 
     def search(self, query: str, *, limit: int = 20) -> SearchResult:
         try:
-            data = self.http.get_json(self.base + "esearch.fcgi", {
+            data = self.http.get_json(self.base + "esearch.fcgi", self._params({
                 "db": "pubmed", "term": query, "retmode": "json", "retmax": max(0, limit), "sort": "pub date"
-            })
+            }))
             block = data.get("esearchresult") or {}
             if "count" not in block:
                 return SearchResult(self.name, query, SourceStatus.PARTIAL, message="PubMed response missing count")
@@ -28,11 +39,11 @@ class PubMedSource:
             summary_rows = {}
             if ids:
                 try:
-                    summary = self.http.get_json(self.base + "esummary.fcgi", {
+                    summary = self.http.get_json(self.base + "esummary.fcgi", self._params({
                         "db": "pubmed",
                         "id": ",".join(ids),
                         "retmode": "json",
-                    })
+                    }))
                     result = summary.get("result") or {}
                     summary_rows = {
                         pmid: row for pmid, row in result.items()
@@ -68,4 +79,9 @@ class PubMedSource:
             status = SourceStatus.SEARCHED_POSITIVE if records or total > 0 else SourceStatus.PARTIAL
             return SearchResult(self.name, query, status, records, total)
         except Exception as exc:
-            return SearchResult(self.name, query, SourceStatus.ACCESS_FAILED, message=str(exc))
+            message = str(exc)
+            if self.api_key:
+                message = message.replace(self.api_key, "[SECRET_REDACTED]")
+            if self.email:
+                message = message.replace(self.email, "[CONTACT_REDACTED]")
+            return SearchResult(self.name, query, SourceStatus.ACCESS_FAILED, message=message)

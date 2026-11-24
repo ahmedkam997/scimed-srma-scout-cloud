@@ -271,7 +271,10 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 ledger,
                 SemanticCompetitorAssessor(provider),
                 search_date_resolver=OpenAccessSearchDateResolver(),
-                max_fulltext_reviews=2,
+                max_fulltext_reviews=3,
+                max_reviews=18,
+                max_registrations=12,
+                batch_size=3,
             )
             scoring = DiscoveryScoringService(provider)
 
@@ -311,6 +314,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 final_options=job.final_options,
                 limit_per_query=job.limit_per_query,
                 adaptive_extra=min(4, max(2, job.max_verify // 2)),
+                recovery_pass=True,
             )
             store.ensure_active(job.id)
             package = build_discovery_review_package(ledger, result)

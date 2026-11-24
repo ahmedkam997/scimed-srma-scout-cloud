@@ -10,7 +10,7 @@ class EuropePMCSource:
     endpoint = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 
     def __init__(self, http: JsonHttpClient | None = None):
-        self.http = http or JsonHttpClient()
+        self.http = http or JsonHttpClient(timeout=28.0, retries=1, delay=2.0, service="europe_pmc", min_interval=0.5)
 
     def search(self, query: str, *, limit: int = 20) -> SearchResult:
         try:

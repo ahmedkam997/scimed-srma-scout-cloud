@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from scimed_scout.domain import SourceStatus
 from .base import SearchRecord, SearchResult
 from .http import JsonHttpClient
@@ -10,8 +12,11 @@ class CrossrefSource:
     endpoint = "https://api.crossref.org/works"
 
     def __init__(self, http: JsonHttpClient | None = None, mailto: str = ""):
-        self.http = http or JsonHttpClient()
-        self.mailto = mailto
+        self.mailto = mailto or os.getenv("SCIMED_CONTACT_EMAIL", "").strip()
+        self.http = http or JsonHttpClient(
+            service="crossref", min_interval=1.2 if not self.mailto else 0.5,
+            retry_rate_limit=True, retries=2, delay=1.0,
+        )
 
     def search(self, query: str, *, limit: int = 20) -> SearchResult:
         try:
@@ -53,7 +58,10 @@ class CrossrefSource:
                 )
             return SearchResult(self.name, query, SourceStatus.SEARCHED_POSITIVE, records, total)
         except Exception as exc:
-            return SearchResult(self.name, query, SourceStatus.ACCESS_FAILED, message=str(exc))
+            message = str(exc)
+            if self.mailto:
+                message = message.replace(self.mailto, "[CONTACT_REDACTED]")
+            return SearchResult(self.name, query, SourceStatus.ACCESS_FAILED, message=message)
 
 
 def _crossref_year(row: dict) -> int | None:
