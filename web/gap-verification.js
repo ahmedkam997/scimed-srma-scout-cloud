@@ -259,11 +259,35 @@
     const sourceIssues = Object.entries(sources).filter(([,v]) =>
       ['PARTIAL', 'ACCESS_FAILED', 'NOT_SEARCHED'].includes(v));
     const decisions = Object.keys(saved.decisions).length;
+    const itemInventory = kind => {
+      const savedCount = records.filter(x => x.kind === kind).length;
+      const originalCount = kind === 'review'
+        ? check.published_review_records_discovered
+        : check.registration_records_discovered;
+      const reported = originalCount == null ? null : Number(originalCount);
+      const reportedCount = Number.isFinite(reported) && reported >= 0 ? reported : null;
+      return {
+        kind,
+        saved_citations: savedCount,
+        reported_source_hits: reportedCount,
+        unrepresented_hit_difference: reportedCount === null
+          ? null : Math.max(0, reportedCount - savedCount),
+        counts_are_not_confirmed_distinct_studies: true,
+      };
+    };
     const itemsHtml = (kind, label) => {
       const items = records.filter(x => x.kind === kind);
       const shown = items.slice(0, 14);
-      return '<details class="gap-queue"><summary>' + esc(label) + ' (' + items.length +
-        ' records; ' + Math.max(0, items.length - shown.length) + ' more in export)</summary>' +
+      const inventory = itemInventory(kind);
+      const sourceGap = inventory.unrepresented_hit_difference;
+      return '<details class="gap-queue"><summary>' + esc(label) + ' (' +
+        items.length + ' saved citations; ' + shown.length + ' shown)</summary>' +
+        '<p class="help">' + Math.max(0, items.length - shown.length) +
+        ' additional saved citations are included in the JSON export. ' +
+        (sourceGap > 0 ? 'The source discovery count (' + esc(inventory.reported_source_hits) +
+          ') exceeds the saved citation list by ' + esc(sourceGap) +
+          ' hits. Those hits are NOT individually available here or in this export; duplicates or uncollected results might contribute to the difference. ' : '') +
+        'This is a priority shortlist, not complete source coverage.</p>' +
         '<p class="help">Ordered by PICO-term matches in citations, not proven overlap. Every record remains scientifically unresolved until independently checked.</p>' +
         shown.map(record => {
           const index = records.indexOf(record);
@@ -434,6 +458,25 @@
       unresolved_scientific_checks: dossier.verification_and_quality?.pending_verifications ||
         topic.unresolved_checks || [],
       competing_review_counts: dossier.verification_and_quality?.competing_review_screening || {},
+      bibliographic_export_inventory: {
+        // These are original source-hit totals versus citations available
+        // in this saved dossier. Differences are not proven unique records.
+        reviews: (() => {
+          const count = evidenceOf(topic).filter(x => x.kind === 'review').length;
+          const reported = dossier.verification_and_quality?.competing_review_screening?.published_review_records_discovered;
+          const n = reported == null ? null : Number(reported);
+          return {saved_citations:count, reported_source_hits:Number.isFinite(n) ? n : null,
+            unrepresented_hit_difference:Number.isFinite(n) ? Math.max(0,n-count) : null};
+        })(),
+        registrations: (() => {
+          const count = evidenceOf(topic).filter(x => x.kind === 'registration').length;
+          const reported = dossier.verification_and_quality?.competing_review_screening?.registration_records_discovered;
+          const n = reported == null ? null : Number(reported);
+          return {saved_citations:count, reported_source_hits:Number.isFinite(n) ? n : null,
+            unrepresented_hit_difference:Number.isFinite(n) ? Math.max(0,n-count) : null};
+        })(),
+        inventory_is_incomplete_if_difference_positive: true,
+      },
       source_search_audit: dossier.evidence_search_audit || [],
       bibliographic_candidates_ordered_for_manual_review: evidenceOf(topic),
       manual_decisions_latest: saved.decisions,

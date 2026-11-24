@@ -224,3 +224,25 @@ test('Existing local event ids are stable across retry and cloud acknowledgement
   gap.markCloudSynced(job,candidate,first.id);
   assert.equal(gap.assignPendingIds(job,candidate).length,0);
 });
+
+test('Saved citation shortlist never masquerades as complete source inventory', () => {
+  const {gap} = setup();
+  const example = structuredClone(topic);
+  const screening = example.research_dossier.verification_and_quality.competing_review_screening;
+  screening.registration_records_discovered = 113;
+  screening.unassessed_registration_queue = Array.from({length:40}, (_,i)=>({
+    record_id:'REG'+i, title:'Registry protocol '+i,
+    source:'OSF Registries', url:'https://osf.io/'+(i+1000),
+  }));
+  example.research_dossier.registration_evidence = [];
+  const html = gap.render(job,example);
+  assert.match(html,/PROSPERO and OSF registrations \(40 saved citations; 14 shown\)/);
+  assert.match(html,/26 additional saved citations are included in the JSON export/);
+  assert.match(html,/exceeds the saved citation list by 73 hits/);
+  assert.match(html,/NOT individually available here or in this export/);
+  const ledger = gap.exportLedger(job,example);
+  assert.equal(ledger.bibliographic_export_inventory.registrations.saved_citations,40);
+  assert.equal(ledger.bibliographic_export_inventory.registrations.reported_source_hits,113);
+  assert.equal(ledger.bibliographic_export_inventory.registrations.unrepresented_hit_difference,73);
+  assert.equal(ledger.qualification_automatically_modified,false);
+});
