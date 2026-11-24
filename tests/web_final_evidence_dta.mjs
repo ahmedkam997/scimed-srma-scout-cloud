@@ -128,3 +128,26 @@ test('No universal four-study methodological threshold is asserted',()=>{
   assert.ok(audit.scientific_gates_unresolved.some(g=>g.gate==='INDEPENDENT_ELIGIBLE_STUDY_FAMILIES'));
   assert.ok(audit.scientific_gates_unresolved.every(g=>g.status==='UNRESOLVED'));
 });
+
+test('DTA Final Audit reuses saved per-topic bibliography without fabricating full text',()=>{
+  const {e}=create();
+  const gap={
+    ...emptyGap,
+    evidenceOf:()=>[
+      {kind:'registration',record_id:'CRD420111111111',title:'Registered diagnostic review',
+       url:'https://www.crd.york.ac.uk/PROSPERO/view/CRD420111111111',source:'PROSPERO'},
+      {kind:'review',record_id:'ABC',title:'A general accuracy review',
+       url:'https://pubmed.ncbi.nlm.nih.gov/1234567/',source:'PubMed'},
+    ],
+  };
+  const topic=ctTopic();
+  const r=e.build({id:'NONCURATED',status:'COMPLETED'},topic,gap);
+  assert.equal(r.recommendation,'UNRESOLVED');
+  assert.equal(r.saved_citation_shortlist_count,2);
+  assert.equal(r.prioritized_registrations.length,1);
+  assert.equal(r.prioritized_published_reviews.length,1);
+  assert.equal(r.prioritized_registrations[0].full_protocol_accessed,false);
+  assert.equal(r.prioritized_registrations[0].evidence_level,'SAVED_BIBLIOGRAPHIC_CITATION_ONLY');
+  assert.equal(r.prioritized_published_reviews[0].overlap,'UNASSESSED');
+  assert.equal(r.eligible_independent_study_count,null);
+});
