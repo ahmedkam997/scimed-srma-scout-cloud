@@ -35,6 +35,21 @@
       && study?.targeted_fit === 'DIRECT_DOAC_COMPARATOR_VERIFIED'
       && !!study?.url;
   }
+  function verifiedIndependentFamilies(studies) {
+    // A report is not an independent population. Deduplicate explicitly
+    // adjudicated family IDs, and withhold any unresolved cross-family overlap.
+    const seen=new Set();
+    const confirmed=[];
+    for (const report of (Array.isArray(studies) ? studies : [])) {
+      if (!verifiedIndependence(report) || !String(report.family||'').trim()
+          || (report.possible_overlaps||[]).length) continue;
+      const id=String(report.family);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      confirmed.push(report);
+    }
+    return confirmed;
+  }
   function countOrUnknown(raw) {
     if (raw === null || raw === undefined) return null;
     const value=Number(raw);
@@ -77,7 +92,7 @@
     const registrationHits=countOrUnknown(competitors.registration_records_discovered);
     const directReports=(curated?.study_reports||[])
       .filter(s=>s.targeted_fit==='DIRECT_DOAC_COMPARATOR_REPORT').length;
-    const verifiedIndependent=(curated?.study_reports||[]).filter(verifiedIndependence);
+    const verifiedIndependent=verifiedIndependentFamilies(curated?.study_reports||[]);
     const familyOverlapFlags=(curated?.study_reports||[]).filter(
       s=>Array.isArray(s.possible_overlaps) && s.possible_overlaps.length
     ).length;
