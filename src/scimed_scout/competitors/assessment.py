@@ -69,7 +69,7 @@ def build_batch_overlap_prompt(candidate: CandidateRecord, records: list[dict]) 
                 "record_id": str(record.get("source_record_id") or ""),
                 "source": str(record.get("source") or ""),
                 "title": str(record.get("title") or ""),
-                "evidence_text": evidence_text[:900],
+                "evidence_text": evidence_text[:1800],
             }
         )
 
@@ -184,7 +184,7 @@ class SemanticCompetitorAssessor:
                 _assessment_from_raw(
                     raw,
                     record,
-                    _record_evidence_text(record),
+                    _record_evidence_text(record)[:1800],
                     provider_name,
                     model_name,
                 )
@@ -247,17 +247,20 @@ def _record_evidence_text(record: dict) -> str:
     metadata = payload.get("metadata") or {}
     candidates = [
         metadata.get("abstract"),
+        metadata.get("abstractText"),
         metadata.get("summary"),
         metadata.get("description"),
         metadata.get("brief_summary"),
         payload.get("abstract"),
         payload.get("summary"),
     ]
-    text = "\n".join(str(x).strip() for x in candidates if x and str(x).strip())
+    title = str(record.get("title") or "").strip()
+    text = "\n".join(dict.fromkeys(str(x).strip() for x in candidates if x and str(x).strip()))
     if not text:
-        title = str(record.get("title") or "").strip()
         return title if len(title.split()) >= 6 else ""
-    return text[:12000]
+    # The title is also supplied to the model; preserve it in the exact
+    # quotation-validation corpus alongside the source abstract.
+    return "\n".join(x for x in (title, text) if x)[:12000]
 
 
 def _level(value) -> OverlapLevel:

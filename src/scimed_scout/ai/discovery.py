@@ -79,7 +79,13 @@ Each proposal must have a genuinely distinct population/intervention/comparator 
 published therapeutic approaches or diagnostic generations, (2) narrow and
 understudied patient subgroups, (3) head-to-head comparisons or optimal
 treatment sequences, and (4) long-term harms or patient-important outcomes.
-Prefer questions informed by recent bibliographic cues when they exist.
+Prioritize source-informed questions when bibliographic cues exist. Prefer a
+clinical question that could be answered by a cluster of primary reports, not
+a novel-sounding question copied from a single recent article. Use different
+clinical subfields and intervention/population families before proposing variants.
+When an existing review is mentioned, consider an update only as a hypothesis
+requiring verification of its actual search cutoff and newer eligible evidence.
+Do not invent a cluster, study count, or bibliographic identifier.
 Avoid broad, historically saturated comparisons with many existing syntheses,
 such as an unspecified class of statins versus another class, and avoid
 generic "drug versus standard care" topics without a focused clinical niche.

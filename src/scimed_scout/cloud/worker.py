@@ -137,21 +137,33 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 message="Generating review-topic candidates",
             )
             generator = CandidateDiscoveryService(provider, ledger)
-            raw_evidence_cues = recent_pubmed_cues(
-                job.specialty, job.question_type,
-                rotation_index=seed_rotation_index,
-                max_records=12,
-            )
+            # Spread source-grounded brainstorming over independent clinical
+            # subfields; do not spend the whole run on one latest-paper theme.
+            rotations = (seed_rotation_index, seed_rotation_index + 3, seed_rotation_index + 6) if job.specialty.casefold() == "cardiology" else (seed_rotation_index,)
+            raw_evidence_cues = [
+                cue for rotation in rotations
+                for cue in recent_pubmed_cues(
+                    job.specialty, job.question_type, rotation_index=rotation,
+                    max_records=6 if len(rotations) > 1 else 12,
+                )
+            ]
+            raw_evidence_cues = list({str(cue.get("pmid") or cue.get("title")): cue
+                                      for cue in raw_evidence_cues}.values())
             evidence_cues, deferred_seed_cues = filter_saturated_evidence_cues(
                 raw_evidence_cues, saturated_themes,
             )
             # Campbell/3ie-style evidence-gap cues from *actual review
             # abstracts*, not model-generated claims of novelty. One free
             # Europe PMC query, with a safe empty result on source outages.
-            review_gap_cues = recent_review_gap_cues(
-                job.specialty, job.question_type, max_records=5,
-                rotation_index=seed_rotation_index,
-            )
+            review_gap_cues = [
+                cue for rotation in rotations
+                for cue in recent_review_gap_cues(
+                    job.specialty, job.question_type, max_records=2 if len(rotations) > 1 else 5,
+                    rotation_index=rotation,
+                )
+            ]
+            review_gap_cues = list({str(cue.get("pmid") or cue.get("title")): cue
+                                    for cue in review_gap_cues}.values())
             # Save real bibliographic leads BEFORE any paid/free AI endpoint
             # is called. A quota or malformed JSON must not erase the evidence
             # already retrieved from PubMed. These are NOT review PICO proposals.

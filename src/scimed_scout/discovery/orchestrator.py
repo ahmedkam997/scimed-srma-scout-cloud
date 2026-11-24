@@ -134,9 +134,19 @@ class ReviewDiscoveryOrchestrator:
                             for reason in item.pending)
             ]
             if provisional:
-                i, item = min(provisional, key=lambda pair: (
-                    len(pair[1].coverage.blockers), len(pair[1].pending), -pair[1].ranking_score,
-                ))
+                def recovery_priority(pair):
+                    item = pair[1]
+                    saved = self.ledger.get_candidate(item.candidate_id)
+                    meta = (saved.metadata or {}) if saved else {}
+                    preflight = meta.get("evidence_preflight") or {}
+                    remaining = max(0, int(meta.get("discovery_competitor_records_discovered", 0))
+                                    - int(meta.get("discovery_competitor_resolved_count", 0)))
+                    remaining += max(0, int(meta.get("discovery_registration_records_discovered", 0))
+                                     - int(meta.get("discovery_registration_resolved_count", 0)))
+                    return (len(item.coverage.blockers),
+                            -int(preflight.get("priority_signal") or 0),
+                            remaining, len(item.pending), -item.ranking_score)
+                i, item = min(provisional, key=recovery_priority)
                 self._progress(92, "DISCOVERY_RECOVERY", "Rechecking unresolved evidence for the best provisional topic")
                 recovered = self.verify_candidate(
                     item.candidate_id, ranking_score=item.ranking_score,
@@ -213,6 +223,7 @@ class ReviewDiscoveryOrchestrator:
             try:
                 novelty = self.novelty_service.assess_candidate(
                     candidate_id, allow_ai=coverage.complete,
+                    **({"recovery": True} if recover_only else {}),
                 )
             except Exception as exc:
                 pending.append(f"TYPE-A: novelty assessment failed: {exc}")

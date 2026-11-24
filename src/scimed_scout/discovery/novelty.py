@@ -38,6 +38,7 @@ class DiscoveryNoveltyService:
 
     def assess_candidate(
         self, candidate_id: str, *, force: bool = False, allow_ai: bool = True,
+        recovery: bool = False,
     ) -> dict[str, Any]:
         candidate = self.ledger.get_candidate(candidate_id)
         if candidate is None:
@@ -46,21 +47,26 @@ class DiscoveryNoveltyService:
         all_reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
         all_registrations = self.ledger.list_external_evidence(candidate_id, "REGISTRATION")
 
-        review_records = _select_records(candidate, all_reviews, self.max_reviews)
+        # Expand only the best candidate during recovery, not every draft.
+        review_cap = min(36, max(self.max_reviews, 30)) if recovery else self.max_reviews
+        registry_cap = min(30, max(self.max_registrations, 24)) if recovery else self.max_registrations
+        review_records = _select_records(candidate, all_reviews, review_cap)
         registration_records = _select_records(
             candidate,
             all_registrations,
-            self.max_registrations,
+            registry_cap,
         )
 
         resolved_dates = self._resolve_search_dates(candidate_id, review_records)
         if resolved_dates:
             all_reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
-            review_records = _select_records(candidate, all_reviews, self.max_reviews)
+            review_records = _select_records(candidate, all_reviews, review_cap)
         if allow_ai:
-            review_assessments = self._assess_records(candidate, review_records, force=force)
+            review_assessments = self._assess_records(candidate, review_records, force=force,
+                                                       repair_budget=3 if recovery else 0)
             registration_assessments = self._assess_records(
                 candidate, registration_records, force=force,
+                repair_budget=2 if recovery else 0,
             )
         else:
             # No amount of AI scoring repairs incomplete mandatory registry
@@ -220,6 +226,7 @@ class DiscoveryNoveltyService:
         records: list[dict],
         *,
         force: bool,
+        repair_budget: int = 0,
     ) -> list[dict[str, Any]]:
         if not records:
             return []
@@ -270,6 +277,25 @@ class DiscoveryNoveltyService:
                     }
                 self._persist_assessment(candidate.candidate_id, record, serialized)
                 results_by_id[_record_identity(record)] = serialized
+
+        # Retry isolated unresolved records with the full individual prompt.
+        # Preserve the prior judgment unless the new evidence-backed response
+        # is resolved; a failed retry is never converted to low overlap.
+        for record in records:
+            if repair_budget <= 0:
+                break
+            key = _record_identity(record)
+            if not results_by_id.get(key, {}).get("unresolved"):
+                continue
+            repair_budget -= 1
+            try:
+                assessment = self.assessor.assess(candidate, record)
+                if not assessment.unresolved:
+                    serialized = _serialize_assessment(record, assessment)
+                    self._persist_assessment(candidate.candidate_id, record, serialized)
+                    results_by_id[key] = serialized
+            except Exception:
+                continue
 
         return [
             results_by_id[_record_identity(record)]
@@ -465,6 +491,7 @@ def _record_text(record: dict) -> str:
     parts = [
         record.get("title"),
         metadata.get("abstract"),
+        metadata.get("abstractText"),
         metadata.get("summary"),
         metadata.get("description"),
         metadata.get("brief_summary"),
