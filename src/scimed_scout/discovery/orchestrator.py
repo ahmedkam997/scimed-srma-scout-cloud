@@ -147,7 +147,7 @@ class ReviewDiscoveryOrchestrator:
             provisional = [
                 (i, item) for i, item in enumerate(results)
                 if item.candidate_status == CandidateStatus.PROVISIONAL_BACKUP
-                and item.evidence.unique_primary_study_candidates >= MIN_DISCOVERY_STUDIES
+                and item.evidence.conservative_family_lead_count >= MIN_DISCOVERY_STUDIES
                 and not any("materially overlapping" in reason or "potentially redundant" in reason
                             for reason in item.pending)
             ]
@@ -340,7 +340,12 @@ class ReviewDiscoveryOrchestrator:
         decision = "PENDING — DISCOVERY VERIFICATION INCOMPLETE"
         final_gate_result = None
 
-        if coverage.complete and evidence.unique_primary_study_candidates < MIN_DISCOVERY_STUDIES:
+        if (coverage.complete and evidence.unique_primary_study_candidates >= MIN_DISCOVERY_STUDIES
+                and evidence.conservative_family_lead_count < MIN_DISCOVERY_STUDIES):
+            pending.append('TYPE-A: registry-linked report families reduce apparent study availability; comparison-level and population independence must be adjudicated manually')
+            status = CandidateStatus.PROVISIONAL_BACKUP
+            decision = 'PROVISIONAL — TRIAL-FAMILY INDEPENDENCE UNRESOLVED'
+        elif coverage.complete and evidence.unique_primary_study_candidates < MIN_DISCOVERY_STUDIES:
             status = CandidateStatus.REJECTED
             decision = f"REJECT — FEWER THAN {MIN_DISCOVERY_STUDIES} UNIQUE PRIMARY-STUDY CANDIDATES FOUND"
         elif bool(meta.get("discovery_fatal_redundancy")):
@@ -367,7 +372,8 @@ class ReviewDiscoveryOrchestrator:
                 )
             payload = {
                 **gate_inputs,
-                "unique_primary_study_candidates": evidence.unique_primary_study_candidates,
+                "unique_primary_study_candidates": evidence.conservative_family_lead_count,
+                "distinct_bibliographic_report_leads": evidence.unique_primary_study_candidates,
                 "complete_literature_sources": complete_literature,
                 "fatal_redundancy": bool(meta.get("discovery_fatal_redundancy", False)),
                 "sources": [

@@ -5,6 +5,7 @@ import re
 from scimed_scout.storage import SQLiteLedger
 
 from .models import DiscoveryEvidenceSnapshot
+from .trial_family import audit_trial_families
 
 
 def discovery_evidence_snapshot(
@@ -14,7 +15,7 @@ def discovery_evidence_snapshot(
     records = ledger.list_external_evidence(candidate_id, "PRIMARY_STUDY")
     seen_doi: set[str] = set()
     seen_title: set[str] = set()
-    unique = 0
+    distinct = []
     positive_sources: set[str] = set()
 
     for record in records:
@@ -38,15 +39,17 @@ def discovery_evidence_snapshot(
         if duplicate:
             continue
 
-        unique += 1
+        distinct.append(record)
         if doi:
             seen_doi.add(doi)
         if title:
             seen_title.add(title)
 
+    family_audit = audit_trial_families(distinct)
     return DiscoveryEvidenceSnapshot(
         raw_primary_records=len(records),
-        unique_primary_study_candidates=unique,
+        unique_primary_study_candidates=len(distinct),
+        trial_family_audit=family_audit,
         primary_sources_with_hits=len(positive_sources),
         primary_source_names=tuple(sorted(positive_sources)),
     )

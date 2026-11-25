@@ -485,6 +485,8 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                         for name, status in verified.coverage.source_statuses.items()
                     },
                     "unique_primary_study_candidates": verified.evidence.unique_primary_study_candidates,
+                    "conservative_family_lead_count": verified.evidence.conservative_family_lead_count,
+                    "registry_linked_families": verified.evidence.trial_family_audit.get("registry_linked_families"),
                     "scorecard": scorecard,
                     "competitor_audit": ({
                         "published_reviews_discovered": (checked.metadata or {}).get(

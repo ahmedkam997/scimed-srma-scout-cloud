@@ -351,3 +351,20 @@ def test_optional_source_failure_never_overrides_mandatory_registry_gate(tmp_pat
         result = ReviewDiscoveryOrchestrator(ledger, configured).verify_candidate("C1")
         assert not result.coverage.complete
         assert result.candidate_status == CandidateStatus.PROVISIONAL_BACKUP
+
+
+def test_companion_publications_do_not_pass_minimum_family_lead_gate(tmp_path):
+    configured = clients()
+    rows = primary_records(4)
+    for row in rows:
+        row.metadata["trial_registration_id"] = "NCT01850082"
+    configured[0] = LiteratureSource("PubMed", rows)
+    configured[1] = LiteratureSource("Europe PMC", [])
+    with SQLiteLedger(tmp_path / "family.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Radiology"))
+        ledger.upsert_candidate(candidate())
+        result = ReviewDiscoveryOrchestrator(ledger, configured).verify_candidate("C1")
+        assert result.evidence.unique_primary_study_candidates == 4
+        assert result.evidence.conservative_family_lead_count == 1
+        assert result.candidate_status == CandidateStatus.PROVISIONAL_BACKUP
+        assert "TRIAL-FAMILY" in result.decision

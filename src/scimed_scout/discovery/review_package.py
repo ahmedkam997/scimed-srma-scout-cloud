@@ -420,6 +420,8 @@ def _build_research_dossier(
             "primary_bibliographic_records": len(primary),
             "ongoing_study_records": len(ongoing),
             "unique_primary_record_leads_as_reported": verification.evidence.unique_primary_study_candidates,
+            "trial_family_audit": verification.evidence.trial_family_audit,
+            "conservative_family_lead_count": verification.evidence.conservative_family_lead_count,
             "eligible_independent_studies_confirmed": None,
         },
         "published_review_evidence": [

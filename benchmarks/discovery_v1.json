@@ -184,7 +184,7 @@
     {
       "id": "R01",
       "kind": "published_trial_family",
-      "description": "REGROUP: original and intermediate-term follow-up are reports of one randomized trial",
+      "description": "REGROUP: original, intermediate-term and 10-year follow-up reports share one randomized trial",
       "scope": "Endoscopic versus open vein harvesting during CABG",
       "records": [
         {
@@ -202,12 +202,20 @@
           "registry_id": "NCT01850082",
           "comparison": "EVH versus OVH",
           "url": "https://pubmed.ncbi.nlm.nih.gov/33720367/"
+        },
+        {
+          "pmid": "42969104",
+          "title": "Long-Term Outcomes of Endoscopic or Open Vein Harvesting for Coronary Artery Bypass Grafting: A 10-Year Follow-Up of the REGROUP Randomized Clinical Trial",
+          "year": 2026,
+          "registry_id": "NCT01850082",
+          "comparison": "EVH versus OVH",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/42969104/"
         }
       ],
-      "expected_reports": 2,
+      "expected_reports": 3,
       "reference_trial_families": 1,
       "reference_distinct_comparisons": 1,
-      "reference_basis": "Same trial registration and follow-up of original randomized population; JAMA Network Open full text https://pmc.ncbi.nlm.nih.gov/articles/PMC7961312/."
+      "reference_basis": "Same trial registration and follow-up of original randomized population; JAMA Network Open full text https://pmc.ncbi.nlm.nih.gov/articles/PMC7961312/. Ten-year follow-up: https://pubmed.ncbi.nlm.nih.gov/42969104/."
     },
     {
       "id": "R02",

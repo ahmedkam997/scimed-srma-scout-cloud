@@ -16,3 +16,5 @@ Freeze dated PICO questions and full-text eligibility labels from independent re
 
 ## Limitations
 Only 12 synthetic gate cases and three published bibliographic cases. The policy tests are deterministic; a pass says nothing about clinical novelty prediction, search sensitivity, LLM calibration or publication acceptance. R01 and R02 expose the current report counter's limitation. R03 tests chronology, not the full update-decision engine. No live APIs, model calls, or new cloud job are needed.
+
+Registry linkage v1 now tests actual family counts and retains explicit comparison labels in the REGROUP and RECOVERY cases. These are source-linked fixture labels, not model-extracted comparisons or confirmed independent populations. The REGROUP fixture includes the 2026 ten-year follow-up. A conservative family count below the discovery minimum creates a provisional manual-check decision rather than automatic rejection or qualification. Sources: Cochrane chapter 23 (https://www.cochrane.org/authors/handbooks-and-manuals/handbook/current/chapter-23), linking-review DOI 10.1186/s13643-017-0518-3.

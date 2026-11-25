@@ -34,13 +34,20 @@ def run_benchmark(fixture):
                     for item in case["records"]:
                         ledger.upsert_external_evidence("C", "PRIMARY_STUDY", item["pmid"],
                             source="PubMed", title=item["title"],
-                            payload={"year": item["year"], "metadata": {"trial_registration_id": item["registry_id"]}})
-                    observed = discovery_evidence_snapshot(ledger, "C").unique_primary_study_candidates
+                            payload={"year": item["year"], "url": item["url"], "metadata": {"trial_registration_id": item["registry_id"], "comparison": item["comparison"]}})
+                    snapshot = discovery_evidence_snapshot(ledger, "C")
+                    observed = snapshot.unique_primary_study_candidates
+                    family = snapshot.trial_family_audit
+                    comparisons = sum(len(x["explicit_comparisons"]) for x in family["families"])
             row.update(expected=case["expected_reports"], observed=observed,
-                       passed=observed == case["expected_reports"],
+                       passed=(observed == case["expected_reports"] and family["registry_linked_families"] == case["reference_trial_families"]
+                               and comparisons == case["reference_distinct_comparisons"]),
+                       observed_trial_families=family["registry_linked_families"],
+                       observed_explicit_comparisons=comparisons,
+                       confirmed_independent_eligible_studies=None,
                        reference_trial_families=case["reference_trial_families"],
                        reference_distinct_comparisons=case["reference_distinct_comparisons"],
-                       scientific_gap="Bibliographic report counter is not a trial-family or PICO-comparison independence counter",
+                       scientific_gap="Registry families and explicit comparisons are identified; full-text eligibility and population independence remain unverified",
                        reference_basis=case["reference_basis"])
         elif kind == "published_update_chronology":
             observed = date.fromisoformat(case["new_report_date"]) > date.fromisoformat(case["last_search_date"])
