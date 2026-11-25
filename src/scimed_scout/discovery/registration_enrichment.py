@@ -1,10 +1,11 @@
 """Bounded open-access Methods registration enrichment.
 
-Identity-verified JATS only; no acronym-only merges or references mining.
+Identity-verified JATS or BioC Methods only; no acronym-only merges or references mining.
 A registration link is not proof of eligible independent participants.
 """
 from __future__ import annotations
 import re
+import json
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 import xml.etree.ElementTree as ET
@@ -21,6 +22,7 @@ def _routes(pmcid):
     yield "EUROPE_PMC_JATS",f"https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML"
     yield "NCBI_PMC_OAI", "https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/?"+urlencode({
         "verb":"GetRecord","identifier":"oai:pubmedcentral.nih.gov:"+pmcid.removeprefix("PMC"),"metadataPrefix":"pmc"})
+    yield "NCBI_BIOC",f"https://www.ncbi.nlm.nih.gov/research/bionlp/RESTful/pmcoa.cgi/BioC_json/{pmcid}/unicode"
 
 def _error_code(exc):
     if isinstance(exc,HTTPError):return f"HTTP_{exc.code}"
@@ -70,6 +72,48 @@ def extract_registration(row,raw,*,source_url=None):
         "pmid":pmid,"pmcid":pmcid,"scope":"OWN_TRIAL_REGISTRATION_IN_METHODS",
         "independence_confirmed":False}
 
+def extract_bioc_registration(row,raw,*,source_url):
+    """Require exact article identity and own-trial Methods statement.
+    
+    BioC is queried by the independently observed PMCID. Reject conflicting
+    explicit identifiers even if the returned document ID is correct.
+    """
+    pmid=_pmid(row);pmcid=_pmcid(row)
+    if not pmid or not pmcid or not isinstance(raw,bytes) or len(raw)>LIMIT:return None
+    try:
+        data=json.loads(raw)
+        collections=data if isinstance(data,list) else [data]
+        docs=[d for c in collections if isinstance(c,dict) for d in c.get("documents",[]) if isinstance(d,dict)]
+        if len(docs)!=1:return None
+        doc=docs[0];passages=doc.get("passages") or []
+        if not isinstance(passages,list):return None
+        doc_id=str(doc.get("id") or "").upper()
+        expected_pmc=pmcid.upper().removeprefix("PMC")
+        seen_pmid=set();seen_pmc=set();methods=[]
+        for p in passages:
+            if not isinstance(p,dict):return None
+            info=p.get("infons") or {}
+            if not isinstance(info,dict):return None
+            for key in ("article-id_pmid","pmid"):
+                if info.get(key):seen_pmid.add(str(info[key]).strip())
+            for key in ("article-id_pmc","article-id_pmcid","pmcid"):
+                if info.get(key):seen_pmc.add(str(info[key]).strip().upper().removeprefix("PMC"))
+            if str(info.get("section_type") or "").upper() in ("METHODS","METHOD","MATERIALS AND METHODS"):
+                methods.append(str(p.get("text") or ""))
+        if seen_pmid and seen_pmid!={pmid}:return None
+        if seen_pmc and seen_pmc!={expected_pmc}:return None
+        # Accept exact PMCID document identity (the PMCID-PMID mapping was
+        # already obtained from the bibliographic source); otherwise demand
+        # both explicit identifiers. An arbitrary ID or PMID alone is not enough.
+        if doc_id not in (pmcid.upper(),expected_pmc) and not (seen_pmid=={pmid} and seen_pmc=={expected_pmc}):return None
+        hits=[m for text in methods for m in OWN.finditer(text)]
+        unique={m.group(1).upper() for m in hits}
+        if len(unique)!=1 or _ids(" ".join(methods))!=unique:return None
+        return {"registration_id":next(iter(unique)),"quote":hits[0].group(0)[:200],
+                "source_url":source_url,"pmid":pmid,"pmcid":pmcid,
+                "scope":"OWN_TRIAL_REGISTRATION_IN_BIOC_METHODS","independence_confirmed":False}
+    except (ValueError,TypeError,AttributeError,KeyError,UnicodeError):return None
+
 def enrich_records(rows,*,fetcher=None,max_lookups=3):
     fetcher=fetcher or _fetch_xml
     audit=[];out=list(rows);attempts=0;cache={}
@@ -89,7 +133,7 @@ def enrich_records(rows,*,fetcher=None,max_lookups=3):
                 attempts+=1
                 try:
                     raw=fetcher(url)
-                    evidence=extract_registration(row,raw,source_url=url)
+                    evidence=(extract_bioc_registration(row,raw,source_url=url) if route=="NCBI_BIOC" else extract_registration(row,raw,source_url=url))
                     if evidence:
                         cache[key]=evidence;status="LINK_FOUND"
                         route_audit.append({"route":route,"status":status})
@@ -108,7 +152,7 @@ def enrich_records(rows,*,fetcher=None,max_lookups=3):
             meta["registration_enrichment_evidence"]=evidence
             payload["metadata"]=meta
             out[index]={**row,"payload":payload}
-    return out,{"method":"OPEN_ACCESS_REGISTRATION_V2","source_calls":attempts,"records_linked":sum(a["status"]=="LINK_FOUND" for a in audit),"attempts":audit,"independence_confirmed":False}
+    return out,{"method":"OPEN_ACCESS_REGISTRATION_V3","source_calls":attempts,"records_linked":sum(a["status"]=="LINK_FOUND" for a in audit),"attempts":audit,"independence_confirmed":False}
 
 def enrich_ledger(ledger,candidate_id,*,fetcher=None,max_lookups=3):
     rows=ledger.list_external_evidence(candidate_id,"PRIMARY_STUDY")

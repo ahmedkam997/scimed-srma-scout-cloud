@@ -39,7 +39,7 @@ def main():
     r=safe_search(ep,"("+" OR ".join("EXT_ID:"+x for x in ids)+") AND SRC:MED",len(ids))
     rows=[_record(x,"PRIMARY_STUDY") for x in r.records if _pmid(x) in ids and x.title]
     before=audit_trial_families(rows)
-    revised,enrichment=enrich_records(rows,max_lookups=2)
+    revised,enrichment=enrich_records(rows,max_lookups=3)
     after=audit_trial_families(revised)
     out["family_control"]={"retrieved":len(rows),"expected_reports":len(ids),
         "before_family_leads":before["conservative_family_lead_count"],"after_family_leads":after["conservative_family_lead_count"],

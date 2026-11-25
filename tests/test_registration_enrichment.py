@@ -79,3 +79,27 @@ def test_fallback_does_not_exceed_one_request_budget():
         raise TimeoutError()
     _,report=enrich_records([row()],fetcher=fail,max_lookups=1)
     assert len(calls)==report["source_calls"]==1
+
+
+def test_bioc_third_route_links_only_verified_methods_within_budget():
+    import json
+    from scimed_scout.discovery.registration_enrichment import extract_bioc_registration
+    obj=[{"documents":[{"id":"PMC123456","passages":[{"infons":{"section_type":"METHODS","article-id_pmid":"123","article-id_pmc":"123456"},"text":"The trial is registered with ClinicalTrials.gov (NCT03619213)."}]}]}]
+    raw=json.dumps(obj).encode()
+    a=row("999",trial_registration_id="NCT03619213")
+    b=row()
+    def fetch(url):
+        if "BioC_json" in url:return raw
+        raise TimeoutError()
+    revised,report=enrich_records([a,b],fetcher=fetch,max_lookups=3)
+    assert report["source_calls"]==3 and report["records_linked"]==1
+    assert audit_trial_families(revised)["conservative_family_lead_count"]==1
+    assert revised[1]["payload"]["metadata"]["registration_enrichment_evidence"]["scope"]=="OWN_TRIAL_REGISTRATION_IN_BIOC_METHODS"
+    obj[0]["documents"][0]["passages"][0]["infons"]["article-id_pmid"]="999"
+    assert extract_bioc_registration(b,json.dumps(obj).encode(),source_url="test") is None
+    obj[0]["documents"][0]["passages"][0]["infons"]["article-id_pmid"]="123"
+    obj[0]["documents"][0]["passages"][0]["text"]+=" Other study NCT00000001."
+    assert extract_bioc_registration(b,json.dumps(obj).encode(),source_url="test") is None
+    obj[0]["documents"][0]["passages"][0]["text"]="The trial is registered with ClinicalTrials.gov (NCT03619213)."
+    obj[0]["documents"][0]["passages"][0]["infons"]["section_type"]="DISCUSS"
+    assert extract_bioc_registration(b,json.dumps(obj).encode(),source_url="test") is None
