@@ -36,3 +36,8 @@ def test_rank_no_exclusion_deterministic_and_official_filter():
     assert all(not x["eligibility_verified"] for x in ranked)
     assert rank(candidate(),[])==[]
     assert "systematic[sb]" in _review_suffix("PubMed") and "systematic[sb]" in review_search_query(candidate())
+
+def test_correction_of_clinical_condition_not_erratum_and_camel_case():
+    assert classify_review_search_hit(SearchRecord("PubMed","x","Surgical correction of scoliosis: systematic review"))=="CONFIRMED_REVIEW_CUE"
+    assert classify_review_search_hit(SearchRecord("Semantic Scholar","x","Clinical evidence",metadata={"publicationTypes":["MetaAnalysis"]}))=="CONFIRMED_REVIEW_CUE"
+    assert classify_review_search_hit(SearchRecord("PubMed","x","Correction: systematic review of treatment"))=="PRIMARY_OR_NONREVIEW"

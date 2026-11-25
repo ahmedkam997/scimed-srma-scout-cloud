@@ -44,7 +44,7 @@ def _types(record: SearchRecord) -> list[str]:
     meta = record.metadata if isinstance(record.metadata, dict) else {}
     def flatten(value):
         if isinstance(value, str):
-            return [re.sub(r"[^a-z0-9]+"," ",value.casefold()).strip()]
+            return [re.sub(r"[^a-z0-9]+"," ",re.sub(r"(?<=[a-z])(?=[A-Z])"," ",value).casefold()).strip()]
         if isinstance(value, (list,tuple)):
             return [x for item in value for x in flatten(item)]
         if isinstance(value,dict):
@@ -76,7 +76,7 @@ def classify_review_search_hit(record: SearchRecord) -> str:
         title, re.IGNORECASE,
     ):
         return "PRIMARY_OR_NONREVIEW"
-    if any(t in _NONPUBLICATION_TYPES for t in types) or _PROTOCOL.search(title) or _NON_STUDY.search(title):
+    if any(t in _NONPUBLICATION_TYPES for t in types) or _PROTOCOL.search(title) or re.match(r"^\s*(?:correction|erratum|editorial|commentary|retraction)\s*(?::|\bto\b|\bof\b|\bnotice\b)",title,re.I):
         return "PRIMARY_OR_NONREVIEW"
     if any(t in {"systematic review","meta analysis","network meta analysis","scoping review","umbrella review"} for t in types):
         return "CONFIRMED_REVIEW_CUE"
@@ -102,7 +102,7 @@ def classify_registration_search_hit(record: SearchRecord) -> str:
     title = str(record.title or "")
     meta = record.metadata if isinstance(record.metadata, dict) else {}
     abstract = str(meta.get("abstract") or "")
-    if _REVIEW_TITLE.search(title) or _REVIEW_ABSTRACT.search(abstract):
+    if _REVIEW_TITLE.search(title) or _OWN_REVIEW_METHOD.search(abstract) or _PROTOCOL.search(title):
         return "REVIEW_REGISTRATION_CUE"
     if _PRIMARY_TITLE.search(title) or re.search(
         r"\b(?:recruitment|study\s+participants|experimental\s+design|"
