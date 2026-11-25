@@ -115,6 +115,12 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                 else:
                     for row in c.metadata["rct_first"]["comparison_records"]:
                         ledger.upsert_external_evidence(c.candidate_id,"PRIMARY_STUDY",row["source_record_id"],source=row["source"],title=row["title"],payload=row["payload"])
+                    from scimed_scout.sources.base import SearchRecord
+                    from scimed_scout.discovery.evidence_classification import classify_review_search_hit
+                    for row in (c.metadata["rct_first"].get("competing_review_preflight") or {}).get("records",[]):
+                        cue=classify_review_search_hit(SearchRecord(row["source"],row["source_record_id"],row["title"],metadata=row["payload"].get("metadata") or {}))
+                        if cue=="CONFIRMED_REVIEW_CUE":
+                            ledger.upsert_external_evidence(c.candidate_id,"PUBLISHED_REVIEW",row["source_record_id"],source=row["source"],title=row["title"],payload=row["payload"])
                 if provider:
                     provider.begin(c.candidate_id)
                     provider.reserved=1

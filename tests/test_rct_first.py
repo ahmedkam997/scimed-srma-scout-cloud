@@ -33,7 +33,7 @@ def test_seed_bounded_and_rct_only():
             return SearchResult(self.name,q,SourceStatus.SEARCHED_POSITIVE if rr else SourceStatus.SEARCHED_NEGATIVE,rr,len(rr))
     p=Source();e=Source();e.name="Europe PMC"
     r=collect("Cardiology",pubmed=p,europe=e,year=2026)
-    assert len(p.calls)<=6 and len(e.calls)<=2 and r["new_ai_requests"]==0
+    assert len(p.calls)<=9 and len(e.calls)<=2 and r["new_ai_requests"]==0
     assert r["candidates"] and all(c["eligible_designs"]==["Randomized controlled trial"] for c in r["candidates"])
     assert r["candidates"][0]["metadata"]["rct_first"]["shortlist_eligible"]
     assert should_route("Cardiology","ALL") and not should_route("Cardiology","DIAGNOSTIC_ACCURACY")
@@ -77,3 +77,18 @@ def test_comparator_requires_actual_comparison_not_background_medication():
 def test_unsupported_scope_does_not_fall_back_to_mixed_design():
     assert should_route("Dermatology","ALL")
     assert collect("Dermatology")["status"]=="UNSUPPORTED_SPECIALTY"
+
+def test_efetch_identity_and_registry_data():
+    from scimed_scout.sources.pubmed_abstracts import enrich_rows,parse_efetch
+    xml=b'<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><ArticleTitle>Original trial</ArticleTitle><Abstract><AbstractText Label="METHODS">We randomized patients with hypertension to renal denervation or sham.</AbstractText></Abstract><PublicationTypeList><PublicationType>Randomized Controlled Trial</PublicationType></PublicationTypeList><DataBankList><DataBank><DataBankName>ClinicalTrials.gov</DataBankName><AccessionNumberList><AccessionNumber>NCT00000001</AccessionNumber></AccessionNumberList></DataBank></DataBankList></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>'
+    original=rows([record(1,"Renal denervation in hypertension"),record(2)])
+    out,audit=enrich_rows(None,original,fetcher=lambda ids:xml)
+    assert audit["status"]=="PARTIAL" and audit["abstracts_retrieved"]==1 and audit["registry_id_records"]==1
+    assert out[0]["payload"]["metadata"]["abstractText"].startswith("METHODS:")
+    assert out[1]==original[1]
+    _,buckets=comparison_rows(PAIR,out)
+    assert family_summary(buckets["sham"])["family_leads"]==2
+    wrong=xml.replace(b"<PMID>1</PMID>",b"<PMID>999</PMID>")
+    out,audit=enrich_rows(None,original,fetcher=lambda ids:wrong)
+    assert out==original and audit["unexpected_pmids"]==1
+    with pytest.raises(ValueError):parse_efetch(b'<!DOCTYPE x [<!ENTITY y "bad">]><x/>',{"1"})
