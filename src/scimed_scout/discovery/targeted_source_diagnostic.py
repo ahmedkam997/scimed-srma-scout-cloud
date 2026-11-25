@@ -85,7 +85,7 @@ def main():
     target=Path("targeted-source-report.json")
     def save():target.write_text(json.dumps(report,indent=2)+"\n")
     report["fulltext"]=[]
-    for route,url in [*_routes("PMC9804680"),("NCBI_BIOC",BIOC.format("PMC9804680"))]:
+    for route,url in _routes("PMC9804680"):
         start=time.monotonic()
         try:
             raw=_fetch_xml(url)
