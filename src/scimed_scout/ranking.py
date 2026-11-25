@@ -88,6 +88,10 @@ class CandidateRankingService:
                 return 0
             return max(0, min(22, int(preflight.get("priority_signal") or 0)))
 
+        def cluster_priority(item: RankingResult) -> int:
+            link = (by_id[item.candidate_id].metadata or {}).get("evidence_first_link") or {}
+            return max(0, min(8, int(link.get("priority_signal") or 0))) if link.get("links") else 0
+
         ranked = sorted(
             (
                 RankingResult(
@@ -99,7 +103,7 @@ class CandidateRankingService:
                 )
                 for item in raw_ranked
             ),
-            key=lambda item: (-source_priority(item), -item.score, item.candidate_id),
+            key=lambda item: (-(source_priority(item) + cluster_priority(item)), -cluster_priority(item), -item.score, item.candidate_id),
         )
 
         ranking_by_id = {item.candidate_id: item for item in ranked}
@@ -112,6 +116,7 @@ class CandidateRankingService:
                 "preliminary_ranking_reasons": list(item.reasons),
                 "preliminary_ranking_role": "source_title_signal_then_pico_completeness_not_novelty_or_eligibility",
                 "preliminary_evidence_priority_score": source_priority(item),
+                "preliminary_cluster_priority_score": cluster_priority(item),
             }
             if candidate.candidate_id in top_ids and candidate.status != CandidateStatus.QUALIFIED:
                 candidate.status = CandidateStatus.SHORTLISTED

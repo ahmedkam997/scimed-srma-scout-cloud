@@ -90,6 +90,7 @@ def build_discovery_review_package(
             "novelty_hypothesis": candidate.novelty_hypothesis,
             "search_terms": list(candidate.search_terms or []),
             "preflight_bibliographic_evidence": dict((candidate.metadata or {}).get("evidence_preflight") or {}),
+            "evidence_first_link": dict((candidate.metadata or {}).get("evidence_first_link") or {}),
             "triage": discovery_triage(verification),
             "research_dossier": _build_research_dossier(
                 ledger, candidate, verification,
@@ -188,6 +189,7 @@ def build_discovery_review_package(
             "novelty_hypothesis": candidate.novelty_hypothesis,
             "search_terms": list(candidate.search_terms or []),
             "preflight_bibliographic_evidence": dict(metadata.get("evidence_preflight") or {}),
+            "evidence_first_link": dict(metadata.get("evidence_first_link") or {}),
             "triage": discovery_triage(
                 verified, pico_fit=fit_by_id.get(verified.candidate_id, {}),
             ),

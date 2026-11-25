@@ -21,7 +21,12 @@ class MemoryStore:
         return []
 
     def load_step(self, job_id, key):
-        return None
+        return getattr(self, "saved", {}).get(key)
+
+    def save_step(self, job_id, key, payload):
+        if not hasattr(self, "saved"):
+            self.saved = {}
+        self.saved[key] = payload
 
     def legacy_checkpoint(self, job_id):
         return {}
@@ -43,6 +48,8 @@ def test_pubmed_checkpoint_saved_before_unavailable_ai(monkeypatch):
     monkeypatch.setattr(discovery_worker, "recent_review_gap_cues",
                         lambda *args, **kwargs: [])
 
+    monkeypatch.setattr(discovery_worker, "collect_evidence_map", lambda *args, **kwargs: {"status":"SAMPLED","clusters":[]})
+
     def fail_generation(self, **kwargs):
         raise RuntimeError("free AI unreachable")
 
@@ -56,6 +63,12 @@ def test_pubmed_checkpoint_saved_before_unavailable_ai(monkeypatch):
     assert checkpoints[0]["verified"] is False
     assert checkpoints[0]["candidates"] == []
     assert checkpoints[0]["recent_pubmed_cues"][0]["pmid"] == "12345"
+    assert store.saved["evidence-seed:v1"]["evidence_first_map"]["status"] == "SAMPLED"
+    # Retry after AI failure: source collection must not repeat.
+    monkeypatch.setattr(discovery_worker, "collect_evidence_map", lambda *a, **k: pytest.fail("seed map repeated"))
+    monkeypatch.setattr(discovery_worker, "recent_pubmed_cues", lambda *a, **k: pytest.fail("PubMed repeated"))
+    with pytest.raises(RuntimeError, match="unreachable"):
+        discovery_worker.process_job(job, store)
 
 
 def test_two_repeated_upstream_failures_stop_wasting_free_requests(tmp_path):

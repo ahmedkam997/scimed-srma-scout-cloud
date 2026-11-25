@@ -18,6 +18,7 @@ from scimed_scout.discovery.topic_memory import (
     saturated_intervention_themes, filter_saturated_evidence_cues,
 )
 from scimed_scout.discovery.open_access_dates import OpenAccessSearchDateResolver
+from scimed_scout.discovery.evidence_first import collect_evidence_map, evidence_map_prompt, link_candidate
 from scimed_scout.discovery.candidate_preflight import FocusedEvidencePreflight
 from scimed_scout.discovery.evidence_seed import (
     recent_pubmed_cues, cue_prompt, recent_review_gap_cues, review_gap_prompt,
@@ -58,6 +59,7 @@ def _unverified_topic_options(candidates: list, checked_ids: set[str]) -> list[d
             "question_type": candidate.question_type,
             **question,
             "qualification_status": "AI_DRAFT_NOT_SOURCE_VERIFIED",
+            "evidence_first_link": dict((candidate.metadata or {}).get("evidence_first_link") or {}),
             "preflight_bibliographic_evidence": dict((candidate.metadata or {}).get("evidence_preflight") or {}),
             "provisional_only": True,
             "research_dossier": {
@@ -179,6 +181,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
             if saved_generation and saved_generation.get("candidates"):
                 evidence_cues = saved_generation.get("recent_pubmed_cues") or []
                 review_gap_cues = saved_generation.get("published_review_gap_cues") or []
+                evidence_map = saved_generation.get("evidence_first_map") or {}
                 deferred_seed_cues = []
                 candidates = []
                 for row in saved_generation["candidates"]:
@@ -190,33 +193,49 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 print(json.dumps({"status": "GENERATION_REUSED", "job_id": job.id,
                                   "candidates": len(candidates)}), flush=True)
             else:
-                # Spread source-grounded brainstorming over independent clinical
-                # subfields; do not spend the whole run on one latest-paper theme.
-                rotations = (seed_rotation_index, seed_rotation_index + 3, seed_rotation_index + 6) if job.specialty.casefold() == "cardiology" else (seed_rotation_index,)
-                raw_evidence_cues = [
-                    cue for rotation in rotations
-                    for cue in recent_pubmed_cues(
-                        job.specialty, job.question_type, rotation_index=rotation,
-                        max_records=6 if len(rotations) > 1 else 12,
+                saved_seeds = store.load_step(job.id, "evidence-seed:v1")
+                if saved_seeds:
+                    if saved_seeds.get("job_id") != job.id or saved_seeds.get("version") != 1:
+                        raise RuntimeError("Evidence seed checkpoint scope/version mismatch")
+                    evidence_cues = saved_seeds.get("recent_pubmed_cues") or []
+                    review_gap_cues = saved_seeds.get("published_review_gap_cues") or []
+                    evidence_map = saved_seeds.get("evidence_first_map") or {}
+                    deferred_seed_cues = saved_seeds.get("deferred_seed_cues") or []
+                else:
+                    # Spread source-grounded brainstorming over independent clinical
+                    # subfields; do not spend the whole run on one latest-paper theme.
+                    rotations = (seed_rotation_index, seed_rotation_index + 3, seed_rotation_index + 6) if job.specialty.casefold() == "cardiology" else (seed_rotation_index,)
+                    raw_evidence_cues = [
+                        cue for rotation in rotations
+                        for cue in recent_pubmed_cues(
+                            job.specialty, job.question_type, rotation_index=rotation,
+                            max_records=6 if len(rotations) > 1 else 12,
+                        )
+                    ]
+                    raw_evidence_cues = list({str(cue.get("pmid") or cue.get("title")): cue
+                                              for cue in raw_evidence_cues}.values())
+                    evidence_cues, deferred_seed_cues = filter_saturated_evidence_cues(
+                        raw_evidence_cues, saturated_themes,
                     )
-                ]
-                raw_evidence_cues = list({str(cue.get("pmid") or cue.get("title")): cue
-                                          for cue in raw_evidence_cues}.values())
-                evidence_cues, deferred_seed_cues = filter_saturated_evidence_cues(
-                    raw_evidence_cues, saturated_themes,
-                )
-                # Campbell/3ie-style evidence-gap cues from *actual review
-                # abstracts*, not model-generated claims of novelty. One free
-                # Europe PMC query, with a safe empty result on source outages.
-                review_gap_cues = [
-                    cue for rotation in rotations
-                    for cue in recent_review_gap_cues(
-                        job.specialty, job.question_type, max_records=2 if len(rotations) > 1 else 5,
-                        rotation_index=rotation,
-                    )
-                ]
-                review_gap_cues = list({str(cue.get("pmid") or cue.get("title")): cue
-                                        for cue in review_gap_cues}.values())
+                    # Campbell/3ie-style evidence-gap cues from *actual review
+                    # abstracts*, not model-generated claims of novelty. One free
+                    # Europe PMC query, with a safe empty result on source outages.
+                    review_gap_cues = [
+                        cue for rotation in rotations
+                        for cue in recent_review_gap_cues(
+                            job.specialty, job.question_type, max_records=2 if len(rotations) > 1 else 5,
+                            rotation_index=rotation,
+                        )
+                    ]
+                    review_gap_cues = list({str(cue.get("pmid") or cue.get("title")): cue
+                                            for cue in review_gap_cues}.values())
+                    evidence_map = collect_evidence_map(job.specialty, job.question_type,
+                        rotation_index=seed_rotation_index, cancellation_check=lambda: store.ensure_active(job.id))
+                    store.save_step(job.id, "evidence-seed:v1", {
+                        "version": 1, "job_id": job.id, "recent_pubmed_cues": evidence_cues,
+                        "published_review_gap_cues": review_gap_cues, "evidence_first_map": evidence_map,
+                        "deferred_seed_cues": deferred_seed_cues,
+                    })
                 # Save real bibliographic leads BEFORE any paid/free AI endpoint
                 # is called. A quota or malformed JSON must not erase the evidence
                 # already retrieved from PubMed. These are NOT review PICO proposals.
@@ -230,6 +249,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                             "candidate_count": 0,
                             "recent_pubmed_cues": evidence_cues,
                             "published_review_gap_cues": review_gap_cues,
+                            "evidence_first_map": evidence_map,
                             "candidates": [],
                         }
                     },
@@ -255,7 +275,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     design_scope=[],
                     count=job.candidate_count,
                     additional_context=(
-                        cue_prompt(evidence_cues) + "\n" + review_gap_prompt(review_gap_cues)
+                        evidence_map_prompt(evidence_map) + "\n" + cue_prompt(evidence_cues) + "\n" + review_gap_prompt(review_gap_cues)
                     ).strip(),
                     progress_callback=generation_progress,
                     recent_topics=prior_topics,
@@ -263,6 +283,10 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     skipped_recent=recently_skipped,
                 )
             store.ensure_active(job.id)
+            for candidate in candidates:
+                candidate.metadata = {**(candidate.metadata or {}),
+                    "evidence_first_link": link_candidate(candidate, evidence_map)}
+                ledger.upsert_candidate(candidate)
             outside_scope = [candidate for candidate in candidates if not _within_specialty(candidate, job.specialty)]
             if outside_scope:
                 from scimed_scout.domain import CandidateStatus
@@ -306,6 +330,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 "candidates": [asdict(candidate) for candidate in candidates],
                 "recent_pubmed_cues": evidence_cues,
                 "published_review_gap_cues": review_gap_cues,
+                "evidence_first_map": evidence_map,
             })
             # Persist completed candidate proposals before slower source checks.
             # A failed later stage must not discard all generated ideas.
@@ -562,6 +587,8 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "duplicate_topics_skipped_count": len(result.duplicate_topics_skipped),
                     "recent_pubmed_cues": evidence_cues,
                     "published_review_gap_cues": review_gap_cues,
+                    "evidence_first_map": evidence_map,
+                    "source_cluster_anchored_candidates": sum(bool((c.metadata or {}).get("evidence_first_link", {}).get("links")) for c in candidates),
                     "seed_rotation_index": seed_rotation_index,
                     "saturated_prior_intervention_themes": saturated_themes[:20],
                     "deferred_repeated_seed_cues": deferred_seed_cues[:20],
