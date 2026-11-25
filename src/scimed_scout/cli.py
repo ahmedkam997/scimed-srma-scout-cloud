@@ -261,6 +261,7 @@ def _discovery_orchestrator(ledger: SQLiteLedger) -> ReviewDiscoveryOrchestrator
         novelty_service=novelty,
         scoring_service=scoring,
         require_pico_signals=True,
+        optimize_literature_queries=True,
     )
 
 

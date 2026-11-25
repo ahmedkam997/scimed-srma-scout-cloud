@@ -14,6 +14,7 @@ from scimed_scout.verification.queries import build_search_plan
 
 from .constants import MIN_DISCOVERY_STUDIES
 from .candidate_preflight import FocusedEvidencePreflight
+from .query_optimizer import optimized_queries, sample_quality, VERSION as QUERY_OPTIMIZER_VERSION
 from .evidence import discovery_evidence_snapshot
 from .pico_matching import assess_pico
 from .review_opportunity import assess_review_opportunity
@@ -44,6 +45,7 @@ class ReviewDiscoveryOrchestrator:
         candidate_checkpoint: Callable[[DiscoveryCandidateResult], None] | None = None,
         resumed_results: list[DiscoveryCandidateResult] | None = None,
         require_pico_signals: bool = False,
+        optimize_literature_queries: bool = False,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
@@ -55,6 +57,7 @@ class ReviewDiscoveryOrchestrator:
         self.candidate_checkpoint = candidate_checkpoint
         self.resumed_results = list(resumed_results or [])
         self.require_pico_signals = require_pico_signals
+        self.optimize_literature_queries = optimize_literature_queries
 
     def run(
         self,
@@ -472,7 +475,12 @@ class ReviewDiscoveryOrchestrator:
                 )
                 continue
 
-            selected = tuple(q for q in queries if not recover_only
+            planned = queries
+            if self.optimize_literature_queries and evidence_type in ("PRIMARY_STUDY","PUBLISHED_REVIEW"):
+                planned = optimized_queries(candidate,source_name,
+                    "PRIMARY" if evidence_type=="PRIMARY_STUDY" else "REVIEW",
+                    queries,max_queries=len(queries))
+            selected = tuple(q for q in planned if not recover_only
                              or latest.get((source_name, q)) not in DEFINITIVE)
             if not selected:
                 continue
@@ -511,6 +519,10 @@ class ReviewDiscoveryOrchestrator:
                 self._check_cancellation()
                 for query, result in futures[source_name].result():
                     self._check_cancellation()
+                    message=result.message
+                    if self.optimize_literature_queries and evidence_type in ("PRIMARY_STUDY","PUBLISHED_REVIEW") and source_name in ("PubMed","Europe PMC"):
+                        import json
+                        message=(message or "")+" | "+QUERY_OPTIMIZER_VERSION+" "+json.dumps(sample_quality(result),ensure_ascii=True)
                     self.ledger.append_search_log(
                         SearchLogRecord(
                             candidate.project_id,
@@ -519,7 +531,7 @@ class ReviewDiscoveryOrchestrator:
                             query,
                             result.status,
                             result.total_count,
-                            message=result.message,
+                            message=message,
                         )
                     )
                     for record in result.records:
