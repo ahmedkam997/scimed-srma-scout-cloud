@@ -144,3 +144,17 @@ def test_distinct_deep_check_backfills_after_similar_high_ranked_topics(tmp_path
             for row in result.duplicate_topics_skipped
         )
         assert ledger.get_candidate("C1") is not None
+
+
+def test_resume_keeps_completed_audit_and_spends_only_remaining_budget(tmp_path):
+    with _ledger(tmp_path / "resume.sqlite3") as ledger:
+        prior = _record("C0", blocked=False)
+        ledger.set_candidate_status("C0", prior.candidate_status)
+        engine = ControlledOrchestrator(ledger)
+        engine.resumed_results = [prior]
+        run = engine.run("P1", min_verify=2, max_verify=3, final_options=2)
+        assert len(engine.checked) == 2
+        assert "C0" not in engine.checked
+        assert len(run.verified) == 3
+        assert run.verified[0] == prior
+        assert ledger.get_candidate("C0").status == prior.candidate_status

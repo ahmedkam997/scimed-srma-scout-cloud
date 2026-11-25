@@ -57,7 +57,7 @@ function setup({insertError=null, cloudRows=[]}={}) {
     Date,
   };
   const exports=runInNewContext(
-    'let supabase=globalClient;let jobs=globalJobs;'+
+    'let supabase=globalClient;let jobs=globalJobs;let openedReports=new Map(globalJobs.map(job=>[job.id,job]));'+
     'let lastGapLoadedAt=0;let gapSyncError="";'+
     functions+
     '\n({syncGapNotes,loadGapEvents,completedGapTopics,getError:()=>gapSyncError});',
