@@ -590,6 +590,11 @@ class ReviewDiscoveryOrchestrator:
                                 record_type = "OTHER"
                         elif evidence_type == "PRIMARY_STUDY":
                             if _obvious_review(record):
+                                signal=review_intervention_citation_signal(candidate,record)
+                                self._store_record(candidate.candidate_id,
+                                    "PUBLISHED_REVIEW" if signal!="NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK" else "OTHER",
+                                    record,query,purpose,classification="CONFIRMED_REVIEW_CUE:"+signal,
+                                    originally_requested=evidence_type)
                                 continue
                             # Crossref title search covers books, chapters and
                             # nonclinical citations without dependable study
@@ -629,7 +634,8 @@ class ReviewDiscoveryOrchestrator:
                     signal=review_intervention_citation_signal(candidate,record)
                     record_type="PUBLISHED_REVIEW" if citation=="CONFIRMED_REVIEW_CUE" and signal!="NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK" else "OTHER"
                 else:
-                    if citation=="CONFIRMED_REVIEW_CUE":record_type="PUBLISHED_REVIEW"
+                    if citation=="CONFIRMED_REVIEW_CUE":
+                        record_type="PUBLISHED_REVIEW" if review_intervention_citation_signal(candidate,record)!="NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK" else "OTHER"
                     else:record_type="PRIMARY_STUDY"
                 self._store_record(candidate.candidate_id,record_type,record,(record.metadata.get("adaptive_pubmed") or {}).get("query",report.get("query","")),"ADAPTIVE_PUBMED",classification=citation,originally_requested="SUPPLEMENTARY_DISCOVERY")
         candidate=self.ledger.get_candidate(candidate.candidate_id) or candidate
@@ -658,7 +664,7 @@ class ReviewDiscoveryOrchestrator:
                 for record in records:
                     self._check_cancellation()
                     kind=classify_review_search_hit(record)
-                    record_type="PUBLISHED_REVIEW" if kind=="CONFIRMED_REVIEW_CUE" else "OTHER" if _obvious_review(record) else "PRIMARY_STUDY"
+                    record_type=("PUBLISHED_REVIEW" if review_intervention_citation_signal(candidate,record)!="NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK" else "OTHER") if kind=="CONFIRMED_REVIEW_CUE" else "PRIMARY_STUDY"
                     self._store_record(candidate.candidate_id,record_type,record,query,purpose,
                         classification=kind,originally_requested="SUPPLEMENTARY_DISCOVERY")
             candidate=self.ledger.get_candidate(candidate.candidate_id) or candidate

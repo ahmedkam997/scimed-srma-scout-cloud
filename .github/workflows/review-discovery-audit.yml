@@ -1,0 +1,36 @@
+name: review-discovery-audit
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/review-discovery-audit.yml'
+      - 'src/scimed_scout/discovery/review_retrieval_audit.py'
+      - 'src/scimed_scout/discovery/clinical_reranking.py'
+      - 'src/scimed_scout/discovery/evidence_classification.py'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+      OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
+      SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[dev]'
+      - run: pytest -q tests/test_review_discovery_audit.py tests/test_evidence_classification.py
+      - run: python -m scimed_scout.discovery.review_retrieval_audit --output review-discovery-audit.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: review-discovery-audit
+          path: review-discovery-audit.json

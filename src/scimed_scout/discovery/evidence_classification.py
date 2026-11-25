@@ -40,16 +40,21 @@ _NON_STUDY = re.compile(r"\b(?:editorial|erratum|correction|commentary|letter\s+
 
 
 def _types(record: SearchRecord) -> list[str]:
+    """Normalize actual provider shapes; generic 'Review' is not SR proof."""
     meta = record.metadata if isinstance(record.metadata, dict) else {}
-    values: list[str] = []
-    for key in ("publicationTypes", "pubtype", "publication_types", "type", "type_crossref"):
-        value = meta.get(key)
-        if isinstance(value, list):
-            values += [str(v).casefold() for v in value]
-        elif isinstance(value, str):
-            values.append(value.casefold())
-    return values
+    def flatten(value):
+        if isinstance(value, str):
+            return [re.sub(r"[^a-z0-9]+"," ",value.casefold()).strip()]
+        if isinstance(value, (list,tuple)):
+            return [x for item in value for x in flatten(item)]
+        if isinstance(value,dict):
+            return [x for k in ("pubType","publicationType","name","label") for x in flatten(value.get(k))]
+        return []
+    return [x for key in ("publicationTypes","pubtype","publication_types","pubType","pubTypeList","type","type_crossref") for x in flatten(meta.get(key))]
 
+_PROTOCOL = re.compile(r"\b(?:protocol (?:for|of) (?:a |an |the )?(?:systematic|scoping|umbrella|living|network|review|meta)|(?:systematic|scoping|umbrella|living|network) review (?:and meta[ -]analysis )?protocol|(?:systematic review|meta[ -]analysis)[ :;,–—-]+(?:a |the )?(?:study )?protocol)\b",re.I)
+_NONPUBLICATION_TYPES = {"peer review","peer review report","book review","editorial","comment","letter","published erratum","retraction of publication","retracted publication","study protocol","clinical trial protocol","preprint"}
+_OWN_REVIEW_METHOD = re.compile(r"\b(?:we (?:systematically )?(?:searched|screened) (?:the )?(?:pubmed|medline|embase|cochrane|scopus|web of science|databases)|we (?:conducted|performed) (?:a |an |the )?(?:systematic review|meta[ -]analysis)|we systematically (?:searched|reviewed)|(?:methods|methodology)\s*:\s*(?:we |a )?(?:systematic search|systematic review|meta[ -]analysis))\b",re.I)
 
 def classify_review_search_hit(record: SearchRecord) -> str:
     """Return CONFIRMED_REVIEW_CUE / PRIMARY_OR_NONREVIEW / NEEDS_BIBLIOGRAPHIC_CHECK.
@@ -71,12 +76,9 @@ def classify_review_search_hit(record: SearchRecord) -> str:
         title, re.IGNORECASE,
     ):
         return "PRIMARY_OR_NONREVIEW"
-    if any(
-        t in {"peer-review", "peer review", "peer_review", "peer review report"}
-        for t in types
-    ):
+    if any(t in _NONPUBLICATION_TYPES for t in types) or _PROTOCOL.search(title) or _NON_STUDY.search(title):
         return "PRIMARY_OR_NONREVIEW"
-    if any("systematic review" in t or "meta-analysis" in t for t in types):
+    if any(t in {"systematic review","meta analysis","network meta analysis","scoping review","umbrella review"} for t in types):
         return "CONFIRMED_REVIEW_CUE"
     if _REVIEW_TITLE.search(title):
         return "CONFIRMED_REVIEW_CUE"
@@ -84,8 +86,9 @@ def classify_review_search_hit(record: SearchRecord) -> str:
         return "PRIMARY_OR_NONREVIEW"
     if _PRIMARY_TITLE.search(title) or _NON_STUDY.search(title):
         return "PRIMARY_OR_NONREVIEW"
-    abstract = str(meta.get("abstract") or "")
-    if _REVIEW_ABSTRACT.search(abstract):
+    abstract = " ".join(str(meta.get(k) or "") for k in ("abstract","abstractText","summary"))
+    # Background mentions of systematic reviews do not prove a review design.
+    if _OWN_REVIEW_METHOD.search(abstract):
         return "CONFIRMED_REVIEW_CUE"
     # A generic PubMed 'Review' pubtype is not an SRMA, but competing
     # narrative reviews deserve manual review and should not be fabricated.
@@ -157,4 +160,11 @@ def review_intervention_citation_signal(candidate: Any, record: SearchRecord) ->
     }
     if intervention_terms & citation_terms:
         return "INTERVENTION_IN_REVIEW_CITATION"
+    # Recognized phrases/abbreviations are retrieval cues, not PICO equivalence.
+    from .focused_queries import ALIASES
+    from .query_optimizer import normalize, _contains
+    target=normalize(intervention);text=normalize(citation)
+    for key,aliases in ALIASES.items():
+        if _contains(target,normalize(key)) and any(_contains(text,normalize(a)) for a in aliases):
+            return "INTERVENTION_IN_REVIEW_CITATION"
     return "NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK"

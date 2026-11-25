@@ -81,7 +81,7 @@ def _expanded_group(value,source):
 
 def _review_suffix(source):
     if source=="PubMed":
-        return ' AND ("Systematic Review"[Publication Type] OR "Meta-Analysis"[Publication Type] OR "systematic review"[Title/Abstract] OR "meta-analysis"[Title/Abstract])'
+        return ' AND (systematic[sb] OR "Meta-Analysis"[Publication Type] OR "systematic review"[Title/Abstract] OR "meta-analysis"[Title/Abstract])'
     return ' AND (PUB_TYPE:"systematic review" OR PUB_TYPE:"meta-analysis" OR TITLE_ABS:"systematic review" OR TITLE_ABS:"meta-analysis")'
 
 def _dedup(items):

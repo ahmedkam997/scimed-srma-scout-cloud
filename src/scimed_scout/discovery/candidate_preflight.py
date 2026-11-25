@@ -79,7 +79,7 @@ def review_search_query(
     intervention = " ".join(terms[:3]).replace('"', "")
     return (
         f'"{intervention}"[Title/Abstract] AND '
-        f'("systematic review"[Publication Type] OR '
+        f'(systematic[sb] OR "systematic review"[Title/Abstract] OR '
         f'"meta-analysis"[Publication Type]) AND '
         f'("{year - 8}/01/01"[Date - Publication] : '
         f'"{year}/12/31"[Date - Publication])'

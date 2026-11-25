@@ -19,6 +19,7 @@ from scimed_scout.domain import SourceStatus
 from scimed_scout.sources import build_default_source_clients
 from scimed_scout.storage import CandidateRecord
 from scimed_scout.verification.queries import build_search_plan
+from scimed_scout.discovery.evidence_classification import classify_review_search_hit, classify_registration_search_hit
 
 ALLOWED_SOURCES = frozenset({
     "PubMed", "Europe PMC", "OpenAlex", "Crossref", "Semantic Scholar",
@@ -182,6 +183,7 @@ def recheck_saved_topic(
                         "doi": str(r.doi)[:200],
                         "year": r.year,
                         "classification": "UNSCREENED_BIBLIOGRAPHIC_LEAD",
+                        "bibliographic_type_cue": classify_registration_search_hit(r) if purpose=="REGISTRATION" else classify_review_search_hit(r) if purpose in ("PRIMARY_STUDY","PUBLISHED_REVIEW") else "PIPELINE_LEAD",
                     } for r in item.records[:15]],
                     "citations_truncated": max(0,len(item.records)-15),
                 })

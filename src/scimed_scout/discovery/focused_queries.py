@@ -70,6 +70,6 @@ def focused_query(candidate,source,purpose):
     query=f"({population}) AND ({intervention})"
     if purpose=="REVIEW":
         query+=" AND ("+" OR ".join([term("systematic review"),term("meta-analysis"),
-            '"Systematic Review"[Publication Type]' if source=="PubMed" else 'PUB_TYPE:"systematic review"',
+            'systematic[sb]' if source=="PubMed" else 'PUB_TYPE:"systematic review"',
             '"Meta-Analysis"[Publication Type]' if source=="PubMed" else 'PUB_TYPE:"meta-analysis"'])+")"
     return query
