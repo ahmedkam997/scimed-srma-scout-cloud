@@ -75,3 +75,23 @@ def test_fixed_probe_failover_before_comparison_only():
     assert selected is b
     assert [p["status"] for p in probes]==["UNAVAILABLE","HEALTHY"]
     assert a.calls==b.calls==1
+
+
+def test_new_pair_excludes_prior_failed_fixed_provider():
+    from scimed_scout.discovery.comparative_validation import probe_fixed_provider
+    from scimed_scout.ai.providers import FreeProviderFallback
+    class Stub:
+        api_key="test"
+        def __init__(self,name):
+            self.name=name
+            self.model=name+"-fixed"
+            self.calls=0
+        def complete(self,request):
+            self.calls+=1
+            return AIResponse('{"ready":true}',self.name,self.model)
+    previous,alternate=Stub("gemini-free"),Stub("groq-free-backup")
+    selected,probes=probe_fixed_provider(FreeProviderFallback(previous,alternate),excluded_provider="gemini-free")
+    assert selected is alternate
+    assert previous.calls==0 and alternate.calls==1
+    selected,probes=probe_fixed_provider(FreeProviderFallback(previous),excluded_provider="gemini-free")
+    assert selected is None and probes==[]

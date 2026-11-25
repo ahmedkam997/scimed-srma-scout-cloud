@@ -64,10 +64,10 @@ def choose_fixed_provider(config):
     return next(fixed_providers(config), None)
 
 
-def probe_fixed_provider(config):
+def probe_fixed_provider(config, *, excluded_provider=""):
     """Select a healthy route BEFORE both arms; never switch mid-experiment."""
     probes = []
-    for item in list(fixed_providers(config))[:3]:
+    for item in [p for p in fixed_providers(config) if p.name != excluded_provider][:3]:
         meter = MeteredProvider(item, 1)
         try:
             response = meter.complete(AIRequest(system='Return only JSON.',
@@ -280,6 +280,7 @@ def main():
     parser.add_argument("--rotation",type=int,default=0)
     parser.add_argument("--deep",action="store_true")
     parser.add_argument("--seed-report",type=Path)
+    parser.add_argument("--avoid-previous-provider",action="store_true")
     args=parser.parse_args()
     start=time.monotonic()
     order=list(ARMS)
@@ -296,7 +297,20 @@ def main():
                 "Model token usage is provider-reported; logical requests exclude internal bounded HTTP retries."]}
     _write(args.output,report)
     try:
-        provider, probes=probe_fixed_provider(FreeProviderFallback.from_env())
+        excluded_provider=""
+        if args.avoid_previous_provider:
+            # A short probe passed last time, but full requests failed.
+            # Require an independent fixed route for this new paired trial.
+            if not args.seed_report or not args.seed_report.is_file() or args.seed_report.stat().st_size>2_000_000:
+                raise RuntimeError("Previous paired report unavailable")
+            previous=json.loads(args.seed_report.read_text(encoding="utf-8"))
+            if previous.get("version")!=VERSION or previous.get("status")!="PILOT_INCONCLUSIVE":
+                raise RuntimeError("Previous paired report is not inconclusive")
+            excluded_provider=previous.get("configured_provider") or ""
+            if excluded_provider not in ("gemini-free","groq-free-backup","openrouter-free"):
+                raise RuntimeError("Previous fixed provider not identifiable")
+        report["excluded_previous_provider"]=excluded_provider or None
+        provider, probes=probe_fixed_provider(FreeProviderFallback.from_env(),excluded_provider=excluded_provider)
         report["provider_probes"]=probes
         if provider is None:
             raise RuntimeError("No healthy fixed free model")

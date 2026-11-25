@@ -37,9 +37,9 @@ jobs:
       - name: Reuse exact previous frozen evidence
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh run download 45622888183 -n paired-discovery-pilot -D previous-pilot --repo "$GITHUB_REPOSITORY"
+        run: gh run download 45623757149 -n paired-discovery-pilot -D previous-pilot --repo "$GITHUB_REPOSITORY"
         continue-on-error: true
-      - run: python -m scimed_scout.discovery.comparative_validation --output comparison-report.json --deep --seed-report previous-pilot/comparison-report.json
+      - run: python -m scimed_scout.discovery.comparative_validation --output comparison-report.json --deep --seed-report previous-pilot/comparison-report.json --avoid-previous-provider
       - name: Generate incident diagnostics
         if: always()
         run: |
