@@ -103,6 +103,9 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
         client_token_hash=job.client_token_hash,
         revisit_days=job.revisit_days,
     )
+    print(json.dumps({"status": "TOPIC_HISTORY_LOADED", "job_id": job.id,
+                      "history_jobs": len(history_rows),
+                      "history_warning": getattr(store, "history_warning", "")}), flush=True)
     prior_topics = recent_topic_memory(history_rows, revisit_days=job.revisit_days)
     generated_history = recent_generated_topic_memory(
         history_rows, revisit_days=job.revisit_days,

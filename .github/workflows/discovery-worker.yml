@@ -8,6 +8,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/discovery-worker.yml'
+      - 'src/scimed_scout/cloud/supabase.py'
+      - 'src/scimed_scout/cloud/worker.py'
   schedule:
     - cron: '3-58/5 * * * *'
   workflow_dispatch:
