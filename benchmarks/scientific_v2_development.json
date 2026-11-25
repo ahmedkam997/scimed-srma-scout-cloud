@@ -1,0 +1,161 @@
+{
+  "version": "MULTISPECIALTY_DEVELOPMENT_V2",
+  "frozen": "2026-11-25",
+  "limits": {
+    "queries_per_purpose": 2,
+    "records_per_query": 12
+  },
+  "cases": [
+    {
+      "id": "TXA_PREVENT",
+      "split": "new_development_pilot",
+      "candidate": {
+        "title": "Prophylactic tranexamic acid for Women undergoing vaginal or cesarean delivery",
+        "specialty": "Obstetrics",
+        "question_type": "EFFECTIVENESS",
+        "population": "Women undergoing vaginal or cesarean delivery",
+        "intervention_exposure_index_test": "Prophylactic tranexamic acid",
+        "comparator_reference": "Placebo",
+        "outcomes": [
+          "Clinical outcomes"
+        ],
+        "eligible_designs": [
+          "RCT"
+        ],
+        "search_terms": [
+          "tranexamic acid postpartum hemorrhage prevention",
+          "tranexamic acid childbirth"
+        ]
+      },
+      "primary": [
+        {
+          "pmid": "30134136",
+          "label": "TRAAP"
+        },
+        {
+          "pmid": "33913639",
+          "label": "TRAAP2"
+        },
+        {
+          "pmid": "39461792",
+          "label": "WOMAN-2 (anaemic women)"
+        }
+      ],
+      "reviews": [
+        {
+          "pmid": "38001439",
+          "label": "Prevention meta-analysis"
+        },
+        {
+          "pmid": "39461793",
+          "label": "Broader prevention and treatment IPD review"
+        }
+      ],
+      "controls": [
+        {
+          "pmid": "28456509",
+          "label": "WOMAN treatment, not prevention",
+          "kind": "different_indication_primary"
+        }
+      ]
+    },
+    {
+      "id": "APPENDICITIS",
+      "split": "new_development_pilot",
+      "candidate": {
+        "title": "Antibiotic therapy for Adults with acute appendicitis",
+        "specialty": "General Surgery",
+        "question_type": "EFFECTIVENESS",
+        "population": "Adults with acute appendicitis",
+        "intervention_exposure_index_test": "Antibiotic therapy",
+        "comparator_reference": "Appendectomy",
+        "outcomes": [
+          "Clinical outcomes"
+        ],
+        "eligible_designs": [
+          "RCT"
+        ],
+        "search_terms": [
+          "antibiotics appendicitis",
+          "nonoperative appendicitis"
+        ]
+      },
+      "primary": [
+        {
+          "pmid": "26080338",
+          "label": "APPAC"
+        },
+        {
+          "pmid": "33017106",
+          "label": "CODA"
+        }
+      ],
+      "reviews": [
+        {
+          "pmid": "39827891",
+          "label": "IPD meta-analysis"
+        },
+        {
+          "pmid": "35971796",
+          "label": "Uncomplicated appendicitis meta-analysis"
+        }
+      ],
+      "controls": [
+        {
+          "pmid": "38630471",
+          "label": "APPAC II antibiotic regimen comparison",
+          "kind": "different_comparator_primary"
+        },
+        {
+          "pmid": "41563747",
+          "label": "APPAC ten-year followup (same trial)",
+          "kind": "same_family_followup"
+        }
+      ]
+    },
+    {
+      "id": "MENINGITIS",
+      "split": "new_development_pilot",
+      "candidate": {
+        "title": "Dexamethasone for Adolescents and adults with bacterial meningitis",
+        "specialty": "Infectious Diseases",
+        "question_type": "EFFECTIVENESS",
+        "population": "Adolescents and adults with bacterial meningitis",
+        "intervention_exposure_index_test": "Dexamethasone",
+        "comparator_reference": "Placebo",
+        "outcomes": [
+          "Clinical outcomes"
+        ],
+        "eligible_designs": [
+          "RCT"
+        ],
+        "search_terms": [
+          "dexamethasone bacterial meningitis",
+          "adjunctive corticosteroids meningitis"
+        ]
+      },
+      "primary": [
+        {
+          "pmid": "12432041",
+          "label": "European adult trial"
+        },
+        {
+          "pmid": "18077808",
+          "label": "Vietnam adolescents and adults"
+        },
+        {
+          "pmid": "18077809",
+          "label": "Malawi adults"
+        }
+      ],
+      "reviews": [
+        {
+          "pmid": "14998499",
+          "label": "Adult steroids systematic review"
+        }
+      ],
+      "controls": []
+    }
+  ],
+  "limitations": "Selected previously published reference leads from public primary/review records, not independent dual adjudication or exhaustive review sets. Broader reviews and population variants are competitor leads. Hand-curated development set, not holdout. IDs never used to generate queries."
+}

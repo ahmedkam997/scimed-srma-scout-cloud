@@ -1,0 +1,72 @@
+name: pagination-and-retrieval
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/pagination-and-retrieval.yml'
+      - 'scripts/probe_prospero_pagination.py'
+      - 'src/scimed_scout/discovery/multispecialty_benchmark.py'
+      - 'benchmarks/scientific_v2_development.json'
+permissions:
+  contents: read
+jobs:
+  registry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PROSPERO_NETWORK_MODE: online
+      PROSPERO_CACHE_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build pinned original and isolated experimental CLI
+        run: |
+          git clone --depth 1 --branch v0.2.2 https://github.com/erichuang777777/PROSPERO-MCP.git "$RUNNER_TEMP/prospero"
+          npm install --prefix "$RUNNER_TEMP/prospero" --no-audit --no-fund
+          npm run build --prefix "$RUNNER_TEMP/prospero"
+          cp -r "$RUNNER_TEMP/prospero/dist" "$RUNNER_TEMP/prospero/dist-original"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          p=Path(os.environ["RUNNER_TEMP"])/"prospero/src/prospero-client.ts"
+          s=p.read_text()
+          assert s.count("line: page,")==1
+          assert s.count("response[page - 1]")==1
+          s=s.replace("line: page,","line: 1,").replace("response[page - 1]","response[0]")
+          p.write_text(s)
+          PY
+          npm run build --prefix "$RUNNER_TEMP/prospero"
+      - run: python scripts/probe_prospero_pagination.py "$RUNNER_TEMP/prospero/dist-original/cli.js" "$RUNNER_TEMP/prospero/dist/cli.js"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prospero-pagination
+          path: prospero-pagination.json
+  retrieval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[dev]'
+      - run: python -m scimed_scout.discovery.multispecialty_benchmark --output multispecialty.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: multispecialty
+          path: multispecialty.json
