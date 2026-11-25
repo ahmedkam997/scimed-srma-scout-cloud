@@ -1,0 +1,35 @@
+name: scientific-benchmark
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/scientific-benchmark.yml
+permissions:
+  contents: read
+concurrency:
+  group: scimed-scientific-benchmark
+  cancel-in-progress: false
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    env:
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[dev]'
+      - run: pytest -q tests/test_scientific_benchmark.py
+      - run: python -m scimed_scout.discovery.scientific_benchmark --output scientific-benchmark-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scientific-benchmark-report
+          path: scientific-benchmark-report.json
+          retention-days: 14

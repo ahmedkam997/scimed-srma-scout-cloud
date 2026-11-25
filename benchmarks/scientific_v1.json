@@ -1,0 +1,174 @@
+{
+  "version": "SCIENTIFIC_PILOT_V1",
+  "frozen": "2026-11-25",
+  "limits": {
+    "queries_per_purpose": 2,
+    "records_per_query": 8
+  },
+  "cases": [
+    {
+      "id": "ARDS_PRONE",
+      "split": "new_pilot",
+      "candidate": {
+        "title": "Prone versus supine ventilation for adults with ARDS",
+        "specialty": "Critical Care",
+        "question_type": "EFFECTIVENESS",
+        "population": "Adults with acute respiratory distress syndrome",
+        "intervention_exposure_index_test": "Prone positioning",
+        "comparator_reference": "Supine positioning",
+        "outcomes": [
+          "Mortality"
+        ],
+        "eligible_designs": [
+          "RCT"
+        ],
+        "search_terms": [
+          "prone positioning",
+          "ARDS"
+        ]
+      },
+      "primary": [
+        {
+          "pmid": "23688302",
+          "label": "PROSEVA"
+        },
+        {
+          "pmid": "18427774",
+          "label": "Fernandez 2008"
+        },
+        {
+          "pmid": "19903918",
+          "label": "Taccone 2009"
+        },
+        {
+          "pmid": "16556697",
+          "label": "Mancebo 2006"
+        }
+      ],
+      "reviews": [
+        {
+          "pmid": "29068269",
+          "label": "Munshi et al., 2017",
+          "cutoff": "2016-08"
+        }
+      ],
+      "controls": [
+        {
+          "pmid": "38597483",
+          "label": "Awake nonintubated COVID-19 review",
+          "kind": "different_population_review"
+        }
+      ],
+      "basis": "Primary randomized trial abstracts and published review PMID 29068269. Selected reference records, not all included studies."
+    },
+    {
+      "id": "ASPIRIN_PRIMARY",
+      "split": "new_pilot",
+      "candidate": {
+        "title": "Aspirin for primary prevention of cardiovascular events",
+        "specialty": "Cardiology",
+        "question_type": "EFFECTIVENESS",
+        "population": "Adults eligible for primary cardiovascular prevention",
+        "intervention_exposure_index_test": "Aspirin",
+        "comparator_reference": "Placebo or no aspirin",
+        "outcomes": [
+          "Cardiovascular events",
+          "Major bleeding"
+        ],
+        "eligible_designs": [
+          "RCT"
+        ],
+        "search_terms": [
+          "aspirin",
+          "primary prevention cardiovascular disease"
+        ]
+      },
+      "primary": [
+        {
+          "pmid": "30146931",
+          "label": "ASCEND"
+        },
+        {
+          "pmid": "30158069",
+          "label": "ARRIVE"
+        }
+      ],
+      "reviews": [
+        {
+          "pmid": "30667501",
+          "label": "Zheng and Roddick 2019"
+        },
+        {
+          "pmid": "25360605",
+          "label": "2014 primary prevention meta-analysis"
+        }
+      ],
+      "controls": [],
+      "basis": "Published trial abstracts and prior primary prevention meta-analyses. Historical update signal only: 2018 trial publications followed 2014 review publication; exact search cutoff not supplied."
+    },
+    {
+      "id": "HFPEF_EMPA",
+      "split": "calibration",
+      "candidate": {
+        "title": "Empagliflozin in heart failure with preserved ejection fraction",
+        "specialty": "Cardiology",
+        "question_type": "EFFECTIVENESS",
+        "population": "Heart failure with preserved ejection fraction",
+        "intervention_exposure_index_test": "Empagliflozin",
+        "comparator_reference": "Placebo",
+        "outcomes": [
+          "Heart failure hospitalization",
+          "Cardiovascular death"
+        ],
+        "eligible_designs": [
+          "RCT"
+        ],
+        "search_terms": [
+          "empagliflozin",
+          "heart failure"
+        ]
+      },
+      "primary": [
+        {
+          "pmid": "34449189",
+          "label": "EMPEROR-Preserved (EF >40%; not pure EF >=50%)"
+        }
+      ],
+      "reviews": [
+        {
+          "pmid": "37252111",
+          "label": "SGLT2 HFpEF umbrella review (broader intervention class)"
+        }
+      ],
+      "controls": [
+        {
+          "pmid": "32865377",
+          "label": "EMPEROR-Reduced",
+          "kind": "different_population_primary"
+        },
+        {
+          "pmid": "36027570",
+          "label": "DELIVER dapagliflozin",
+          "kind": "different_intervention_primary"
+        }
+      ],
+      "basis": "Previously used calibration case; EF >40% is not exclusively HFpEF >=50%. Broader class review is a competitor lead, not an identical PICO."
+    }
+  ],
+  "family_controls": [
+    {
+      "family": "DELIVER",
+      "pmids": [
+        "36027570",
+        "36054231"
+      ],
+      "basis": "Primary DELIVER trial and its prespecified NYHA analysis, PMID 36054231; same trial, not two independent populations."
+    }
+  ],
+  "scientific_labels": {
+    "independent_dual_review": false,
+    "exhaustive_reference_sets": false,
+    "publication_opportunity_labels": null,
+    "negative_control_interpretation": "Different PICO is a screening challenge, not evidence of absence of eligible studies."
+  }
+}
