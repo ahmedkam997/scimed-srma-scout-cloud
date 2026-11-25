@@ -11,7 +11,10 @@ class PubMedSource:
     name = "PubMed"
     base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
 
-    def __init__(self, http: JsonHttpClient | None = None):
+    def __init__(self, http: JsonHttpClient | None = None, *, sort: str = "pub_date"):
+        if sort not in ("pub_date","relevance"):
+            raise ValueError("Unsupported PubMed sort")
+        self.sort=sort
         self.api_key = os.getenv("NCBI_API_KEY", "").strip()
         self.email = os.getenv("SCIMED_CONTACT_EMAIL", "").strip()
         self.http = http or JsonHttpClient(
@@ -26,7 +29,7 @@ class PubMedSource:
     def search(self, query: str, *, limit: int = 20) -> SearchResult:
         try:
             data = self.http.get_json(self.base + "esearch.fcgi", self._params({
-                "db": "pubmed", "term": query, "retmode": "json", "retmax": max(0, limit), "sort": "pub date"
+                "db": "pubmed", "term": query, "retmode": "json", "retmax": max(0, limit), "sort": self.sort
             }))
             block = data.get("esearchresult") or {}
             if "count" not in block:

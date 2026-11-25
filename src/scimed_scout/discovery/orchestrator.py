@@ -16,6 +16,7 @@ from .constants import MIN_DISCOVERY_STUDIES
 from .candidate_preflight import FocusedEvidencePreflight
 from .query_optimizer import optimized_queries, sample_quality, VERSION as QUERY_OPTIMIZER_VERSION
 from .adaptive_search import collect as collect_supplementary
+from .registration_enrichment import enrich_ledger
 from .evidence import discovery_evidence_snapshot
 from .pico_matching import assess_pico
 from .review_opportunity import assess_review_opportunity
@@ -257,6 +258,12 @@ class ReviewDiscoveryOrchestrator:
         if self.adaptive_search and not (candidate.metadata or {}).get("adaptive_search_audit"):
             self._supplementary_search(candidate)
             candidate=self.ledger.get_candidate(candidate_id) or candidate
+        if self.adaptive_search and not (candidate.metadata or {}).get("registration_enrichment_audit"):
+            self._check_cancellation()
+            registration_audit=enrich_ledger(self.ledger,candidate_id,max_lookups=3)
+            candidate=self.ledger.get_candidate(candidate_id) or candidate
+            candidate.metadata={**(candidate.metadata or {}),"registration_enrichment_audit":registration_audit}
+            self.ledger.upsert_candidate(candidate)
         logs = self.ledger.list_search_log(candidate_id)
         coverage = evaluate_coverage(logs, policy)
         evidence = discovery_evidence_snapshot(self.ledger, candidate_id)
