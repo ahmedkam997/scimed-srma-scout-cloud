@@ -37,3 +37,13 @@ test('cloud polling preserves open manual editor and topic transfer preserves sa
  assert.ok(app.includes("els.jobs.querySelector('details.mcda-editor[open]')"));
  assert.ok(app.includes('researcher_recorded_assessment:manual'));
 });
+
+test('incomplete competitors prevent optimistic ranking and two complete ratings compare across scenarios',()=>{
+ const j={id:'comparison'},a={candidate_id:'a',title:'A'},b={candidate_id:'b',title:'B'};
+ const record=(t,n)=>{const d=m.template(t);for(const k of Object.keys(d.ratings))d.ratings[k]={rating:n,source_urls:['https://example.org'],rationale:'fixture',counterevidence:'fixture',uncertainty:'fixture'};assert.equal(m.save(j,t,JSON.stringify(d)).ok,true);};
+ record(a,5);
+ assert.equal(m.compare(j,[a,b]).status,'INDETERMINATE');
+ record(b,3);
+ assert.equal(m.compare(j,[a,b]).status,'ROBUST_INTERVAL_DOMINANCE');
+ assert.equal(m.compare(j,[a,b]).qualification_granted,false);
+});

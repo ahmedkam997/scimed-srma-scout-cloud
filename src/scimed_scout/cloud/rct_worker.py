@@ -156,7 +156,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
             package=build_discovery_review_package(ledger,run)
             package["topic_review_prompt"] += "\n\n"+PROMPT
             package["review_instructions"]="RCT evidence-first discovery shortlist: no automatically confirmed independent trials. Assess the dossiers independently before registration.\n"+PROMPT
-            package["weighted_assessment_comparison"]=compare_assessments([(x["candidate_id"],x["opportunity_mcda"]["assessment"]) for x in audits if x["opportunity_mcda"]])
+            package["weighted_assessment_comparison"]=compare_assessments([(c.candidate_id,(ledger.get_candidate(c.candidate_id).metadata or {})["opportunity_mcda"]["assessment"]) for c in candidates])
             ids={x.candidate_id for x in checked}
             package["unverified_generated_options"]=[_draft(c) for c in candidates if c.candidate_id not in ids]
             package["unverified_generated_options_are_not_qualified"]=True

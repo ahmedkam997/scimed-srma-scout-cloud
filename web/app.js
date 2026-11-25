@@ -807,6 +807,7 @@ function renderJobs() {
     const summaryHtml = job.status === 'COMPLETED' && (checked || summary.rct_first)
       ? `<div class="job-result-summary">
           <b>Discovery review summary</b>
+          ${summary.rct_first && window.SCIMED_MCDA ? window.SCIMED_MCDA.renderComparison(job,[...options,...(job.result_json?.package?.provisional_options||[]),...(job.result_json?.package?.unverified_generated_options||[])]) : ''}
           <p>Generated ${escapeHtml(generated)} candidates. Checked ${escapeHtml(checked)}.
           Qualified ${escapeHtml(options.length)}.
           ${summary.rct_first ? `RCT-only mode: ${escapeHtml(summary.rct_first.selected_for_deep_verification ?? 0)} selected for deep checks, independent eligible trial counts NOT confirmed. Seed status ${escapeHtml(summary.rct_first.seed_status || 'UNKNOWN')}.` : ''}
@@ -1238,6 +1239,7 @@ function reportPayload(job) {
     specialty: job.specialty,
     question_type: job.question_type,
     summary: job?.result_json?.run_summary || {},
+    researcher_recorded_assessments: typeof window !== 'undefined' && window.SCIMED_MCDA ? [...(pkg.options||[]),...(pkg.provisional_options||[]),...(pkg.unverified_generated_options||[])].map(t=>window.SCIMED_MCDA.read(job,t)).filter(Boolean) : [],
     checkpoint: job?.result_json?.checkpoint || null,
     error_excerpt: (job.error_text || '').slice(-700),
     selection_policy: pkg.selection_policy || {},

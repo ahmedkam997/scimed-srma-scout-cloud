@@ -52,6 +52,27 @@
       return {ok:true,data};
     }catch(e){return {ok:false,error:String(e.message||e)};}
   }
+  function compare(job,topics){
+    const unique=new Map((topics||[]).filter(t=>t?.candidate_id).map(t=>[t.candidate_id,t]));
+    const rows=[...unique.values()].map(t=>({id:t.candidate_id,title:t.title||t.candidate_id,data:read(job,t)||calculate(template(t),t.candidate_id)}));
+    const scenarios={};
+    for(const name of Object.keys(vectors)){
+      const ranges=rows.map(r=>({id:r.id,title:r.title,range:r.data.scenarios[name].bounds}));
+      const winners=ranges.filter(r=>ranges.length>1&&ranges.every(s=>r.id===s.id||r.range[0]>s.range[1]));
+      scenarios[name]={ranges,winner:winners.length===1?winners[0].id:null};
+    }
+    const winners=Object.values(scenarios).map(x=>x.winner);
+    const known=new Set(winners.filter(Boolean));
+    return {status:known.size>1?'WEIGHT_SENSITIVE':rows.length>1&&known.size===1&&winners.every(Boolean)?'ROBUST_INTERVAL_DOMINANCE':'INDETERMINATE',scenarios,qualification_granted:false};
+  }
+  function renderComparison(job,topics){
+    if(!Array.isArray(topics)||topics.length<2||!topics.some(t=>read(job,t)))return '';
+    const result=compare(job,topics);
+    return '<details class="score-audit"><summary>Researcher ratings across candidates · '+esc(result.status)+'</summary>'+
+      '<p class="help">All candidate intervals retain unknown weights. Comparison uses recorded inputs only, not independently authenticated evidence or final qualification.</p>'+
+      Object.entries(result.scenarios).map(([k,s])=>'<p><b>'+esc(k)+'</b>: '+esc(s.winner ? (s.ranges.find(r=>r.id===s.winner)?.title||s.winner) : 'No strict interval winner')+'</p>'+
+        s.ranges.map(r=>'<p>'+esc(r.title)+': '+esc(r.range.join('–'))+'</p>').join('')).join('')+'</details>';
+  }
   function esc(s){return String(s??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));}
   function preview(data){if(!data)return '<p>No manual assessment saved.</p>';
     return '<p><b>'+esc(data.score_status)+'</b> · score '+esc(data.score??'UNKNOWN')+' / 100; balanced range '+esc(data.scenarios.balanced.bounds.join('–'))+'. This is not qualification.</p>'+
@@ -66,5 +87,5 @@
       '<button type="button" class="secondary small" data-mcda-export="'+esc(job.id)+'" data-mcda-topic="'+esc(topic.candidate_id)+'">Export saved assessment</button></div>'+
       '<p class="mcda-message" role="status"></p><div class="mcda-preview">'+preview(saved)+'</div></details>';
   }
-  root.SCIMED_MCDA=Object.freeze({weights,template,calculate,read,save,preview,render});
+  root.SCIMED_MCDA=Object.freeze({weights,template,calculate,read,save,preview,render,compare,renderComparison});
 })(typeof window!=='undefined'?window:globalThis);

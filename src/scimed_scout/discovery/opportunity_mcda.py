@@ -161,11 +161,24 @@ def profile(candidate, reviews=None, *, opportunity=None, scorecard=None, primar
     for k,v in opinions.items():
         if k in WEIGHTS and number(v) is not None:
             ratings[k]={"rating":v,"status":"PRELIMINARY","rationale":"Model-only judgment; requires source-backed independent assessment."}
+    assessment=weighted_assessment(ratings)
+    # Domain-specific recovery actions are suggested searches, never falsely
+    # recorded as executed. Do not recommend changing PICO solely to gain score.
+    actions={
+        "clinical_importance":"Find current guidelines and source-linked clinical uncertainty; document patient-important outcomes and decision impact.",
+        "research_gap_novelty":"Check direct-comparison published reviews and PROSPERO/OSF; determine actual last search and included-trial list; adjudicate route-specific value.",
+        "information_gain":"Screen post-cutoff reports by trial family, distinguish follow-up and overlooked evidence; quantify new independent trials/participants only after verification.",
+        "evidence_readiness":"Confirm exact comparison arms, seven independent RCT populations and extractable outcomes; recover uncertain reports using identifiers and citation tracking.",
+        "methodological_feasibility":"Verify endpoint definitions/time points, dependency, sparse events, effect measures and suitability of synthesis.",
+        "timeliness":"Verify dated new results or guideline change; distinguish publication date from search cutoff and ongoing trials.",
+        "operational_feasibility":"Record full-text access, extraction burden, resources and expected time; avoid assumptions about budget or availability.",
+        "editorial_relevance":"Check legitimate journal scope and scientific contribution; no numerical prediction of acceptance."
+    }
     return {"version":VERSION,"routes":routes,"priority_key":list(priority),
             "source_linked_gap_cues":findings[:12],"direct_comparison_review_sample":related[:15],
             "abstract_search_date_cues":cutoffs[:15],"post_cutoff_report_cues":post[:15],
             "outcome_specific_hypotheses":outcome_hypotheses[:8],"correction_method_cues":correction[:12],"verified_review_opportunity":opportunity,
             "comparison_family_cues":n,"comparison_count_stage":"DEEP_RETRIEVAL_CUES" if primary_records is not None else "SEED_CUES",
             "review_preflight_status":seed.get("status","NOT_SEARCHED"),"confirmed_independent_eligible_trials":None,
-            "assessment":weighted_assessment(ratings),
+            "assessment":assessment,"domain_recovery_actions":[{"domain":k,"action":actions[k],"status":"PROPOSED_NOT_EXECUTED"} for k,d in assessment["domains"].items() if d["status"]!="ADJUDICATED_INPUT"],
             "scope":"DISCOVERY_SIGNALS_NOT_CONFIRMED_RESEARCH_GAPS_OR_PUBLICATION_PROBABILITY"}
