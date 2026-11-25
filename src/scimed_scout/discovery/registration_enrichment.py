@@ -5,6 +5,8 @@ A registration link is not proof of eligible independent participants.
 """
 from __future__ import annotations
 import re
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 import xml.etree.ElementTree as ET
 from .open_access_dates import _pmcid,_fetch_xml
 from .trial_family import registration_signals,_ids
@@ -13,8 +15,20 @@ from .pico_matching import _pmid
 # Own-trial statements; generic mentions of past trials are not evidence.
 OWN=re.compile(r"\b(?:the|this|our)\s+trial\s+(?:is|was)\s+registered\s+(?:at|with|in|on)\s+ClinicalTrials\.gov\s*[:;(,\s]*(?:identifier\s*[:;\s]*)?(NCT\d{8})\b",re.I)
 LIMIT=1_500_000
+OAI_NS="http://www.openarchives.org/OAI/2.0/"
 
-def extract_registration(row,raw):
+def _routes(pmcid):
+    yield "EUROPE_PMC_JATS",f"https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML"
+    yield "NCBI_PMC_OAI", "https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/?"+urlencode({
+        "verb":"GetRecord","identifier":"oai:pubmedcentral.nih.gov:"+pmcid.removeprefix("PMC"),"metadataPrefix":"pmc"})
+
+def _error_code(exc):
+    if isinstance(exc,HTTPError):return f"HTTP_{exc.code}"
+    if isinstance(exc,TimeoutError) or (isinstance(exc,URLError) and isinstance(exc.reason,TimeoutError)):return "TIMEOUT"
+    if isinstance(exc,URLError):return "URL_ERROR"
+    return type(exc).__name__
+
+def extract_registration(row,raw,*,source_url=None):
     pmid=_pmid(row);pmcid=_pmcid(row)
     if not pmid or not pmcid or not isinstance(raw,bytes) or len(raw)>LIMIT:
         return None
@@ -22,6 +36,15 @@ def extract_registration(row,raw):
         return None
     try: root=ET.fromstring(raw)
     except (ET.ParseError,ValueError):return None
+    if root.tag==f"{{{OAI_NS}}}OAI-PMH":
+        ns={"oai":OAI_NS}
+        metadata=root.find("./oai:GetRecord/oai:record/oai:metadata",ns)
+        if metadata is None or len(metadata)!=1:return None
+        root=metadata[0]
+        # The OAI envelope may supply a default namespace to otherwise plain JATS.
+        if root.tag==f"{{{OAI_NS}}}article":
+            for node in root.iter():
+                if node.tag.startswith(f"{{{OAI_NS}}}"):node.tag=node.tag.split("}",1)[1]
     if root.tag!="article":return None
     front=root.find("./front/article-meta")
     if front is None:return None
@@ -43,7 +66,7 @@ def extract_registration(row,raw):
     if len(unique)!=1 or all_ids!=unique:return None
     trial,quote=hits[0]
     return {"registration_id":trial,"quote":quote[:200],
-        "source_url":f"https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML",
+        "source_url":source_url or f"https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML",
         "pmid":pmid,"pmcid":pmcid,"scope":"OWN_TRIAL_REGISTRATION_IN_METHODS",
         "independence_confirmed":False}
 
@@ -60,14 +83,23 @@ def enrich_records(rows,*,fetcher=None,max_lookups=3):
         key=(pmid,pmcid)
         if key not in cache:
             if attempts>=max(0,min(3,int(max_lookups))):continue
-            attempts+=1
-            try:
-                raw=fetcher(f"https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML")
-                cache[key]=extract_registration(row,raw)
-                status="LINK_FOUND" if cache[key] else "NO_UNAMBIGUOUS_OWN_TRIAL_STATEMENT"
-            except Exception:
-                cache[key]=None;status="ACCESS_UNRESOLVED"
-            audit.append({"pmid":pmid,"pmcid":pmcid,"status":status,"evidence":cache[key]})
+            cache[key]=None;route_audit=[];status="ACCESS_UNRESOLVED"
+            for route,url in _routes(pmcid):
+                if attempts>=max(0,min(3,int(max_lookups))):break
+                attempts+=1
+                try:
+                    raw=fetcher(url)
+                    evidence=extract_registration(row,raw,source_url=url)
+                    if evidence:
+                        cache[key]=evidence;status="LINK_FOUND"
+                        route_audit.append({"route":route,"status":status})
+                        break
+                    # Non-JATS, OAI rights errors, identity mismatches and absent
+                    # statements are all unresolved, never negative trial evidence.
+                    route_audit.append({"route":route,"status":"NO_VERIFIED_LINK"})
+                except Exception as exc:
+                    route_audit.append({"route":route,"status":"ACCESS_UNRESOLVED","error":_error_code(exc)})
+            audit.append({"pmid":pmid,"pmcid":pmcid,"status":status,"evidence":cache[key],"routes":route_audit})
         evidence=cache[key]
         if evidence:
             payload=dict(row.get("payload") or {})
@@ -76,7 +108,7 @@ def enrich_records(rows,*,fetcher=None,max_lookups=3):
             meta["registration_enrichment_evidence"]=evidence
             payload["metadata"]=meta
             out[index]={**row,"payload":payload}
-    return out,{"method":"OPEN_ACCESS_REGISTRATION_V1","source_calls":attempts,"records_linked":sum(a["status"]=="LINK_FOUND" for a in audit),"attempts":audit,"independence_confirmed":False}
+    return out,{"method":"OPEN_ACCESS_REGISTRATION_V2","source_calls":attempts,"records_linked":sum(a["status"]=="LINK_FOUND" for a in audit),"attempts":audit,"independence_confirmed":False}
 
 def enrich_ledger(ledger,candidate_id,*,fetcher=None,max_lookups=3):
     rows=ledger.list_external_evidence(candidate_id,"PRIMARY_STUDY")
