@@ -12,7 +12,7 @@ class PubMedSource:
     base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
 
     def __init__(self, http: JsonHttpClient | None = None, *, sort: str = "pub_date"):
-        if sort not in ("pub_date","relevance"):
+        if sort not in ("pub_date","relevance","mixed"):
             raise ValueError("Unsupported PubMed sort")
         self.sort=sort
         self.api_key = os.getenv("NCBI_API_KEY", "").strip()
@@ -27,6 +27,8 @@ class PubMedSource:
                 "email": self.email or None, "tool": "scimed_review_scout"}
 
     def search(self, query: str, *, limit: int = 20) -> SearchResult:
+        if self.sort == "mixed":
+            return self._mixed_search(query,limit)
         try:
             data = self.http.get_json(self.base + "esearch.fcgi", self._params({
                 "db": "pubmed", "term": query, "retmode": "json", "retmax": max(0, limit), "sort": self.sort
@@ -36,6 +38,8 @@ class PubMedSource:
                 return SearchResult(self.name, query, SourceStatus.PARTIAL, message="PubMed response missing count")
             total = int(block["count"])
             ids = [str(x) for x in block.get("idlist", [])]
+            if total < 0 or len(ids) != len(set(ids)) or len(ids) > total or (total == 0 and ids):
+                return SearchResult(self.name, query, SourceStatus.PARTIAL, total_count=total, message="PubMed inconsistent count or IDs")
             if total == 0:
                 return SearchResult(self.name, query, SourceStatus.SEARCHED_NEGATIVE, total_count=0)
 
@@ -79,8 +83,8 @@ class PubMedSource:
                         metadata=row,
                     )
                 )
-            status = SourceStatus.SEARCHED_POSITIVE if records or total > 0 else SourceStatus.PARTIAL
-            return SearchResult(self.name, query, status, records, total)
+            status = SourceStatus.SEARCHED_POSITIVE if records and len(records)==min(total,max(0,limit)) and all(r.title.strip() for r in records) else SourceStatus.PARTIAL
+            return SearchResult(self.name, query, status, records, total, message=f"PubMed sort={self.sort}; bounded sample; eligibility not established")
         except Exception as exc:
             message = str(exc)
             if self.api_key:
@@ -88,3 +92,44 @@ class PubMedSource:
             if self.email:
                 message = message.replace(self.email, "[CONTACT_REDACTED]")
             return SearchResult(self.name, query, SourceStatus.ACCESS_FAILED, message=message)
+
+    def _mixed_search(self, query: str, limit: int) -> SearchResult:
+        """Two official sorts; bounded total slots, never infer absence from one arm.
+        
+        Preserve one third of slots for current literature. Do not fill overlap
+        with extra requests: actual unique yield and per-arm coverage are audited.
+        """
+        import json
+        from dataclasses import replace
+        limit=max(0,int(limit))
+        if limit<2:
+            single=PubMedSource(http=self.http,sort="pub_date")
+            single.api_key=self.api_key;single.email=self.email
+            return single.search(query,limit=limit)
+        recent=max(1,limit//3)
+        arms=(("relevance",limit-recent),("pub_date",recent))
+        results=[];records={};audit=[]
+        for sort,cap in arms:
+            client=PubMedSource(http=self.http,sort=sort)
+            client.api_key=self.api_key;client.email=self.email
+            r=client.search(query,limit=cap)
+            results.append(r)
+            audit.append({"sort":sort,"slots":cap,"status":r.status.value,"reported":r.total_count,"retrieved":len(r.records)})
+            for rank,record in enumerate(r.records,1):
+                old=records.get(record.record_id)
+                meta=dict(old.metadata if old else record.metadata)
+                ranks=dict(meta.get("scimed_pubmed_ranks") or {})
+                ranks[sort]=rank;meta["scimed_pubmed_ranks"]=ranks
+                records[record.record_id]=replace(old or record,metadata=meta)
+        totals=[r.total_count for r in results if r.total_count is not None]
+        consistent=len(totals)==2 and len(set(totals))==1
+        definitive=all(r.status in (SourceStatus.SEARCHED_POSITIVE,SourceStatus.SEARCHED_NEGATIVE) for r in results)
+        if consistent and definitive and totals[0]==0 and not records:
+            status=SourceStatus.SEARCHED_NEGATIVE
+        elif consistent and definitive and records and all(r.title.strip() for r in records.values()):
+            status=SourceStatus.SEARCHED_POSITIVE
+        elif not records and all(r.status==SourceStatus.ACCESS_FAILED for r in results):
+            status=SourceStatus.ACCESS_FAILED
+        else:status=SourceStatus.PARTIAL
+        msg="PUBMED_MIXED_V1 "+json.dumps({"arms":audit,"unique":len(records),"overlap":sum(len(r.records) for r in results)-len(records),"count_consistent":consistent,"record_budget":limit,"eligibility_verified":False},sort_keys=True)
+        return SearchResult(self.name,query,status,list(records.values()),max(totals) if totals else None,msg)

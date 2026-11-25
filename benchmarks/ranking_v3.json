@@ -1,0 +1,167 @@
+{
+  "version": "RANKING_V3_NEW_CASES",
+  "frozen": "2026-11-25",
+  "limits": {
+    "queries_per_purpose": 2,
+    "records_per_query": 12
+  },
+  "cases": [
+    {
+      "id": "STROKE_EVT",
+      "split": "new_rank_validation",
+      "candidate": {
+        "title": "Endovascular thrombectomy for Adults with acute ischemic stroke due to large vessel occlusion",
+        "specialty": "Neurology",
+        "question_type": "EFFECTIVENESS",
+        "population": "Adults with acute ischemic stroke due to large vessel occlusion",
+        "intervention_exposure_index_test": "Endovascular thrombectomy",
+        "comparator_reference": "Medical therapy alone",
+        "outcomes": [
+          "Clinical outcomes"
+        ],
+        "eligible_designs": [
+          "RCT"
+        ],
+        "search_terms": [
+          "endovascular thrombectomy ischemic stroke",
+          "mechanical thrombectomy large vessel occlusion"
+        ]
+      },
+      "primary": [
+        {
+          "pmid": "25517348",
+          "label": "MR CLEAN"
+        },
+        {
+          "pmid": "25671798",
+          "label": "ESCAPE"
+        },
+        {
+          "pmid": "37837989",
+          "label": "TENSION"
+        }
+      ],
+      "reviews": [
+        {
+          "pmid": "26898852",
+          "label": "HERMES IPD"
+        },
+        {
+          "pmid": "38296610",
+          "label": "Large core RCT review (population subset)"
+        }
+      ],
+      "controls": [
+        {
+          "pmid": "29523557",
+          "label": "MR CLEAN observational registry",
+          "kind": "different_design_primary"
+        }
+      ]
+    },
+    {
+      "id": "AKI_RRT",
+      "split": "new_rank_validation",
+      "candidate": {
+        "title": "Early renal replacement therapy initiation for Critically ill adults with acute kidney injury",
+        "specialty": "Nephrology",
+        "question_type": "EFFECTIVENESS",
+        "population": "Critically ill adults with acute kidney injury",
+        "intervention_exposure_index_test": "Early renal replacement therapy initiation",
+        "comparator_reference": "Delayed renal replacement therapy initiation",
+        "outcomes": [
+          "Clinical outcomes"
+        ],
+        "eligible_designs": [
+          "RCT"
+        ],
+        "search_terms": [
+          "early delayed renal replacement therapy acute kidney injury",
+          "timing kidney replacement therapy acute kidney injury"
+        ]
+      },
+      "primary": [
+        {
+          "pmid": "27181456",
+          "label": "AKIKI"
+        },
+        {
+          "pmid": "27209269",
+          "label": "ELAIN"
+        }
+      ],
+      "reviews": [
+        {
+          "pmid": "36416787",
+          "label": "Cochrane timing KRT"
+        },
+        {
+          "pmid": "32334654",
+          "label": "IPD meta-analysis"
+        },
+        {
+          "pmid": "37458646",
+          "label": "Updated RCT review"
+        }
+      ],
+      "controls": [
+        {
+          "pmid": "40029115",
+          "label": "STARRT-AKI secondary analysis",
+          "kind": "same_family_followup"
+        }
+      ]
+    },
+    {
+      "id": "T1D_CGM",
+      "split": "new_rank_validation",
+      "candidate": {
+        "title": "Continuous glucose monitoring for Adults with type 1 diabetes using multiple daily insulin injections",
+        "specialty": "Endocrinology",
+        "question_type": "EFFECTIVENESS",
+        "population": "Adults with type 1 diabetes using multiple daily insulin injections",
+        "intervention_exposure_index_test": "Continuous glucose monitoring",
+        "comparator_reference": "Self monitoring of blood glucose",
+        "outcomes": [
+          "Clinical outcomes"
+        ],
+        "eligible_designs": [
+          "RCT"
+        ],
+        "search_terms": [
+          "continuous glucose monitoring type 1 diabetes insulin injections",
+          "CGM type 1 diabetes multiple daily injections"
+        ]
+      },
+      "primary": [
+        {
+          "pmid": "28118453",
+          "label": "DIAMOND"
+        },
+        {
+          "pmid": "28118454",
+          "label": "GOLD"
+        }
+      ],
+      "reviews": [
+        {
+          "pmid": "34286892",
+          "label": "Pump or sensor first meta-analysis (broader competitor)"
+        }
+      ],
+      "controls": [
+        {
+          "pmid": "28711468",
+          "label": "DIAMOND pump comparison",
+          "kind": "different_comparator_primary"
+        },
+        {
+          "pmid": "33200487",
+          "label": "GOLD-5 secondary analysis",
+          "kind": "same_family_followup"
+        }
+      ]
+    }
+  ],
+  "limitations": "New case set relative to prior ranking experiments, selected reference leads not exhaustive or dual-screened; broader competitor reviews not identical PICO. No scientific eligibility or novelty labels. Same two queries and total slots per purpose for each sort; mixed has more API requests."
+}
