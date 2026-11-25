@@ -56,15 +56,15 @@ def test_bounded_queries_failure_and_specialty_scope():
         def search(self,query,*,limit):
             self.calls.append((query,limit))
             if len(self.calls)==1:
-                return SearchResult("Europe PMC",query,SourceStatus.ACCESS_FAILED,message="429")
+                return SearchResult("Europe PMC",query,SourceStatus.ACCESS_FAILED,message="timeout")
             return SearchResult("Europe PMC",query,SourceStatus.SEARCHED_NEGATIVE,[],0)
     source=Stub()
     report=collect_evidence_map("Cardiology","EFFECTIVENESS",client=source,now=datetime(2026,11,25,tzinfo=timezone.utc))
-    assert len(source.calls)==3
-    assert all(x[1]==30 and "PUB_YEAR" in x[0] for x in source.calls)
+    assert len(source.calls)==6
+    assert all(x[1] in (25,30) and "PUB_YEAR" in x[0] for x in source.calls)
     assert report["status"]=="PARTIAL_SAMPLE" and not report["novelty_confirmed"]
     assert collect_evidence_map("Neurology",client=source)["status"]=="SPECIALTY_VOCABULARY_NOT_IMPLEMENTED"
-    assert len(source.calls)==3
+    assert len(source.calls)==6
 
 def test_candidate_anchor_link_not_specific_drug_proof():
     records=[row("1","Empagliflozin in HFpEF","NCT00000001"),row("2","Dapagliflozin in HFpEF","NCT00000002")]
@@ -75,3 +75,41 @@ def test_candidate_anchor_link_not_specific_drug_proof():
     assert "not" in evidence_map_prompt(evidence).lower()
     c.intervention_exposure_index_test="Empagliflozin"
     assert not link_candidate(c,evidence)["links"]
+
+
+def test_focused_recovery_expands_real_singleton_without_inventing_eligibility():
+    class Stub:
+        def __init__(self):
+            self.calls=[]
+        def search(self,query,*,limit):
+            self.calls.append(query)
+            rows=[]
+            if len(self.calls)==1:
+                rows=[SearchRecord("Europe PMC","34449189","Empagliflozin in Heart Failure with a Preserved Ejection Fraction",
+                     year=2021,metadata={"pubtype":["Randomized Controlled Trial"],"nct_id":"NCT03057951"})]
+            if "TITLE:" in query and "preserved ejection fraction" in query:
+                rows=[SearchRecord("Europe PMC","34711976","The SGLT2 inhibitor dapagliflozin in heart failure with preserved ejection fraction: a multicenter randomized trial",
+                     year=2021,metadata={"pubtype":["Randomized Controlled Trial"],"nct_id":"NCT03030235"})]
+            return SearchResult("Europe PMC",query,SourceStatus.SEARCHED_POSITIVE if rows else SourceStatus.SEARCHED_NEGATIVE,rows,len(rows))
+    source=Stub()
+    result=collect_evidence_map("Cardiology","EFFECTIVENESS",client=source,now=datetime(2026,11,25,tzinfo=timezone.utc))
+    assert result["initial_cluster_count"]==0
+    assert len(source.calls)<=6
+    assert any(q["anchor_origin"]=="OBSERVED_TITLE_ANCHOR" for q in result["queries"])
+    # A named-drug singleton and its class alias can compete for a slot;
+    # the source fixture supplies an actual second report for that population.
+    assert any(c["population_anchor"]=="hfpef" and c["intervention_anchor"]=="sglt2" for c in result["clusters"])
+    assert not result["novelty_confirmed"]
+
+
+def test_provider_rate_limit_defers_remaining_queries():
+    class Limited:
+        calls=0
+        def search(self,query,*,limit):
+            self.calls+=1
+            return SearchResult("Europe PMC",query,SourceStatus.ACCESS_FAILED,message="HTTP 429")
+    source=Limited()
+    result=collect_evidence_map("Cardiology",client=source)
+    assert source.calls==1
+    assert [x["status"] for x in result["queries"]]==["ACCESS_FAILED","NOT_SEARCHED","NOT_SEARCHED"]
+    assert result["status"]=="ACCESS_UNRESOLVED"

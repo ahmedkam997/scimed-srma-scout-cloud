@@ -152,9 +152,55 @@ def build_clusters(records, question_type="ALL", *, min_reports=2, current_year=
     return sorted(clusters,key=lambda c:(-c["family_lead_count_not_eligible"],-c["registered_family_count"],c["cluster_id"]))[:16]
 
 
+# Focused retrieval terms are search anchors, not pre-verified opportunities.
+QUERY_ALIASES = {
+    "hfpef": ("HFpEF", "preserved ejection fraction"),
+    "hfref": ("HFrEF", "reduced ejection fraction"),
+    "tavr": ("TAVR", "TAVI", "transcatheter aortic valve"),
+    "cabg": ("CABG", "coronary artery bypass"),
+    "sglt2": ("SGLT2", "empagliflozin", "dapagliflozin", "canagliflozin", "ertugliflozin"),
+    "ctffr": ("FFR-CT", "CT-FFR", "computed tomography fractional flow reserve"),
+    "dpp4": ("DPP-4", "dipeptidyl peptidase 4"),
+}
+FOCUSED_ROTATIONS = (
+    ("heart failure", "sglt2"), ("coronary artery disease", "fractional flow reserve"),
+    ("atrial fibrillation", "catheter ablation"), ("hypertension", "renal denervation"),
+    ("aortic stenosis", "tavr"), ("dyslipidemia", "bempedoic acid"),
+    ("cardiac rehabilitation", "exercise training"), ("pulmonary hypertension", "right ventricular"),
+    ("cardiotoxicity", "global longitudinal strain"), ("peripheral artery disease", "rivaroxaban"),
+)
+
+
+def _field_terms(field, anchor):
+    values = QUERY_ALIASES.get(anchor, (anchor,))
+    return "("+" OR ".join(f'{field}:"{value}"' for value in values)+")"
+
+
+def _focused_pairs(records, question_type, rotation_index, year):
+    singletons = build_clusters(records, question_type, min_reports=1, current_year=year)
+    selected = []
+    # Distinct clinical populations first, to avoid spending the entire
+    # second-pass budget on overlapping drug/class cells.
+    for cell in singletons:
+        pair = (cell["population_anchor"],cell["intervention_anchor"])
+        if any(x[0]==pair[0] for x in selected):
+            continue
+        selected.append((*pair,"OBSERVED_TITLE_ANCHOR"))
+        if len(selected)==3:
+            break
+    for index in (rotation_index,rotation_index+3,rotation_index+6):
+        pop, intervention = FOCUSED_ROTATIONS[index % len(FOCUSED_ROTATIONS)]
+        if len(selected)==3:
+            break
+        if any(x[0]==pop for x in selected):
+            continue
+        selected.append((pop,intervention,"EXPLORATORY_ROTATING_SEARCH_ANCHOR"))
+    return selected, len(singletons)
+
+
 def collect_evidence_map(specialty, question_type="ALL", *, rotation_index=0, client=None,
                          cancellation_check=None, now=None):
-    """At most three source queries, bounded samples, explicit access states."""
+    """At most six queries: three sampled and up to three focused recovery searches."""
     year = (now or datetime.now(timezone.utc)).year
     result = {"version":VERSION,"specialty":specialty,"question_type":question_type,
               "searched_at":(now or datetime.now(timezone.utc)).isoformat(),
@@ -173,21 +219,45 @@ def collect_evidence_map(specialty, question_type="ALL", *, rotation_index=0, cl
     if _design_allowed(question_type,"DTA_CUE"):
         design_terms += ['TITLE_ABS:"diagnostic accuracy"','TITLE_ABS:"diagnostic performance"']
     records = []
-    for index in (rotation_index, rotation_index+3, rotation_index+6):
+    quota_limited = False
+    def search(query, limit, stage, anchor_origin=""):
+        nonlocal quota_limited
         if cancellation_check:
             cancellation_check()
-        focus = cardiology_evidence_focus(index)
-        query = "("+" OR ".join(f'TITLE_ABS:"{term}"' for term in focus)+") AND ("+" OR ".join(design_terms)+f") AND PUB_YEAR:[{year-4} TO {year}]"
+        audit = {"source":"Europe PMC","query":query,"stage":stage,"anchor_origin":anchor_origin,"limit":limit}
+        if quota_limited:
+            result["queries"].append({**audit,"status":"NOT_SEARCHED","total_count":None,
+                "retrieved_count":0,"message":"Deferred after provider rate limit"})
+            return
         try:
-            response = client.search(query,limit=30)
+            response = client.search(query,limit=limit)
             status = response.status
             records.extend(_record(r) for r in response.records)
-            result["queries"].append({"source":"Europe PMC","query":query,"status":status.value,
-                "total_count":response.total_count,"retrieved_count":len(response.records),
-                "message":str(response.message or "")[:240]})
+            message = str(response.message or "")[:240]
+            result["queries"].append({**audit,"status":status.value,
+                "total_count":response.total_count,"retrieved_count":len(response.records),"message":message})
+            quota_limited = status == SourceStatus.ACCESS_FAILED and ("429" in message or "Too Many Requests" in message)
         except Exception as exc:
-            result["queries"].append({"source":"Europe PMC","query":query,"status":"ACCESS_FAILED",
+            quota_limited = "429" in str(exc)
+            result["queries"].append({**audit,"status":"ACCESS_FAILED",
                 "total_count":None,"retrieved_count":0,"message":type(exc).__name__})
+    design_filter = "("+" OR ".join(design_terms)+")"
+    for index in (rotation_index, rotation_index+3, rotation_index+6):
+        focus = cardiology_evidence_focus(index)
+        query = "("+" OR ".join(f'TITLE_ABS:"{term}"' for term in focus)+") AND "+design_filter+f" AND PUB_YEAR:[{year-4} TO {year}]"
+        search(query,30,"INITIAL_SAMPLE")
+    initial = build_clusters(records,question_type,current_year=year)
+    result["initial_cluster_count"] = len(initial)
+    result["initial_retrieved_records"] = len(records)
+    # A broad sample that finds no clusters is not evidence of scarcity.
+    # Recover with targeted intersections and a longer publication window.
+    # No change to clinical verification gates, no unbounded pagination.
+    if len(initial) < 3 and not quota_limited:
+        pairs, singleton_count = _focused_pairs(records,question_type,rotation_index,year)
+        result["initial_single_report_cell_count"] = singleton_count
+        for population, intervention, origin in pairs:
+            query = _field_terms("TITLE_ABS",population)+" AND "+_field_terms("TITLE",intervention)+" AND "+design_filter+f" AND PUB_YEAR:[{year-9} TO {year}]"
+            search(query,25,"FOCUSED_RECOVERY",origin)
     result["clusters"] = build_clusters(records,question_type,current_year=year)
     result["retrieved_records"] = len(records)
     definitive = sum(x["status"] in ("SEARCHED_POSITIVE","SEARCHED_NEGATIVE") for x in result["queries"])
