@@ -27,6 +27,7 @@ jobs:
       - run: node --check web/sw.js
       - run: node --test tests/web_legacy_dedup.mjs
       - run: node --test tests/web_topic_transfer.mjs
+      - run: node --test tests/web_report_loading.mjs
       - run: node --test tests/web_gap_verification.mjs
       - run: node --test tests/web_cloud_gap_sync.mjs
       - run: node --test tests/web_targeted_source_recheck.mjs

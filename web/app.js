@@ -27,6 +27,7 @@ let jobs = [];
 let jobsRefresh = null;
 const JOB_STATUS_FIELDS = 'id,specialty,question_type,status,stage,progress,message,candidate_count,final_options,min_verify,max_verify,limit_per_query,revisit_days,created_at,updated_at,completed_at';
 const openedReports = new Map();
+const automaticReportAttempts = new Map();
 let pollTimer = null;
 let connecting = false;
 let createCloudClient = null;
@@ -417,6 +418,13 @@ async function loadJobs() {
         error_text: saved.error_text, reportLoadedAt: saved.updated_at } : row;
     });
     renderJobs();
+    // Fetch the newest completed report once per version, not all large reports.
+    const newest = jobs.find(row => row.status === 'COMPLETED');
+    if (newest && !hasCurrentReport(newest) && automaticReportAttempts.get(newest.id) !== newest.updated_at) {
+      automaticReportAttempts.set(newest.id, newest.updated_at);
+      try { await fetchLatestJobReport(newest.id); renderJobs(); }
+      catch (_) { /* Manual Open report/export remains available; no empty report. */ }
+    }
     if (openedReports.size) {
       // Keep source-recheck statuses current only for explicitly opened reports.
       await loadSourceRechecks();
@@ -429,15 +437,30 @@ async function loadJobs() {
   try { return await jobsRefresh; } finally { jobsRefresh = null; }
 }
 
-async function loadJobReport(jobId) {
+function hasCurrentReport(job) {
+  return !!job?.reportLoadedAt && job.reportLoadedAt === job.updated_at && !!job.result_json;
+}
+
+async function fetchLatestJobReport(jobId) {
   const job = jobs.find(row => row.id === jobId);
-  if (!job || !supabase) return;
+  if (!job || !supabase) throw new Error('Saved report is unavailable. Reconnect and refresh jobs.');
   const { data, error } = await supabase.from('discovery_jobs')
     .select('id,updated_at,result_json,error_text').eq('id', jobId).single();
   if (error) throw error;
+  if (!data || typeof data.result_json !== 'object' || data.result_json === null)
+    throw new Error('The saved report was not returned. No diagnostic report was exported.');
+  if (job.status === 'COMPLETED' && (!data.result_json.package || !data.result_json.run_summary))
+    throw new Error('Completed report is missing final results. Refresh or contact maintenance.');
   openedReports.set(jobId, data);
-  Object.assign(job, {result_json:data.result_json, error_text:data.error_text,
+  const current = jobs.find(row => row.id === jobId);
+  if (!current) throw new Error('Job no longer visible. Refresh jobs.');
+  Object.assign(current, {result_json:data.result_json, error_text:data.error_text,
                      reportLoadedAt:data.updated_at});
+  return current;
+}
+
+async function loadJobReport(jobId) {
+  await fetchLatestJobReport(jobId);
   renderJobs();
   await loadGapEvents(true);
   await loadSourceRechecks(true);
@@ -1070,6 +1093,7 @@ function renderJobs() {
         <div class="job-meta"><span>${progress}%</span><span>${escapeHtml(job.stage || '')}</span></div>
         <p class="job-message">${escapeHtml(job.message || '')}</p>
         <div class="topic-quick-actions"><button class="secondary small" data-load-report="${escapeHtml(job.id)}">${job.reportLoadedAt ? 'Refresh saved report' : 'Open saved report / evidence'}</button></div>
+        ${job.status === 'COMPLETED' && !hasCurrentReport(job) ? '<p class="help">The final evidence report has not yet been loaded or refreshed. Open saved report / evidence to view it. A status-only row is not a zero-result scientific report.</p>' : ''}
         ${job.reportLoadedAt && job.reportLoadedAt !== job.updated_at ? '<p class="help">Saved report is an earlier snapshot. Refresh it when needed.</p>' : ''}
         ${summaryHtml}
         ${recentHtml}
@@ -1184,6 +1208,8 @@ async function cancelJob(jobId) {
 }
 
 function reportPayload(job) {
+  if (job?.status === 'COMPLETED' && !job?.result_json?.package)
+    throw new Error('Load the completed cloud report before exporting.');
   const pkg = job?.result_json?.package || {};
   if (Array.isArray(pkg.options) && pkg.options.length) return pkg;
   return {
@@ -1196,7 +1222,7 @@ function reportPayload(job) {
     checkpoint: job?.result_json?.checkpoint || null,
     error_excerpt: (job.error_text || '').slice(-700),
     selection_policy: pkg.selection_policy || {},
-    provisional_options: uniqueProvisionalTopics(Array.isArray(pkg.provisional_options) ? pkg.provisional_options : []),
+    provisional_options: Array.isArray(pkg.provisional_options) ? pkg.provisional_options : [],
     unverified_generated_options: Array.isArray(pkg.unverified_generated_options) ? pkg.unverified_generated_options : [],
     original_provisional_count: Array.isArray(pkg.provisional_options) ? pkg.provisional_options.length : 0,
     near_duplicates_grouped_only_in_presentation: true,
@@ -1317,8 +1343,10 @@ function downloadTopic(jobId, candidateId) {
 }
 
 async function copyJob(jobId) {
-  const job = jobs.find(item => item.id === jobId);
-  if (!job) return;
+  let job;
+  try { job = await fetchLatestJobReport(jobId); }
+  catch (error) { backendState('error', 'Could not retrieve report', error.message || String(error)); return; }
+  renderJobs();
   const pkg = job.result_json?.package || {};
   const prompt = pkg.topic_review_prompt || LEGACY_CHATGPT_TOPIC_PROMPT;
   const content = [
@@ -1344,9 +1372,11 @@ async function copyJob(jobId) {
   }
 }
 
-function downloadJob(jobId) {
-  const job = jobs.find(item => item.id === jobId);
-  if (!job) return;
+async function downloadJob(jobId) {
+  let job;
+  try { job = await fetchLatestJobReport(jobId); }
+  catch (error) { backendState('error', 'Could not retrieve report', error.message || String(error)); return; }
+  renderJobs();
   const payload = reportPayload(job);
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
