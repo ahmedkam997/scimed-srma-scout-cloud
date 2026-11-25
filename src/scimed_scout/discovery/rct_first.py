@@ -126,7 +126,8 @@ OUTCOMES=("all cause mortality","mortality","cardiovascular death","hospitalizat
 # Sensitive RCT search *cue*, not a validated standalone search strategy.
 RCT_FILTER='(randomized controlled trial[pt] OR controlled clinical trial[pt] OR randomized[tiab] OR randomised[tiab] OR randomly[tiab] OR placebo[tiab] OR trial[tiab]) NOT (animals[mh] NOT humans[mh])'
 REVIEW_FILTER='(systematic[sb] OR meta-analysis[pt] OR systematic review[tiab])'
-OWN_ASSIGN=re.compile(r"\b(?:randomi[sz]ed (?:controlled )?(?:trial|study)|randomi[sz]ed (?:to|into)|randomly (?:assigned|allocated)|placebo.controlled|sham.controlled)\b",re.I)
+ALLOCATION=r"(?:randomi[sz]ed|randomly (?:assigned|allocated))(?:\s+(?:(?:\d+[\s,]+)?(?:patients|participants|subjects|individuals|adults|children|women|men|people|infants)|\d+)(?:\s+[\w-]+){0,12}?)?\s+(?:to|into)\s+"
+OWN_ASSIGN=re.compile(r"\b(?:randomi[sz]ed (?:controlled )?(?:trial|study)|placebo.controlled|sham.controlled|"+ALLOCATION+r")",re.I)
 SECONDARY=re.compile(r"\b(?:secondary analysis|post.hoc|subgroup analysis|pooled analysis|individual patient data|rationale and design|trial protocol|study protocol|retracted publication)\b",re.I)
 COMPARE=re.compile(r"\b(?:versus|vs\.?|compared (?:with|to)|randomi[sz]ed (?:to|into)|randomly (?:assigned|allocated)|placebo.controlled|sham.controlled)\b",re.I)
 BACKGROUND=re.compile(r"^(?:background|introduction|rationale|objective|aim)\s*[:：]",re.I)
@@ -181,7 +182,7 @@ def eligible_groups(pair,rows,year=None):
         if not valid_year:continue
         # Both concepts must appear in the title or in own-study Methods/
         # allocation text, not merely in unrelated background sentences.
-        eligible=[p[3] for p in passages if p[0]=="title" or (OWN_ASSIGN.search(p[3]) and not BACKGROUND.search(p[3]) and not re.search(r"\\b(?:previous|prior|secondary analysis|post hoc)\\b",p[3],re.I))]
+        eligible=[p[3] for p in passages if p[0]=="title" or (OWN_ASSIGN.search(p[3]) and not BACKGROUND.search(p[3]) and not re.search(r"\b(?:previous|prior|secondary analysis|post hoc)\b",p[3],re.I))]
         # The condition may be stated in the title or another own-method
         # passage, while randomization arms are described separately.
         if not (any(any_term(t,phrases(pop,pa)) for t in eligible) and any(any_term(t,phrases(inter,ia)) for t in eligible)):continue
@@ -207,7 +208,7 @@ def explicit_comparison(text,interventions,control):
     for m in re.finditer(r"\b(?:versus|vs\.?|compared with|compared to)\b",text,re.I):
         if explicit_side(text,m,interventions,control):return True
     # Explicit allocation X or Y only (not general co-mentions).
-    m=re.search(r"\b(?:randomi[sz]ed (?:to|into)|randomly (?:assigned|allocated)(?: to)?)\s+",text,re.I)
+    m=re.search(r"\b"+ALLOCATION,text,re.I)
     if m:
         arms=re.split(r"\b(?:or|and)\b",text[m.end():],maxsplit=1,flags=re.I)
         if len(arms)==2:
