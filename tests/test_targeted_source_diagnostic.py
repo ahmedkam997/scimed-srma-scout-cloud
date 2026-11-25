@@ -1,4 +1,4 @@
-from scripts.targeted_source_diagnostic import jats_status,bioc_status,registry_refs
+from scimed_scout.discovery.targeted_source_diagnostic import jats_status,bioc_status,registry_refs
 import json
 
 def test_oai_diagnostics():

@@ -8,7 +8,7 @@ from pathlib import Path
 from scimed_scout.discovery.registration_enrichment import _routes, extract_registration, _error_code, LIMIT, OAI_NS, OWN
 from scimed_scout.discovery.open_access_dates import _fetch_xml
 from scimed_scout.discovery.trial_family import _ids
-from scimed_scout.discovery.scientific_benchmark import _candidate, safe_search, _record, _pmid
+from scimed_scout.discovery.scientific_benchmark import _candidate, safe_search, _pmid
 from scimed_scout.sources.europe_pmc import EuropePMCSource
 from scimed_scout.sources.prospero import ProsperoCliSource
 from scimed_scout.verification.queries import build_search_plan
