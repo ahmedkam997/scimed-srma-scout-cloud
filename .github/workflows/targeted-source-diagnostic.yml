@@ -1,0 +1,42 @@
+name: targeted-source-diagnostic
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/targeted-source-diagnostic.yml'
+      - 'scripts/targeted_source_diagnostic.py'
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PROSPERO_NETWORK_MODE: online
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[dev]'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned PROSPERO-MCP read-only CLI
+        run: |
+          git clone --depth 1 --branch v0.2.2 https://github.com/erichuang777777/PROSPERO-MCP.git "$RUNNER_TEMP/prospero-mcp"
+          npm install --prefix "$RUNNER_TEMP/prospero-mcp" --no-audit --no-fund
+          npm run build --prefix "$RUNNER_TEMP/prospero-mcp"
+          test -s "$RUNNER_TEMP/prospero-mcp/dist/cli.js"
+          echo "PROSPERO_CLI_JS=$RUNNER_TEMP/prospero-mcp/dist/cli.js" >> "$GITHUB_ENV"
+      - run: python -m pytest -q tests/test_targeted_source_diagnostic.py
+      - run: python -m scripts.targeted_source_diagnostic
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: targeted-source-report
+          path: targeted-source-report.json
+          retention-days: 14
