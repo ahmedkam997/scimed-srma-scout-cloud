@@ -491,6 +491,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "pico_design_family_leads": verified.evidence.pico_audit.get("pico_design_family_leads"),
                     "pico_screening_status_counts": verified.evidence.pico_audit.get("status_counts", {}),
                     "scorecard": scorecard,
+                    "review_opportunity": ((checked.metadata or {}).get("discovery_review_opportunity") or {}) if checked else {},
                     "competitor_audit": ({
                         "published_reviews_discovered": (checked.metadata or {}).get(
                             "discovery_competitor_records_discovered", 0

@@ -16,6 +16,7 @@ from .constants import MIN_DISCOVERY_STUDIES
 from .candidate_preflight import FocusedEvidencePreflight
 from .evidence import discovery_evidence_snapshot
 from .pico_matching import assess_pico
+from .review_opportunity import assess_review_opportunity
 from .evidence_classification import (
     classify_review_search_hit, classify_registration_search_hit,
     review_intervention_citation_signal,
@@ -300,6 +301,16 @@ class ReviewDiscoveryOrchestrator:
         if material_regs and not bool(meta.get("discovery_material_registration_overlap_resolved")):
             pending.append("TYPE-A: materially overlapping review registration(s): " + ", ".join(material_regs))
 
+        opportunity = assess_review_opportunity(
+            reviews, pico_records, primary_records, coverage_complete=coverage.complete,
+            registrations_unresolved=bool(material_regs or (registrations and not meta.get("discovery_registration_assessment_complete"))),
+            competitor_scope_unresolved=bool(reviews and not meta.get("discovery_competitor_assessment_complete")),
+        )
+        candidate.metadata = {**(candidate.metadata or {}), "discovery_review_opportunity": opportunity}
+        self.ledger.upsert_candidate(candidate)
+        meta = candidate.metadata
+        if opportunity["route"] in ("UPDATE_SIGNAL", "CORRECTIVE_SIGNAL", "UPDATE_AND_CORRECTIVE_SIGNAL", "OVERLAP_NEEDS_ADJUDICATION"):
+            pending.append("TYPE-A: overlapping review opportunity requires independent update/correction adjudication; novelty score alone is not a decision")
         complete_literature = sum(coverage.source_statuses.get(name) in DEFINITIVE for name in policy.literature_sources)
         gate_inputs = dict(meta.get("discovery_gate_inputs") or {})
         # Preliminary clinical importance, feasibility and editorial
@@ -374,6 +385,9 @@ class ReviewDiscoveryOrchestrator:
         elif bool(meta.get("discovery_fatal_redundancy")):
             status = CandidateStatus.REJECTED
             decision = "REJECT — FATAL REVIEW REDUNDANCY"
+        elif opportunity["route"] in ("UPDATE_SIGNAL", "CORRECTIVE_SIGNAL", "UPDATE_AND_CORRECTIVE_SIGNAL", "OVERLAP_NEEDS_ADJUDICATION"):
+            status = CandidateStatus.PROVISIONAL_BACKUP
+            decision = "PROVISIONAL — " + opportunity["route"] + " (INDEPENDENT VERIFICATION REQUIRED)"
         elif not pending:
             # Coverage defines a minimum of conclusive literature sources,
             # not a requirement to search every optional bibliographic index.
@@ -430,6 +444,7 @@ class ReviewDiscoveryOrchestrator:
             "registration_hits": len(registrations),
             "ongoing_study_hits": len(ongoing),
             "novelty_assessment": novelty,
+            "review_opportunity": opportunity,
             "final_gate_result": final_gate_result,
         })
         return DiscoveryCandidateResult(candidate_id, ranking_score, coverage, evidence, pending, decision, status, final_gate_result)

@@ -145,9 +145,15 @@ def build_discovery_review_package(
             fit_by_id[verified.candidate_id] = _pico_fit_signals(
                 record, ledger.list_external_evidence(verified.candidate_id, "PRIMARY_STUDY")
             )
+    def opportunity_priority(item):
+        candidate = ledger.get_candidate(item.candidate_id)
+        opportunity = ((candidate.metadata or {}).get("discovery_review_opportunity") or {}) if candidate else {}
+        return int(opportunity.get("route") in ("UPDATE_SIGNAL", "CORRECTIVE_SIGNAL", "UPDATE_AND_CORRECTIVE_SIGNAL"))
+
     ordered_unresolved = sorted(
         unresolved,
         key=lambda item: (
+            opportunity_priority(item),
             fit_by_id.get(item.candidate_id, {}).get("abstract_or_title_full_pico_signals", 0),
             fit_by_id.get(item.candidate_id, {}).get("intervention_outcome_text_matches", 0),
             fit_by_id.get(item.candidate_id, {}).get("intervention_comparator_title_matches", 0),
@@ -239,6 +245,7 @@ def build_discovery_review_package(
             "bibliographic_pico_fit": fit_by_id.get(verified.candidate_id, {}),
             "registration_age_audit": list(metadata.get("discovery_registration_age_audit") or []),
             "published_review_update_audit": list(metadata.get("discovery_published_review_update_audit") or []),
+            "review_opportunity": dict(metadata.get("discovery_review_opportunity") or {}),
             "registration_age_policy": (
                 "An old registration is not proof of a published review. "
                 "Newer bibliographic records are not verified eligible studies. "
@@ -464,6 +471,7 @@ def _build_research_dossier(
         "published_review_update_audit": list(
             meta.get("discovery_published_review_update_audit") or []
         ),
+        "review_opportunity": dict(meta.get("discovery_review_opportunity") or {}),
         "fulltext_search_date_resolutions": list(
             meta.get("discovery_fulltext_search_date_resolutions") or []
         ),
