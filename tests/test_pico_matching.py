@@ -79,3 +79,40 @@ def test_production_gate_blocks_unrelated_hits_without_excluding_them(tmp_path):
         assert result.candidate_status == CandidateStatus.PROVISIONAL_BACKUP
         assert any("PICO/design cues" in reason for reason in result.pending)
         assert len(ledger.list_external_evidence("C","PRIMARY_STUDY")) >= 4
+
+
+def test_real_emperor_preserved_and_reduced_bibliographic_signals():
+    # Frozen, short source-backed excerpts, not generated clinical labels.
+    # https://pubmed.ncbi.nlm.nih.gov/34449189/
+    # https://pubmed.ncbi.nlm.nih.gov/32865377/
+    rows = [
+        rec("34449189", "Empagliflozin in Heart Failure with a Preserved Ejection Fraction",
+            {"pubtype":["Randomized Controlled Trial"], "trial_registration_id":"NCT03057951"}),
+        rec("32865377", "Cardiovascular and Renal Outcomes with Empagliflozin in Heart Failure",
+            {"abstractText":"heart failure and a reduced ejection fraction",
+             "pubtype":["Randomized Controlled Trial"], "trial_registration_id":"NCT03057977"}),
+    ]
+    audit, _ = assess_pico(candidate(), rows)
+    by_id = {r["record_id"]:r for r in audit["rows"]}
+    assert by_id["34449189"]["status"] == "PICO_DESIGN_LEAD"
+    assert by_id["32865377"]["status"] == "INSUFFICIENT_BIBLIOGRAPHIC_SIGNAL"
+    assert audit["pico_design_family_leads"] == 1
+    # A class mention must not stand in for a specific member of that class.
+    specific = candidate()
+    specific.intervention_exposure_index_test = "Empagliflozin"
+    audit, _ = assess_pico(specific, [rec("1", "SGLT2 inhibitors in HFpEF: randomized trial")])
+    assert audit["pico_design_family_leads"] == 0
+
+
+def test_europe_pmc_native_nested_publication_types():
+    audit, _ = assess_pico(candidate(), [
+        rec("1", "Empagliflozin in HFpEF",
+            {"pubTypeList":{"pubType":["randomized controlled trial"]}}, source="Europe PMC")])
+    assert audit["pico_design_family_leads"] == 1
+
+
+def test_nonrandomized_scope_does_not_count_rct_only():
+    topic = candidate()
+    topic.eligible_designs = ["Non-randomized studies"]
+    audit, _ = assess_pico(topic, [rec("1","SGLT2 inhibitors in HFpEF: randomized trial")])
+    assert audit["pico_design_family_leads"] == 0

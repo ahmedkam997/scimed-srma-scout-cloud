@@ -14,10 +14,10 @@ from collections import Counter
 from .trial_family import audit_trial_families, registration_signals
 
 VERSION = "PICO_SIGNAL_V1"
-STOP = set("a an and or the of in on for with without to by from patients patient adults adult people participants subjects women men individuals population clinical study studies trial trials treatment treatments therapy therapies intervention interventions effect effects efficacy effectiveness use using evaluation assessment suspected diagnosed versus vs comparison outcomes outcome standard care group groups".split())
+STOP = set("a an and or the of in on for with without to by from patients patient adults adult people participants subjects women men individuals population clinical study studies trial trials treatment treatments therapy therapies intervention interventions effect effects efficacy effectiveness use using evaluation assessment suspected diagnosed versus vs comparison outcomes outcome standard care group groups inhibitor inhibitors".split())
 ALIASES = (
-    (r"\b(?:heart failure with preserved ejection fraction|hfpef)\b", "hfpef"),
-    (r"\b(?:heart failure with reduced ejection fraction|hfref)\b", "hfref"),
+    (r"\b(?:heart failure (?:with |and )?(?:a )?preserved ejection fraction|hfpef)\b", "hfpef"),
+    (r"\b(?:heart failure (?:with |and )?(?:a )?reduced ejection fraction|hfref)\b", "hfref"),
     (r"\b(?:transcatheter aortic valve (?:replacement|implantation)|tavr|tavi)\b", "tavr"),
     (r"\b(?:coronary artery bypass graft(?:ing)?|cabg)\b", "cabg"),
     (r"\b(?:atrial fibrillation|afib)\b", "atrial fibrillation"),
@@ -43,6 +43,10 @@ def _normalize(text):
     text = re.sub(r"[^a-z0-9]+", " ", text).strip()
     for pattern, replacement in ALIASES:
         text = re.sub(pattern, replacement, text)
+    # Directional class expansion: a named drug adds a class cue, but a
+    # generic class mention cannot match a specific drug by itself.
+    text = re.sub(r"\b(empagliflozin|dapagliflozin|canagliflozin|ertugliflozin)\b",
+                  r"\1 sglt2", text)
     return text
 
 
@@ -129,7 +133,7 @@ def _passages(records):
                 for sentence in re.split(r"(?<=[.!?])\s+|\n+", abstract):
                     if sentence.strip():
                         passages.append((key, source, rid, sentence.strip()))
-        for key in ("publicationTypes", "pubtype", "publication_types", "pubType", "type", "type_crossref"):
+        for key in ("publicationTypes", "pubtype", "publication_types", "pubType", "pubTypeList", "type", "type_crossref"):
             value = meta.get(key)
             if isinstance(value, dict):
                 value = value.get("pubType") or value.get("publicationType") or []
@@ -167,7 +171,8 @@ def _design(candidate, passages, types):
     labels = " ".join(candidate.eligible_designs or []).casefold()
     # Only require RCT signals for an explicit RCT-only scope. Mixed RCT/
     # observational questions must not be silently narrowed.
-    rct_requested = bool(re.search(r"\b(?:rcts?|randomi[sz]ed)\b", labels))
+    randomized_labels = re.sub(r"\bnon[ -]?randomi[sz]ed\b", "", labels)
+    rct_requested = bool(re.search(r"\b(?:rcts?|randomi[sz]ed)\b", randomized_labels))
     obs_requested = bool(re.search(r"\b(?:observational|cohort|case.control|cross.sectional|nonrandomi[sz]ed|non.randomi[sz]ed|quasi.experimental)\b", labels))
     dta_requested = "diagnostic" in labels or str(candidate.question_type).upper() == "DIAGNOSTIC_ACCURACY"
     nonprimary = [p for p in passages if p[0] == "title" and NONPRIMARY.search(p[3])]
