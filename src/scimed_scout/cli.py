@@ -260,6 +260,7 @@ def _discovery_orchestrator(ledger: SQLiteLedger) -> ReviewDiscoveryOrchestrator
         build_default_source_clients(),
         novelty_service=novelty,
         scoring_service=scoring,
+        require_pico_signals=True,
     )
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any, Callable
 
 from scimed_scout.domain import CandidateStatus, SourceStatus
@@ -15,6 +15,7 @@ from scimed_scout.verification.queries import build_search_plan
 from .constants import MIN_DISCOVERY_STUDIES
 from .candidate_preflight import FocusedEvidencePreflight
 from .evidence import discovery_evidence_snapshot
+from .pico_matching import assess_pico
 from .evidence_classification import (
     classify_review_search_hit, classify_registration_search_hit,
     review_intervention_citation_signal,
@@ -41,6 +42,7 @@ class ReviewDiscoveryOrchestrator:
         evidence_preflight: FocusedEvidencePreflight | None = None,
         candidate_checkpoint: Callable[[DiscoveryCandidateResult], None] | None = None,
         resumed_results: list[DiscoveryCandidateResult] | None = None,
+        require_pico_signals: bool = False,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
@@ -51,6 +53,7 @@ class ReviewDiscoveryOrchestrator:
         self.evidence_preflight = evidence_preflight
         self.candidate_checkpoint = candidate_checkpoint
         self.resumed_results = list(resumed_results or [])
+        self.require_pico_signals = require_pico_signals
 
     def run(
         self,
@@ -106,6 +109,20 @@ class ReviewDiscoveryOrchestrator:
         self._progress(20, "DISCOVERY_RANKING", ranking_message)
 
         results: list[DiscoveryCandidateResult] = list(self.resumed_results)
+        # A saved qualification from an older gate version must never bypass
+        # the new evidence checks. Keep the audit, but require reassessment.
+        if self.require_pico_signals:
+            for item in results:
+                if not item.evidence.pico_audit:
+                    old_candidate = self.ledger.get_candidate(item.candidate_id)
+                    if old_candidate is not None:
+                        audit, _ = assess_pico(old_candidate, self.ledger.list_external_evidence(item.candidate_id, "PRIMARY_STUDY"))
+                        item.evidence = replace(item.evidence, pico_audit=audit)
+                    if item.candidate_status == CandidateStatus.QUALIFIED:
+                        item.candidate_status = CandidateStatus.PROVISIONAL_BACKUP
+                        item.decision = "PROVISIONAL — LEGACY QUALIFICATION REQUIRES PICO REASSESSMENT"
+                        item.pending.append("TYPE-A: previous gate did not assess PICO/design-supported evidence")
+                        item.final_gate_result = None
         qualified: list[str] = [item.candidate_id for item in results
                                 if item.candidate_status == CandidateStatus.QUALIFIED]
         for item in results:
@@ -233,7 +250,13 @@ class ReviewDiscoveryOrchestrator:
         logs = self.ledger.list_search_log(candidate_id)
         coverage = evaluate_coverage(logs, policy)
         evidence = discovery_evidence_snapshot(self.ledger, candidate_id)
+        primary_records = self.ledger.list_external_evidence(candidate_id, "PRIMARY_STUDY")
+        pico_audit, pico_records = assess_pico(candidate, primary_records)
+        evidence = replace(evidence, pico_audit=pico_audit)
         pending = list(coverage.blockers)
+        if self.require_pico_signals and evidence.conservative_family_lead_count >= MIN_DISCOVERY_STUDIES and pico_audit["pico_design_family_leads"] < MIN_DISCOVERY_STUDIES:
+            pending.append("TYPE-A: insufficient source-linked PICO/design cues for the minimum family-lead count; unresolved records need title/abstract and full-text assessment")
+        scoring_records = pico_records if self.require_pico_signals else primary_records
         reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
         registrations = self.ledger.list_external_evidence(candidate_id, "REGISTRATION")
         ongoing = self.ledger.list_external_evidence(candidate_id, "ONGOING_STUDY")
@@ -290,13 +313,13 @@ class ReviewDiscoveryOrchestrator:
             try:
                 gate_inputs = self.scoring_service.score(
                     candidate,
-                    unique_primary_studies=evidence.unique_primary_study_candidates,
+                    unique_primary_studies=(pico_audit['pico_design_family_leads'] if self.require_pico_signals else evidence.unique_primary_study_candidates),
                     published_review_hits=len(reviews),
                     registration_hits=len(registrations),
                     competitor_summary=(novelty or {}).get("summary", ""),
                     review_records=reviews,
                     registration_records=registrations,
-                    primary_records=self.ledger.list_external_evidence(candidate_id, "PRIMARY_STUDY"),
+                    primary_records=scoring_records,
                     semantically_capped=bool(meta.get("discovery_semantic_scope_capped")),
                 )
                 candidate.metadata = {
@@ -372,7 +395,7 @@ class ReviewDiscoveryOrchestrator:
                 )
             payload = {
                 **gate_inputs,
-                "unique_primary_study_candidates": evidence.conservative_family_lead_count,
+                "unique_primary_study_candidates": min(evidence.conservative_family_lead_count, pico_audit["pico_design_family_leads"]) if self.require_pico_signals else evidence.conservative_family_lead_count,
                 "distinct_bibliographic_report_leads": evidence.unique_primary_study_candidates,
                 "complete_literature_sources": complete_literature,
                 "fatal_redundancy": bool(meta.get("discovery_fatal_redundancy", False)),

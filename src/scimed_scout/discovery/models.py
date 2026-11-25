@@ -15,6 +15,7 @@ class DiscoveryEvidenceSnapshot:
     primary_sources_with_hits: int
     primary_source_names: tuple[str, ...]
     trial_family_audit: dict[str, Any] = field(default_factory=dict)
+    pico_audit: dict[str, Any] = field(default_factory=dict)
 
     @property
     def conservative_family_lead_count(self) -> int:

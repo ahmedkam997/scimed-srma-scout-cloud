@@ -425,6 +425,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 evidence_preflight=preflight,
                 candidate_checkpoint=save_candidate_checkpoint,
                 resumed_results=resumed,
+                require_pico_signals=True,
             )
             result = orchestrator.run(
                 project_id,
@@ -487,6 +488,8 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "unique_primary_study_candidates": verified.evidence.unique_primary_study_candidates,
                     "conservative_family_lead_count": verified.evidence.conservative_family_lead_count,
                     "registry_linked_families": verified.evidence.trial_family_audit.get("registry_linked_families"),
+                    "pico_design_family_leads": verified.evidence.pico_audit.get("pico_design_family_leads"),
+                    "pico_screening_status_counts": verified.evidence.pico_audit.get("status_counts", {}),
                     "scorecard": scorecard,
                     "competitor_audit": ({
                         "published_reviews_discovered": (checked.metadata or {}).get(
