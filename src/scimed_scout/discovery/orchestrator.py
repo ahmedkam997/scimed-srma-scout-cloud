@@ -631,7 +631,7 @@ class ReviewDiscoveryOrchestrator:
                 else:
                     if citation=="CONFIRMED_REVIEW_CUE":record_type="PUBLISHED_REVIEW"
                     else:record_type="PRIMARY_STUDY"
-                self._store_record(candidate.candidate_id,record_type,record,report.get("query",""),"ADAPTIVE_PUBMED",classification=citation,originally_requested="SUPPLEMENTARY_DISCOVERY")
+                self._store_record(candidate.candidate_id,record_type,record,(record.metadata.get("adaptive_pubmed") or {}).get("query",report.get("query","")),"ADAPTIVE_PUBMED",classification=citation,originally_requested="SUPPLEMENTARY_DISCOVERY")
         candidate=self.ledger.get_candidate(candidate.candidate_id) or candidate
         candidate.metadata={**(candidate.metadata or {}),"adaptive_retrieval_audit":audits}
         self.ledger.upsert_candidate(candidate)

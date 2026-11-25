@@ -12,7 +12,10 @@ from scimed_scout.discovery.query_optimizer import optimized_queries
 from scimed_scout.discovery.pico_matching import assess_pico
 from scimed_scout.discovery.evidence_classification import classify_review_search_hit,review_intervention_citation_signal
 
-VERSION="ADAPTIVE_RETRIEVAL_V1"
+VERSION="ADAPTIVE_RETRIEVAL_V2"
+MAX_UNIQUE=50
+# Design cues prioritize a second exploratory search only; no exclusion.
+RCT_CUE='(randomized controlled trial[pt] OR controlled clinical trial[pt] OR randomized[tiab] OR randomised[tiab] OR placebo[tiab] OR randomly[tiab] OR trial[tiab])'
 DEPTHS=(25,50)
 TARGET_PRIMARY=7
 TARGET_REVIEW=2
@@ -70,28 +73,44 @@ def collect(candidate,purpose,legacy,baseline,client,*,initial_limit=12,base_acc
     records={}
     report["status"]="BOUNDED_ATTEMPT"
     previous_total=None
+    previous_ids=[]
+    previous_query=None
     for depth in DEPTHS:
         if depth<=initial_limit:continue
         if cancellation_check:cancellation_check()
         report["source_calls"]+=1
-        try:r=ranked.search(query,limit=depth)
+        # For a very broad first sample with insufficient PICO/design cues,
+        # spend the remaining slots on a design-prioritized variant instead
+        # of fetching more of the same broad ranking. Preserve first sample.
+        refine=purpose=="PRIMARY" and previous_total is not None and previous_total>1000
+        active_query=query+" AND "+RCT_CUE if refine else query
+        requested=min(depth,MAX_UNIQUE-len(records)) if refine else depth
+        if requested<=0:break
+        try:r=ranked.search(active_query,limit=requested)
         except Exception as e:
             report["attempts"].append({"limit":depth,"status":"ACCESS_FAILED","error_type":type(e).__name__})
             report["status"]="SUPPLEMENTARY_ACCESS_UNRESOLVED";break
+        capped=0
+        current_ids=[r.record_id for r in r.records]
+        prefix_drift=bool(previous_ids and previous_query==active_query and current_ids[:len(previous_ids)]!=previous_ids)
         for i,record in enumerate(r.records,1):
             if not record.title.strip():continue
             if record.record_id not in records:
-                records[record.record_id]=replace(record,metadata={**(record.metadata or {}),"adaptive_pubmed":{"query":query,"sort":"relevance","depth":depth,"rank":i,"eligibility_verified":False}})
+                if len(records)>=MAX_UNIQUE:
+                    capped+=1;continue
+                records[record.record_id]=replace(record,metadata={**(record.metadata or {}),"adaptive_pubmed":{"query":active_query,"sort":"relevance","depth":requested,"rank":i,"eligibility_verified":False}})
         cues=lead_count(candidate,purpose,baseline,list(records.values()))
-        drift=previous_total is not None and r.total_count!=previous_total
-        report["attempts"].append({"limit":depth,"status":r.status.value,"reported":r.total_count,"retrieved":len(r.records),"unique":len(records),"cues":cues,"count_drift":drift})
+        drift=previous_total is not None and previous_query==active_query and r.total_count!=previous_total
+        report["attempts"].append({"limit":requested,"query":active_query,"strategy":"DESIGN_PRIORITIZED" if refine else "FOCUSED", "status":r.status.value,"reported":r.total_count,"retrieved":len(r.records),"unique":len(records),"cues":cues,"count_drift":drift,"rank_prefix_changed":prefix_drift,"records_omitted_by_cap":capped})
         report.update(final_cues=cues,records=len(records))
         if drift or r.status not in (SourceStatus.SEARCHED_POSITIVE,SourceStatus.SEARCHED_NEGATIVE):
             report["status"]="SUPPLEMENTARY_ACCESS_UNRESOLVED";break
         previous_total=r.total_count
+        previous_query=active_query
+        previous_ids=current_ids
         if cues>=target:
             report["status"]="TARGET_CUES_REACHED";break
-        if r.total_count is None or r.total_count<=depth:
+        if r.total_count is None or r.total_count<=requested:
             report["status"]="SCOPED_QUERY_EXHAUSTED";break
     else:
         report["status"]="BUDGET_EXHAUSTED"

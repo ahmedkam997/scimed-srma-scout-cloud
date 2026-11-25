@@ -45,3 +45,28 @@ def test_warning_zero_is_not_negative():
     bad={"esearchresult":{"count":"0","idlist":[],"warninglist":{"quotedphrasesnotfound":["due"]}}}
     c=PubMedSource(JsonHttpClient(loader=lambda _:bad,retries=0))
     assert c.search("x").status==SourceStatus.PARTIAL
+
+def test_rank_drift_still_respects_hard_cap():
+    class Drift(Stub):
+        def search(self,q,*,limit):
+            r=super().search(q,limit=limit)
+            if limit==50:
+                r.records=[SearchRecord(self.name,str(i),"Unclassified report") for i in range(1,51)]
+            # return all 50 shifted records
+            return r
+    stub=Drift();audit,records=collect(candidate(),"PRIMARY",("legacy",),[],stub)
+    assert len(records)==50
+    assert audit["attempts"][-1]["rank_prefix_changed"]
+    assert audit["attempts"][-1]["records_omitted_by_cap"]==1
+    assert records[0].record_id=="0"
+
+def test_broad_query_spends_remaining_slots_on_design_refinement():
+    class Broad(Stub):
+        def search(self,q,*,limit):
+            self.calls.append((q,limit))
+            start=100 if len(self.calls)>1 else 0
+            return SearchResult(self.name,q,SourceStatus.SEARCHED_POSITIVE,[SearchRecord(self.name,str(i),"Unknown report") for i in range(start,start+limit)],200 if start else 3000)
+    stub=Broad();audit,records=collect(candidate(),"PRIMARY",("legacy",),[],stub)
+    assert len(records)==50 and len(stub.calls)==2
+    assert stub.calls[1][1]==25 and "randomized controlled trial[pt]" in stub.calls[1][0]
+    assert audit["attempts"][-1]["strategy"]=="DESIGN_PRIORITIZED"
