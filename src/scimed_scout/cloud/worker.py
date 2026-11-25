@@ -452,6 +452,21 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "deferred_repeated_seed_cues": deferred_seed_cues[:20],
                     "deferred_repeated_seed_cue_count": len(deferred_seed_cues),
                     "prior_generated_topic_count": len(generated_history),
+                    "history_warning": getattr(store, "history_warning", ""),
+                    "generated_topic_history": [
+                        {
+                            "candidate_id": item.candidate_id,
+                            "title": item.title,
+                            "specialty": item.specialty,
+                            "question_type": item.question_type,
+                            "population": item.population,
+                            "intervention_exposure_index_test": item.intervention_exposure_index_test,
+                            "comparator_reference": item.comparator_reference,
+                            "outcomes": item.outcomes,
+                            "eligible_designs": item.eligible_designs,
+                        }
+                        for item in candidates
+                    ],
                     "ai_failover_count": provider.total_failover_count,
                     "configured_free_ai_route": provider.configured_free_route,
                     "unavailable_free_providers": provider.unavailable_free_providers,

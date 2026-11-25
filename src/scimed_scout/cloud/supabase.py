@@ -69,6 +69,7 @@ class SupabaseJobStore:
         self.worker_token = worker_token.strip()
         self.timeout = timeout
         self.requester = requester
+        self.history_warning = ""
         if not self.url or not self.anon_key or not self.worker_token:
             raise ValueError("Supabase URL, anon key, and SCIMED_WORKER_TOKEN are required")
 
@@ -122,14 +123,73 @@ class SupabaseJobStore:
         if len(client_token_hash) != 64 or revisit_days <= 0:
             return []
         cutoff = datetime.now(timezone.utc) - timedelta(days=min(180, revisit_days))
-        return self._select({
-            "select": "id,status,updated_at,completed_at,result_json",
+        # Fetch only small PICO history projections, never entire evidence
+        # dossiers (which can be several MB per job). PostgREST JSON aliases
+        # preserve the existing topic-memory reader's nested shape.
+        filters = {
             "client_token_hash": f"eq.{client_token_hash}",
             "status": "eq.COMPLETED",
             "completed_at": f"gte.{cutoff.isoformat()}",
-            "order": "completed_at.desc",
-            "limit": "80",
-        })
+            "order": "completed_at.desc,id.desc",
+        }
+        projection = (
+            "id,status,updated_at,completed_at,"
+            "topic_history:result_json->run_summary->topic_history,"
+            "generated_history:result_json->run_summary->generated_topic_history,"
+            "drafts:result_json->package->unverified_generated_options"
+        )
+        output = []
+        self.history_warning = ""
+        offset = 0
+        page_size = 5
+        while offset < 80:
+            try:
+                rows = self._select({
+                    **filters, "select": projection,
+                    "limit": str(min(page_size, 80 - offset)),
+                    "offset": str(offset),
+                })
+            except RuntimeError as exc:
+                if "57014" not in str(exc) and "timeout" not in str(exc).lower():
+                    raise
+                if page_size > 1:
+                    page_size = max(1, page_size // 2)
+                    continue
+                self.history_warning = "Prior topic history partially unavailable due to database timeout; duplicate prevention may be incomplete."
+                break
+            for row in rows:
+                checked = row.get("topic_history")
+                drafts = row.get("generated_history")
+                if not isinstance(drafts, list):
+                    drafts = row.get("drafts") or []
+                if not isinstance(checked, list):
+                    # Older records without a compact history need a separate
+                    # legacy read. Never fetch all full reports in one request.
+                    try:
+                        legacy = self._select({
+                            **filters, "id": f"eq.{row['id']}",
+                            "select": "id,status,updated_at,completed_at,result_json",
+                            "limit": "1",
+                        })
+                        output.extend(legacy)
+                    except RuntimeError as exc:
+                        if "57014" not in str(exc) and "timeout" not in str(exc).lower():
+                            raise
+                        self.history_warning = "Some legacy topic history could not be retrieved; duplicate prevention may be incomplete."
+                    continue
+                output.append({
+                    "id": row.get("id"), "status": row.get("status"),
+                    "updated_at": row.get("updated_at"),
+                    "completed_at": row.get("completed_at"),
+                    "result_json": {
+                        "run_summary": {"topic_history": checked},
+                        "package": {"unverified_generated_options": drafts},
+                    },
+                })
+            offset += len(rows)
+            if len(rows) < page_size:
+                break
+        return output
 
     def claim_next(self) -> DiscoveryJob | None:
         rows = self._select(

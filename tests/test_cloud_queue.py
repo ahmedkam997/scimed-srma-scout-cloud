@@ -111,3 +111,36 @@ def test_topic_memory_window_is_bounded():
     assert job.revisit_days == 180
     job = DiscoveryJob.from_row({"id": "J2", "revisit_days": 0})
     assert job.revisit_days == 0
+
+
+def test_history_uses_small_json_projections_and_preserves_topic_memory_shape():
+    from urllib.parse import urlsplit, parse_qs
+    calls = []
+    def responder(req, timeout):
+        q = parse_qs(urlsplit(req.full_url).query)
+        calls.append(q)
+        return json.dumps([{
+            "id": "J1", "status": "COMPLETED",
+            "topic_history": [{"title": "Verified topic", "status": "PROVISIONAL_BACKUP"}],
+            "generated_history": [{"title": "Generated topic"}],
+        }]).encode()
+    store = SupabaseJobStore("https://example.supabase.co", "anon", "worker", requester=responder)
+    rows = store.recent_completed_jobs(client_token_hash="a" * 64)
+    assert len(calls) == 1
+    assert "topic_history:result_json->run_summary->topic_history" in calls[0]["select"][0]
+    assert calls[0]["limit"] == ["5"]
+    assert rows[0]["result_json"]["run_summary"]["topic_history"][0]["title"] == "Verified topic"
+    assert rows[0]["result_json"]["package"]["unverified_generated_options"][0]["title"] == "Generated topic"
+
+
+def test_history_timeout_reduces_page_size_and_does_not_stop_discovery():
+    from urllib.parse import urlsplit, parse_qs
+    calls = []
+    def responder(req, timeout):
+        q = parse_qs(urlsplit(req.full_url).query)
+        calls.append(q["limit"][0])
+        raise RuntimeError("Supabase HTTP 500: 57014 statement timeout")
+    store = SupabaseJobStore("https://example.supabase.co", "anon", "worker", requester=responder)
+    assert store.recent_completed_jobs(client_token_hash="a" * 64) == []
+    assert calls == ["5", "2", "1"]
+    assert "duplicate prevention" in store.history_warning
