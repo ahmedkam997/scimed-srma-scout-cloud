@@ -96,7 +96,11 @@ def worker_findings(current, previous=()):
         codes.append("SLOW_DISCOVERY_RUN")
     ai=current.get("ai") or {}
     errors=ai.get("failure_categories") or {}
-    if errors.get("PROVIDER_LIMIT",0)>0 or ai.get("unavailable_provider_count",0)>0:
+    routing=ai.get("routing") or {}
+    observed_route_pressure=any(
+        p.get("failure_categories",{}).get("RATE_LIMIT",0)>0 or p.get("failure_categories",{}).get("CREDIT_LIMIT",0)>0
+        for p in routing.get("providers",[]) if isinstance(p,dict))
+    if errors.get("PROVIDER_LIMIT",0)>0 or ai.get("unavailable_provider_count",0)>0 or observed_route_pressure:
         codes.append("AI_CAPACITY_PRESSURE")
     # Require same scope and question type, three independent run records
     # and a meaningful verification denominator; no alert for one zero.

@@ -16,6 +16,7 @@ from scimed_scout.diagnostics import exception_diagnostic
 from scimed_scout.run_telemetry import MeteredDiscoveryProvider, aggregate, incident, write_report
 
 from scimed_scout.ai import CandidateDiscoveryService, FreeProviderFallback
+from scimed_scout.ai.adaptive_router import AdaptiveFreeRouter
 from scimed_scout.competitors import SemanticCompetitorAssessor
 from scimed_scout.discovery.topic_memory import (
     recent_topic_memory, recent_generated_topic_memory,
@@ -149,7 +150,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
     # search subject across clinical subfields by recent completed run count.
     seed_rotation_index = len(history_rows)
     recently_skipped: list[dict[str, Any]] = []
-    provider = MeteredDiscoveryProvider(FreeProviderFallback.from_env())
+    provider = MeteredDiscoveryProvider(AdaptiveFreeRouter.from_env())
     if not provider.primary.endpoint or not provider.primary.model or not provider.primary.api_key:
         raise RuntimeError("SCIMED_AI_ENDPOINT, SCIMED_AI_MODEL and SCIMED_AI_API_KEY are required")
 

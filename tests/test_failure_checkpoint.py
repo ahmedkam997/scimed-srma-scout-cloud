@@ -39,7 +39,7 @@ def test_pubmed_checkpoint_saved_before_unavailable_ai(monkeypatch):
     fake_provider = SimpleNamespace(
         primary=SimpleNamespace(endpoint="https://api.example/v1", model="openrouter/free", api_key="mock"),
     )
-    monkeypatch.setattr(discovery_worker.FreeProviderFallback, "from_env", lambda: fake_provider)
+    monkeypatch.setattr(discovery_worker.AdaptiveFreeRouter, "from_env", lambda: fake_provider)
     monkeypatch.setattr(discovery_worker, "recent_pubmed_cues", lambda *args, **kwargs: [
         {"title": "Real clinical trial from PubMed", "year": 2026, "source": "PubMed",
          "pmid": "12345", "url": "https://pubmed.ncbi.nlm.nih.gov/12345/",

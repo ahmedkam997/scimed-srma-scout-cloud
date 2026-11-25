@@ -52,13 +52,15 @@ class MeteredDiscoveryProvider:
             self.tokens+=n(usage["total_tokens"])
         return response
     def snapshot(self):
+        routing=self.provider.routing_snapshot() if hasattr(self.provider,"routing_snapshot") else {}
         return {"logical_requests":self.requests,"failed_logical_requests":self.failed,
                 "reported_total_tokens":self.tokens if self.usage_reports else None,
                 "responses_with_token_usage":self.usage_reports,
                 "failure_categories":dict(self.errors),
                 "failover_count":n(getattr(self.provider,"total_failover_count",0)),
                 "unavailable_provider_count":len(getattr(self.provider,"unavailable_free_providers",[]) or []),
-                "http_attempts_known":False,"remaining_quota_known":False}
+                "routing":routing,
+                "http_attempts_known":routing.get("http_attempts_known",False),"remaining_quota_known":False}
 
 def candidate_reasons(row):
     reasons=set()
@@ -127,7 +129,7 @@ def aggregate(result, *, elapsed_seconds, requested=None, specialty="", question
             "candidates_at_minimum_pico_lead_signal":sum(x>=MIN_DISCOVERY_STUDIES for x in pico_known),
             "reason_counts":dict(reasons),"source_incomplete_candidate_counts":dict(sources),
             "opportunity_counts":dict(opportunities),
-            "ai":{k:ai[k] for k in ("logical_requests","failed_logical_requests","reported_total_tokens","responses_with_token_usage","failure_categories","failover_count","unavailable_provider_count","http_attempts_known","remaining_quota_known") if k in ai},
+            "ai":{k:ai[k] for k in ("logical_requests","failed_logical_requests","reported_total_tokens","responses_with_token_usage","failure_categories","failover_count","unavailable_provider_count","http_attempts_known","remaining_quota_known","routing") if k in ai},
             "clinical_accuracy_validated":False,"eligible_independent_studies_confirmed":None}
 
 def incident(status,elapsed_seconds,exc=None):

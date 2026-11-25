@@ -42,6 +42,7 @@ class OpenAICompatibleProvider:
     name: str = "openai-compatible"
     empty_retries: int | None = None
     rate_limit_sleeper: Callable[[float], None] | None = None
+    http_attempts: int = 0
 
     @classmethod
     def from_env(cls) -> "OpenAICompatibleProvider":
@@ -179,6 +180,7 @@ class OpenAICompatibleProvider:
         waited = False
         while True:
             try:
+                self.http_attempts += 1
                 return self.requester(req, self.timeout) if self.requester else self._request(req)
             except urllib.error.HTTPError as exc:
                 header = exc.headers
@@ -239,6 +241,9 @@ def _http_error_category(exc: urllib.error.HTTPError) -> str:
             return "unspecified"
         message = str(item.get("message") or "").casefold()
         code = str(item.get("code") or "").casefold()
+        if code in {"content_policy_violation","safety_block","content_filter"} or any(
+            term in message for term in ("content policy violation","safety filter","blocked for safety")):
+            return "content_policy_violation"
         if "json" in message and any(token in message for token in (
             "validat", "invalid", "format", "generat", "schema", "parse",
         )):
