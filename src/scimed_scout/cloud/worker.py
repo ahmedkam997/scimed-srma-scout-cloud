@@ -5,12 +5,14 @@ import re
 import os
 import tempfile
 import traceback
+import time
 from pathlib import Path
 from typing import Any
 from datetime import datetime, timezone
 from dataclasses import asdict
 from .checkpoints import GENERATION, AUDIT_PREFIX, draft_from_saved, audit_snapshot, restore_audit
 from scimed_scout.diagnostics import exception_diagnostic
+from scimed_scout.run_telemetry import MeteredDiscoveryProvider, aggregate, incident, write_report
 
 from scimed_scout.ai import CandidateDiscoveryService, FreeProviderFallback
 from scimed_scout.competitors import SemanticCompetitorAssessor
@@ -146,7 +148,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
     # search subject across clinical subfields by recent completed run count.
     seed_rotation_index = len(history_rows)
     recently_skipped: list[dict[str, Any]] = []
-    provider = FreeProviderFallback.from_env()
+    provider = MeteredDiscoveryProvider(FreeProviderFallback.from_env())
     if not provider.primary.endpoint or not provider.primary.model or not provider.primary.api_key:
         raise RuntimeError("SCIMED_AI_ENDPOINT, SCIMED_AI_MODEL and SCIMED_AI_API_KEY are required")
 
@@ -314,6 +316,9 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                         },
                         "run_summary": {
                             "generated_candidates": 0,
+                            "requested_candidates": job.candidate_count,
+                            "off_scope_skipped_count": len(outside_scope),
+                            "ai_telemetry": provider.snapshot(),
                             "verified_candidates": 0,
                             "status_counts": {},
                             "candidate_audits": [],
@@ -565,6 +570,8 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 "package": package,
                 "run_summary": {
                     "generated_candidates": len(candidates),
+                    "off_scope_skipped_count": len(outside_scope),
+                    "ai_telemetry": provider.snapshot(),
                     "resumed_completed_audits": len(resumed),
                     "reused_generation": bool(saved_generation),
                     "unverified_generated_candidates": len(unverified_drafts),
@@ -648,6 +655,7 @@ def run_once(store: SupabaseJobStore | None = None) -> int:
         return 0
 
     print(json.dumps({"status": "RUNNING", "job_id": job.id}))
+    started = time.monotonic()
     try:
         result_json = process_job(job, store)
         options = len((result_json.get("package") or {}).get("options") or [])
@@ -656,12 +664,19 @@ def run_once(store: SupabaseJobStore | None = None) -> int:
             result_json,
             f"Discovery complete with {options} qualified first-choice topic(s)",
         )
+        try:
+            write_report(aggregate(result_json,elapsed_seconds=time.monotonic()-started,
+                requested=job.candidate_count,specialty=job.specialty,question_type=job.question_type))
+        except Exception:
+            print(json.dumps({"status":"TELEMETRY_AGGREGATE_FAILED"}))
         print(json.dumps({"status": "COMPLETED", "job_id": job.id, "qualified_options": options}))
         return 0
     except JobCancelled:
+        write_report(incident("CANCELLED",time.monotonic()-started))
         print(json.dumps({"status": "CANCELLED", "job_id": job.id}))
         return 0
     except Exception as exc:
+        write_report(incident("FAILED",time.monotonic()-started,exc))
         detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         try:
             # Keep any previously saved literature checkpoint on error.

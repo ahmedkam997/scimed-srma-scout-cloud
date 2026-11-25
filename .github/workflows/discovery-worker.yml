@@ -106,7 +106,18 @@ jobs:
 
       - name: Process next queued discovery job
         if: steps.config.outputs.ready == 'true' && steps.queue.outputs.has_job == 'true' && steps.queue.outputs.kind == 'discovery'
+        env:
+          SCIMED_MONITOR_REPORT: ${{ runner.temp }}/scimed-worker-telemetry.json
         run: python -m scimed_scout.cloud.worker
+
+      - name: Upload aggregate discovery telemetry
+        if: always() && steps.queue.outputs.kind == 'discovery'
+        uses: actions/upload-artifact@v4
+        with:
+          name: scimed-worker-telemetry
+          path: ${{ runner.temp }}/scimed-worker-telemetry.json
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Recheck failed sources for one saved PICO without AI
         if: steps.config.outputs.ready == 'true' && steps.queue.outputs.has_job == 'true' && steps.queue.outputs.kind == 'recheck'
