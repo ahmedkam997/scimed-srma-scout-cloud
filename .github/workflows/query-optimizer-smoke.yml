@@ -1,0 +1,31 @@
+name: query-optimizer-smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/query-optimizer-smoke.yml
+      - src/scimed_scout/discovery/query_optimizer.py
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e .
+      - run: python -m scimed_scout.discovery.query_optimizer_smoke --output query-optimizer-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: query-optimizer-live-report
+          path: query-optimizer-report.json

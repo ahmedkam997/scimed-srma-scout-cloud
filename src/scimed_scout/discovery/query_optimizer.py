@@ -8,7 +8,6 @@ from dataclasses import dataclass
 import re
 import unicodedata
 from .focused_queries import focused_query
-from scimed_scout.verification.queries import build_search_plan
 
 VERSION="CLINICAL_QUERY_OPTIMIZER_V1"
 
@@ -112,7 +111,6 @@ def optimized_queries(candidate,source,purpose,legacy,*,max_queries=4):
     # planner) over isolated AI keywords if controlled expansion is unknown.
     legacy_pair=next((q for q in old if q.casefold().startswith(candidate.intervention_exposure_index_test.strip().casefold()+" ") and normalize(candidate.population) in normalize(q)),"")
     if not legacy_pair and purpose=="PRIMARY":
-        plan=build_search_plan(candidate,max_queries=8)
         # A plain-text pair retains automatic term mapping on PubMed.
         from scimed_scout.verification.queries import _compact,_join
         legacy_pair=_join(_compact(candidate.intervention_exposure_index_test,66),_compact(candidate.population,56))
