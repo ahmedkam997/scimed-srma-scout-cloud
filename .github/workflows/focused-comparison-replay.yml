@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/focused-comparison-replay.yml
+      - src/scimed_scout/discovery/focused_queries.py
 permissions:
   contents: read
   actions: read

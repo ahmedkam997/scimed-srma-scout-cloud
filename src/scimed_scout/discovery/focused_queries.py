@@ -2,9 +2,8 @@
 from __future__ import annotations
 import re
 import unicodedata
-from scimed_scout.verification.queries import _registry_focus
 
-# Reuse existing clinical token normalization, with limited explicit aliases.
+# Preserve clinically meaningful modifiers, with limited explicit aliases.
 # Do not interpret arbitrary model text as search syntax.
 ALIASES = {
     "heart failure with preserved ejection fraction": ("heart failure with preserved ejection fraction","HFpEF"),
@@ -24,7 +23,7 @@ def _units(value):
     raw=unicodedata.normalize("NFKC",str(value or ""))
     raw=re.sub(r"[\u2010-\u2015/]", " ",raw)
     raw=re.sub(r"[^a-zA-Z0-9 ]"," ",raw)
-    terms=_registry_focus(raw)
+    terms=[t for t in raw.casefold().split() if t not in {"adult","adults","patient","patients","with","of","in","the","a","an","and","for","individuals","people"}]
     units=[]
     i=0
     while i<len(terms) and len(units)<6:
