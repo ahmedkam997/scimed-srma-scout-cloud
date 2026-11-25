@@ -74,7 +74,7 @@ def test_unresolved_or_low_overlap_does_not_become_update_clearance():
     r=review()
     r["payload"]["discovery_semantic_assessment"]["unresolved"]=True
     result=assess([r],[report("A",2025,"NCT00000001")],competitor_scope_unresolved=True)
-    assert result["route"]=="NOVEL_REVIEW_ASSESSMENT"
+    assert result["route"]=="OVERLAP_NEEDS_ADJUDICATION"
     assert result["competitor_scope_unresolved"] and not result["qualified"]
 
 
@@ -82,3 +82,36 @@ def test_date_precision_and_invalid_dates():
     assert date_bounds("February 2024")[1].isoformat()=="2024-02-29"
     assert date_bounds("2022-02-30") is None
     assert date_bounds("01/02/2022") is None
+
+
+def test_duplicate_online_first_report_not_counted_as_new():
+    a=report("A",2021,"",firstPublicationDate="2021-12-01")
+    b=report("B",2023,"",firstPublicationDate="2023-05-01")
+    a["payload"]["doi"]=b["payload"]["doi"]="10.1000/online-first"
+    b["source"]="Europe PMC"
+    result=assess([review()],[b],[a,b])
+    assert result["post_cutoff_unlinked_report_count"]==0
+    assert result["route"]=="OVERLAP_NO_POST_CUTOFF_SIGNAL"
+
+
+def test_published_cochrane_recovery_chronology_reference():
+    # Source-grounded chronology fixture, not a full assessment of the
+    # published review or of the applicability of any later trial.
+    # https://www.cochrane.org/evidence/CD014963_are-corticosteroids-anti-inflammatory-medicines-given-orally-or-injection-effective-treatment-people
+    # https://pubmed.ncbi.nlm.nih.gov/32678530/
+    # https://pubmed.ncbi.nlm.nih.gov/37060915/
+    r=review("CD014963.pub2","6 January 2022",
+             quote="to identify completed and ongoing studies to 6 January 2022.",
+             search_date_evidence_url="https://www.cochrane.org/evidence/CD014963_are-corticosteroids-anti-inflammatory-medicines-given-orally-or-injection-effective-treatment-people",
+             search_date_evidence_level="PUBLISHED_REVIEW_SEARCH_STRATEGY")
+    # The stored excerpt also needs the search-context word; the source page
+    # has the heading Search strategy immediately before the statement.
+    r["payload"]["metadata"]["search_date_evidence_quote"]="Search strategy: "+r["payload"]["metadata"]["search_date_evidence_quote"]
+    old=report("32678530",2021,"NCT04381936")
+    new=report("37060915",2023,"NCT04381936",pubdate="2023 May 06")
+    result=assess([r],[new],[old,new])
+    assert result["latest_source_linked_cutoff_end"]=="2022-01-06"
+    assert result["post_cutoff_known_family_followup_count"]==1
+    assert result["post_cutoff_registered_family_leads"]==0
+    assert result["route"]=="UPDATE_SIGNAL"
+    assert not result["qualified"]

@@ -173,19 +173,32 @@ def assess_review_opportunity(reviews, pico_records, primary_records, *, coverag
         # Use all primary records, not only PICO hits, to detect known earlier
         # family publications. They are not included or eligible studies.
         earlier_ids, uncertain_ids = set(), set()
-        for r in primary_records:
-            bounds = _publication_bounds(r)
-            ids = set(registration_signals(r))
-            if not bounds or bounds[0] <= cutoff < bounds[1]:
+        # Combine the PICO-prioritized representatives with ALL raw source
+        # variants before comparing dates. A later print date must not
+        # transform an already-published online-first report into new evidence.
+        pico_object_ids = {id(r) for r in pico_records}
+        report_groups = _groups([*primary_records, *pico_records])
+        def group_bounds(rows):
+            dates = [_publication_bounds(r) for r in rows]
+            dates = [d for d in dates if d and d[0] <= date.today()]
+            return min(dates, key=lambda x: (x[0], x[1])) if dates else None
+        for group in report_groups:
+            rows = group["records"]
+            bounds = group_bounds(rows)
+            ids = {i for r in rows for i in registration_signals(r)}
+            if len(ids) != 1 or not bounds or bounds[0] <= cutoff < bounds[1]:
                 uncertain_ids |= ids
             elif bounds[1] <= cutoff:
                 earlier_ids |= ids
-        for group in _groups(pico_records):
+        for group in report_groups:
             rows = group["records"]
-            dates = [_publication_bounds(r) for r in rows]
-            dates = [d for d in dates if d]
+            matched = [r for r in rows if id(r) in pico_object_ids]
+            if not matched:
+                continue
+            bounds = group_bounds(rows)
+            dates = [bounds] if bounds else []
             ids = sorted({i for r in rows for i in registration_signals(r)})
-            row = {**_ref(rows[0]), "registration_ids": ids}
+            row = {**_ref(matched[0]), "registration_ids": ids}
             if not dates:
                 unknown.append({**row, "reason": "PUBLICATION_DATE_UNKNOWN"})
                 continue
@@ -209,7 +222,7 @@ def assess_review_opportunity(reviews, pico_records, primary_records, *, coverag
     correction = _correction_cues([r for group in material for r in group])
     update_signal = bool(baseline and (newer or followup or unlinked))
     if not related:
-        route = "NOVEL_REVIEW_ASSESSMENT"
+        route = "OVERLAP_NEEDS_ADJUDICATION" if competitor_scope_unresolved else "NOVEL_REVIEW_ASSESSMENT"
     elif update_signal and correction:
         route = "UPDATE_AND_CORRECTIVE_SIGNAL"
     elif update_signal:
