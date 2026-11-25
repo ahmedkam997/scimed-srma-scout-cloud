@@ -1,6 +1,6 @@
 // Network first: phone users receive newly deployed JS even after PWA installation.
-const CACHE='scimed-review-scout-v33';
-const ASSETS=['./','./index.html','./styles.css?v=20261125-lightweight-sync','./app.js?v=20261125-lightweight-sync','./gap-verification.js?v=20261125-lightweight-sync','./final-audit-evidence.js?v=20261125-lightweight-sync','./final-evidence-audit.js?v=20261125-lightweight-sync','./manifest.webmanifest','./config.js?v=20261125-lightweight-sync'];
+const CACHE='scimed-review-scout-v34';
+const ASSETS=['./','./index.html','./styles.css?v=20261125-durable-resume','./app.js?v=20261125-durable-resume','./gap-verification.js?v=20261125-durable-resume','./final-audit-evidence.js?v=20261125-durable-resume','./final-evidence-audit.js?v=20261125-durable-resume','./manifest.webmanifest','./config.js?v=20261125-durable-resume'];
 self.addEventListener('install',e=>e.waitUntil(
   caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())
 ));

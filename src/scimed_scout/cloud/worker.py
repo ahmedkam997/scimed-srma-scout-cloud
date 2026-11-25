@@ -8,6 +8,8 @@ import traceback
 from pathlib import Path
 from typing import Any
 from datetime import datetime, timezone
+from dataclasses import asdict
+from .checkpoints import GENERATION, AUDIT_PREFIX, draft_from_saved, audit_snapshot, restore_audit
 
 from scimed_scout.ai import CandidateDiscoveryService, FreeProviderFallback
 from scimed_scout.competitors import SemanticCompetitorAssessor
@@ -152,6 +154,15 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 )
             )
 
+            saved_generation = store.load_step(job.id, GENERATION)
+            if not saved_generation:
+                legacy = store.legacy_checkpoint(job.id)
+                if legacy.get("candidates"):
+                    saved_generation = {"version": 1, "job_id": job.id, "candidates": legacy["candidates"],
+                                        "recent_pubmed_cues": legacy.get("recent_pubmed_cues", []),
+                                        "published_review_gap_cues": legacy.get("published_review_gap_cues", [])}
+            if saved_generation and (saved_generation.get("version") != 1 or saved_generation.get("job_id") != job.id):
+                raise RuntimeError("Saved generation checkpoint has incompatible scope")
             store.update_job(
                 job.id,
                 stage="CANDIDATE_GENERATION",
@@ -159,78 +170,92 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 message="Generating review-topic candidates",
             )
             generator = CandidateDiscoveryService(provider, ledger)
-            # Spread source-grounded brainstorming over independent clinical
-            # subfields; do not spend the whole run on one latest-paper theme.
-            rotations = (seed_rotation_index, seed_rotation_index + 3, seed_rotation_index + 6) if job.specialty.casefold() == "cardiology" else (seed_rotation_index,)
-            raw_evidence_cues = [
-                cue for rotation in rotations
-                for cue in recent_pubmed_cues(
-                    job.specialty, job.question_type, rotation_index=rotation,
-                    max_records=6 if len(rotations) > 1 else 12,
+            if saved_generation and saved_generation.get("candidates"):
+                evidence_cues = saved_generation.get("recent_pubmed_cues") or []
+                review_gap_cues = saved_generation.get("published_review_gap_cues") or []
+                deferred_seed_cues = []
+                candidates = []
+                for row in saved_generation["candidates"]:
+                    candidate = draft_from_saved(row, project_id)
+                    if candidate.title and candidate.population and candidate.intervention_exposure_index_test:
+                        ledger.upsert_candidate(candidate)
+                        candidates.append(candidate)
+                generator.generation_warnings = ["Resumed saved PICO drafts; no repeat AI generation."]
+                print(json.dumps({"status": "GENERATION_REUSED", "job_id": job.id,
+                                  "candidates": len(candidates)}), flush=True)
+            else:
+                # Spread source-grounded brainstorming over independent clinical
+                # subfields; do not spend the whole run on one latest-paper theme.
+                rotations = (seed_rotation_index, seed_rotation_index + 3, seed_rotation_index + 6) if job.specialty.casefold() == "cardiology" else (seed_rotation_index,)
+                raw_evidence_cues = [
+                    cue for rotation in rotations
+                    for cue in recent_pubmed_cues(
+                        job.specialty, job.question_type, rotation_index=rotation,
+                        max_records=6 if len(rotations) > 1 else 12,
+                    )
+                ]
+                raw_evidence_cues = list({str(cue.get("pmid") or cue.get("title")): cue
+                                          for cue in raw_evidence_cues}.values())
+                evidence_cues, deferred_seed_cues = filter_saturated_evidence_cues(
+                    raw_evidence_cues, saturated_themes,
                 )
-            ]
-            raw_evidence_cues = list({str(cue.get("pmid") or cue.get("title")): cue
-                                      for cue in raw_evidence_cues}.values())
-            evidence_cues, deferred_seed_cues = filter_saturated_evidence_cues(
-                raw_evidence_cues, saturated_themes,
-            )
-            # Campbell/3ie-style evidence-gap cues from *actual review
-            # abstracts*, not model-generated claims of novelty. One free
-            # Europe PMC query, with a safe empty result on source outages.
-            review_gap_cues = [
-                cue for rotation in rotations
-                for cue in recent_review_gap_cues(
-                    job.specialty, job.question_type, max_records=2 if len(rotations) > 1 else 5,
-                    rotation_index=rotation,
-                )
-            ]
-            review_gap_cues = list({str(cue.get("pmid") or cue.get("title")): cue
-                                    for cue in review_gap_cues}.values())
-            # Save real bibliographic leads BEFORE any paid/free AI endpoint
-            # is called. A quota or malformed JSON must not erase the evidence
-            # already retrieved from PubMed. These are NOT review PICO proposals.
-            store.update_job(
-                job.id,
-                result_json={
-                    "checkpoint": {
-                        "stage": "PUBMED_EVIDENCE_CUES",
-                        "verified": False,
-                        "note": "Real PubMed records. Not confirmed eligible primary studies, systematic-review ideas, or evidence of novelty.",
-                        "candidate_count": 0,
-                        "recent_pubmed_cues": evidence_cues,
-                        "published_review_gap_cues": review_gap_cues,
-                        "candidates": [],
-                    }
-                },
-                message=(
-                    f"Saved {len(evidence_cues)} PubMed research leads; checking free AI access"
-                    if evidence_cues else "No PubMed leads available; checking free AI access"
-                ),
-            )
-
-            def generation_progress(found: int, target: int) -> None:
-                store.ensure_active(job.id)
+                # Campbell/3ie-style evidence-gap cues from *actual review
+                # abstracts*, not model-generated claims of novelty. One free
+                # Europe PMC query, with a safe empty result on source outages.
+                review_gap_cues = [
+                    cue for rotation in rotations
+                    for cue in recent_review_gap_cues(
+                        job.specialty, job.question_type, max_records=2 if len(rotations) > 1 else 5,
+                        rotation_index=rotation,
+                    )
+                ]
+                review_gap_cues = list({str(cue.get("pmid") or cue.get("title")): cue
+                                        for cue in review_gap_cues}.values())
+                # Save real bibliographic leads BEFORE any paid/free AI endpoint
+                # is called. A quota or malformed JSON must not erase the evidence
+                # already retrieved from PubMed. These are NOT review PICO proposals.
                 store.update_job(
                     job.id,
-                    stage="CANDIDATE_GENERATION",
-                    progress=5 + int(12 * found / max(1, target)),
-                    message=f"Generated {found}/{target} complete topic proposals; checking more candidates",
+                    result_json={
+                        "checkpoint": {
+                            "stage": "PUBMED_EVIDENCE_CUES",
+                            "verified": False,
+                            "note": "Real PubMed records. Not confirmed eligible primary studies, systematic-review ideas, or evidence of novelty.",
+                            "candidate_count": 0,
+                            "recent_pubmed_cues": evidence_cues,
+                            "published_review_gap_cues": review_gap_cues,
+                            "candidates": [],
+                        }
+                    },
+                    message=(
+                        f"Saved {len(evidence_cues)} PubMed research leads; checking free AI access"
+                        if evidence_cues else "No PubMed leads available; checking free AI access"
+                    ),
                 )
 
-            candidates = generator.generate_and_store(
-                project_id=project_id,
-                specialty=job.specialty,
-                question_types=[] if job.question_type.strip().upper() == "ALL" else [job.question_type],
-                design_scope=[],
-                count=job.candidate_count,
-                additional_context=(
-                    cue_prompt(evidence_cues) + "\n" + review_gap_prompt(review_gap_cues)
-                ).strip(),
-                progress_callback=generation_progress,
-                recent_topics=prior_topics,
-                generated_history=generated_history,
-                skipped_recent=recently_skipped,
-            )
+                def generation_progress(found: int, target: int) -> None:
+                    store.ensure_active(job.id)
+                    store.update_job(
+                        job.id,
+                        stage="CANDIDATE_GENERATION",
+                        progress=5 + int(12 * found / max(1, target)),
+                        message=f"Generated {found}/{target} complete topic proposals; checking more candidates",
+                    )
+
+                candidates = generator.generate_and_store(
+                    project_id=project_id,
+                    specialty=job.specialty,
+                    question_types=[] if job.question_type.strip().upper() == "ALL" else [job.question_type],
+                    design_scope=[],
+                    count=job.candidate_count,
+                    additional_context=(
+                        cue_prompt(evidence_cues) + "\n" + review_gap_prompt(review_gap_cues)
+                    ).strip(),
+                    progress_callback=generation_progress,
+                    recent_topics=prior_topics,
+                    generated_history=generated_history,
+                    skipped_recent=recently_skipped,
+                )
             store.ensure_active(job.id)
             outside_scope = [candidate for candidate in candidates if not _within_specialty(candidate, job.specialty)]
             if outside_scope:
@@ -269,6 +294,13 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     }
                 raise RuntimeError("Candidate generation produced no new review topics")
 
+            # Durable generation snapshot precedes any deep verification.
+            store.save_step(job.id, GENERATION, {
+                "version": 1, "job_id": job.id,
+                "candidates": [asdict(candidate) for candidate in candidates],
+                "recent_pubmed_cues": evidence_cues,
+                "published_review_gap_cues": review_gap_cues,
+            })
             # Persist completed candidate proposals before slower source checks.
             # A failed later stage must not discard all generated ideas.
             store.update_job(
@@ -330,8 +362,25 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     message=message,
                 )
 
-            completed_audits = {}
+            resumed = []
+            candidate_ids = {c.candidate_id for c in candidates}
+            for key in store.checkpoint_keys(job.id):
+                if not key.startswith(AUDIT_PREFIX):
+                    continue
+                cid = key.removeprefix(AUDIT_PREFIX)
+                if cid not in candidate_ids:
+                    continue
+                snapshot = store.load_step(job.id, key)
+                if snapshot:
+                    resumed.append(restore_audit(ledger, snapshot, project_id, cid))
+            print(json.dumps({"status": "AUDITS_RESTORED", "job_id": job.id, "count": len(resumed)}), flush=True)
+            completed_audits = {item.candidate_id: {
+                "candidate_id": item.candidate_id, "status": item.candidate_status.value,
+                "decision": item.decision, "pending": list(item.pending),
+                "source_statuses": {k: v.value for k, v in item.coverage.source_statuses.items()},
+            } for item in resumed}
             def save_candidate_checkpoint(item):
+                store.save_step(job.id, AUDIT_PREFIX + item.candidate_id, audit_snapshot(ledger, item))
                 completed_audits[item.candidate_id] = {
                     "candidate_id": item.candidate_id,
                     "status": item.candidate_status.value,
@@ -369,6 +418,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 cancellation_check=lambda: store.ensure_active(job.id),
                 evidence_preflight=preflight,
                 candidate_checkpoint=save_candidate_checkpoint,
+                resumed_results=resumed,
             )
             result = orchestrator.run(
                 project_id,
@@ -477,6 +527,8 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 "package": package,
                 "run_summary": {
                     "generated_candidates": len(candidates),
+                    "resumed_completed_audits": len(resumed),
+                    "reused_generation": bool(saved_generation),
                     "unverified_generated_candidates": len(unverified_drafts),
                     "bibliographic_preflight": result.bibliographic_preflight_summary,
                     "adaptive_deep_checks_used": result.adaptive_deep_checks_used,

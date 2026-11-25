@@ -291,7 +291,7 @@ async function loadGapEvents(force = false) {
   if (!supabase || !window.SCIMED_GAP) return;
   if (!force && Date.now() - lastGapLoadedAt < 20000) return;
   lastGapLoadedAt = Date.now();
-  const complete = jobs.filter(job => job.status === 'COMPLETED');
+  const complete = jobs.filter(job => job.status === 'COMPLETED' && openedReports.has(job.id));
   if (!complete.length) {
     window.SCIMED_GAP.setCloudEvents([]);
     return;
@@ -306,7 +306,8 @@ async function loadGapEvents(force = false) {
         if (progress.error) syncErrors.push(progress.error);
       }
     }
-    const ids = complete.map(job => job.id);
+    const ids = complete.filter(job => openedReports.has(job.id)).map(job => job.id);
+    if (!ids.length) return;
     const {data, error} = await supabase
       .from('scimed_gap_verification_events')
       .select('id,job_id,candidate_id,record_key,record_type,title_at_adjudication,source,decision,evidence_url,documented_last_search_date,rationale,created_at')
@@ -327,7 +328,7 @@ async function loadGapEvents(force = false) {
 async function loadSourceRechecks(force = false) {
   if (!supabase || !window.SCIMED_GAP) return;
   if (!force && Date.now() - lastRecheckLoadedAt < 15000) return;
-  const ids = jobs.filter(job => job.status === 'COMPLETED').map(job => job.id);
+  const ids = jobs.filter(job => job.status === 'COMPLETED' && openedReports.has(job.id)).map(job => job.id);
   if (!ids.length) {
     window.SCIMED_GAP.setSourceRechecks([]);
     return;
@@ -416,6 +417,11 @@ async function loadJobs() {
         error_text: saved.error_text, reportLoadedAt: saved.updated_at } : row;
     });
     renderJobs();
+    if (openedReports.size) {
+      // Keep source-recheck statuses current only for explicitly opened reports.
+      await loadSourceRechecks();
+      renderJobs();
+    }
     if (!connecting && els.backend.className.includes('status-error')) {
       backendState('ok', 'Cloud queue connected', 'Job status updated. Open saved reports on demand.');
     }
@@ -1129,7 +1135,7 @@ async function retryJob(jobId) {
     return;
   }
   if (!window.confirm(
-    'Retry this failed job using the same clinical settings? Check your OpenRouter/Groq access first. Previous unfinished data in this job will be replaced.'
+    'Retry this failed job using the same clinical settings? Check your OpenRouter/Groq access first. Saved worker checkpoints are reused where available; the browser report is refreshed.'
   )) return;
   const button = Array.from(els.jobs.querySelectorAll('[data-retry-job]'))
     .find(item => item.dataset.retryJob === jobId);

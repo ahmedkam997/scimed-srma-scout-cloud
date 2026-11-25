@@ -5,7 +5,7 @@ from dataclasses import asdict
 from typing import Any, Callable
 
 from scimed_scout.domain import CandidateStatus, SourceStatus
-from scimed_scout.ranking import CandidateRankingService
+from scimed_scout.ranking import CandidateRankingService, RankingResult
 from scimed_scout.sources.base import SearchRecord, SearchResult, SourceClient
 from scimed_scout.storage import DecisionRecord, SearchLogRecord, SQLiteLedger
 from scimed_scout.verification.coverage import DEFINITIVE, evaluate_coverage
@@ -40,6 +40,7 @@ class ReviewDiscoveryOrchestrator:
         cancellation_check: Callable[[], None] | None = None,
         evidence_preflight: FocusedEvidencePreflight | None = None,
         candidate_checkpoint: Callable[[DiscoveryCandidateResult], None] | None = None,
+        resumed_results: list[DiscoveryCandidateResult] | None = None,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
@@ -49,6 +50,7 @@ class ReviewDiscoveryOrchestrator:
         self.cancellation_check = cancellation_check
         self.evidence_preflight = evidence_preflight
         self.candidate_checkpoint = candidate_checkpoint
+        self.resumed_results = list(resumed_results or [])
 
     def run(
         self,
@@ -86,7 +88,14 @@ class ReviewDiscoveryOrchestrator:
             project_id, top_n=total_budget, return_all=True,
         )
         by_id = {c.candidate_id: c for c in self.ledger.list_candidates(project_id)}
+        # Previously completed candidates are fixed members of this audit;
+        # spend the remaining verification budget on new distinct questions.
+        resumed_ids = {item.candidate_id for item in self.resumed_results}
+        resume_rank = [RankingResult(item.candidate_id, item.ranking_score, ("Restored durable audit",))
+                       for item in self.resumed_results]
+        ranked = resume_rank + [item for item in ranked if item.candidate_id not in resumed_ids]
         diverse, skipped_duplicates = select_diverse_ranked(ranked, by_id, limit=total_budget)
+        diverse = [item for item in diverse if item.candidate_id not in resumed_ids]
         ranking_message = (
             f"Ranked {len(ranked)} candidates using title-signal priority, "
             f"selected up to {len(diverse)} distinct PICOs "
@@ -96,10 +105,15 @@ class ReviewDiscoveryOrchestrator:
         self.ledger.update_checkpoint(project_id, stage="DISCOVERY_RANKING", progress=20, message=ranking_message)
         self._progress(20, "DISCOVERY_RANKING", ranking_message)
 
-        results: list[DiscoveryCandidateResult] = []
-        qualified: list[str] = []
+        results: list[DiscoveryCandidateResult] = list(self.resumed_results)
+        qualified: list[str] = [item.candidate_id for item in results
+                                if item.candidate_status == CandidateStatus.QUALIFIED]
+        for item in results:
+            self.ledger.set_candidate_status(item.candidate_id, item.candidate_status)
         adaptive_skipped = ""
-        for index, ranked_item in enumerate(diverse, 1):
+        for index, ranked_item in enumerate(diverse, len(results) + 1):
+            if index > total_budget or (len(results) >= min_verify and len(qualified) >= final_options):
+                break
             self._check_cancellation()
             if index > max_verify:
                 adaptive_skipped = self._adaptive_skip_reason(results)
@@ -109,7 +123,7 @@ class ReviewDiscoveryOrchestrator:
             if candidate is None:
                 continue
             self.ledger.set_candidate_status(candidate.candidate_id, CandidateStatus.DEEP_VERIFYING)
-            candidate_progress = min(90, 20 + int(65 * index / max(1, len(diverse))))
+            candidate_progress = min(90, 20 + int(65 * index / max(1, len(diverse) + len(self.resumed_results))))
             candidate_message = f"Checking review topic {index}: {candidate.title}"
             self.ledger.update_checkpoint(
                 project_id,

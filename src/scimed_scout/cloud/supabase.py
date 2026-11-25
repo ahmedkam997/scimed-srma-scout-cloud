@@ -192,6 +192,36 @@ class SupabaseJobStore:
                 break
         return output
 
+    def checkpoint_keys(self, job_id: str) -> list[str]:
+        query = urllib.parse.urlencode({"job_id": f"eq.{job_id}", "select": "step_key",
+                                        "order": "updated_at.asc,step_key.asc", "limit": "80"})
+        return [row["step_key"] for row in self._request("GET", f"/rest/v1/scimed_discovery_steps?{query}")]
+
+    def load_step(self, job_id: str, step_key: str) -> dict | None:
+        query = urllib.parse.urlencode({"job_id": f"eq.{job_id}", "step_key": f"eq.{step_key}",
+                                        "select": "payload", "limit": "1"})
+        rows = self._request("GET", f"/rest/v1/scimed_discovery_steps?{query}")
+        return rows[0]["payload"] if rows else None
+
+    def save_step(self, job_id: str, step_key: str, payload: dict) -> None:
+        # Idempotent worker-only upsert, one independent step per row.
+        self.ensure_active(job_id)
+        for attempt in range(3):
+            try:
+                self._request("POST", "/rest/v1/scimed_discovery_steps?on_conflict=job_id,step_key",
+                              {"job_id": job_id, "step_key": step_key, "payload": payload,
+                               "updated_at": _utc_now()},
+                              prefer="resolution=merge-duplicates,return=minimal")
+                return
+            except RuntimeError as exc:
+                if "57014" not in str(exc) or attempt == 2:
+                    raise
+                time.sleep(1 + 2 * attempt)
+
+    def legacy_checkpoint(self, job_id: str) -> dict:
+        rows = self._select({"id": f"eq.{job_id}", "select": "checkpoint:result_json->checkpoint", "limit": "1"})
+        return (rows[0].get("checkpoint") or {}) if rows else {}
+
     def claim_next(self) -> DiscoveryJob | None:
         rows = self._select(
             {
