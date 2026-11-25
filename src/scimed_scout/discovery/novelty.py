@@ -9,6 +9,7 @@ from typing import Any
 from scimed_scout.competitors import OverlapLevel, SemanticCompetitorAssessor
 from scimed_scout.storage import SQLiteLedger
 from .open_access_dates import OpenAccessSearchDateResolver
+from .competitor_records import deduplicate, identity, audit as identity_audit, enrich_missing_abstracts
 
 
 class DiscoveryNoveltyService:
@@ -28,6 +29,8 @@ class DiscoveryNoveltyService:
         batch_size: int = 3,
         search_date_resolver: OpenAccessSearchDateResolver | None = None,
         max_fulltext_reviews: int = 2,
+        enrichment_client=None,
+        max_enrichment_lookups: int = 2,
     ):
         self.ledger = ledger
         self.assessor = assessor
@@ -36,6 +39,8 @@ class DiscoveryNoveltyService:
         self.batch_size = max(1, min(20, int(batch_size)))
         self.search_date_resolver = search_date_resolver
         self.max_fulltext_reviews = max(0, min(4, int(max_fulltext_reviews)))
+        self.enrichment_client = enrichment_client
+        self.max_enrichment_lookups = max(0,min(4,int(max_enrichment_lookups)))
 
     def assess_candidate(
         self, candidate_id: str, *, force: bool = False, allow_ai: bool = True,
@@ -57,6 +62,14 @@ class DiscoveryNoveltyService:
         cached_reviews = sum(_valid_cached(candidate,r) for r in review_records) if allow_ai and not force else 0
         cached_registrations = sum(_valid_cached(candidate,r) for r in registration_records) if allow_ai and not force else 0
 
+        enrichment = []
+        if allow_ai and self.enrichment_client is not None and self.max_enrichment_lookups:
+            enrichment = enrich_missing_abstracts(self.ledger,candidate_id,review_records,
+                self.enrichment_client,limit=self.max_enrichment_lookups)
+            if any(x["status"]=="ABSTRACT_ENRICHED" for x in enrichment):
+                all_reviews=self.ledger.list_external_evidence(candidate_id,"PUBLISHED_REVIEW")
+                review_records=select(candidate,all_reviews,review_cap,force=force)
+                cached_reviews=sum(_valid_cached(candidate,r) for r in review_records) if not force else 0
         resolved_dates = self._resolve_search_dates(candidate_id, review_records)
         if resolved_dates:
             all_reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
@@ -136,6 +149,8 @@ class DiscoveryNoveltyService:
             "discovery_competitor_records_semantically_assessed": len(review_records),
             "discovery_registration_records_discovered": len(all_registrations),
             "discovery_registration_records_semantically_assessed": len(registration_records),
+            "discovery_competitor_identity_audit": identity_audit(all_reviews),
+            "discovery_competitor_enrichment": enrichment,
             "discovery_incremental_competitor_budget": {"version":"INCREMENTAL_V1",
                 "new_review_limit":review_cap,"new_registration_limit":registry_cap,
                 "cached_review_assessments_reused":cached_reviews,
@@ -163,6 +178,8 @@ class DiscoveryNoveltyService:
         self.ledger.upsert_candidate(candidate)
 
         return {
+            "competitor_identity_audit":metadata["discovery_competitor_identity_audit"],
+            "competitor_enrichment":enrichment,
             "incremental_competitor_budget": metadata["discovery_incremental_competitor_budget"],
             "published_reviews_discovered": len(all_reviews),
             "published_reviews_assessed": len(review_assessments),
@@ -480,50 +497,11 @@ def _select_records(candidate, records: list[dict], limit: int) -> list[dict]:
 
 
 def _dedupe_records(records: list[dict]) -> list[dict]:
-    best: dict[str, dict] = {}
-    order: list[str] = []
-
-    for record in records:
-        key = _record_key(record)
-        if key not in best:
-            best[key] = record
-            order.append(key)
-            continue
-        if len(_record_text(record)) > len(_record_text(best[key])):
-            best[key] = record
-
-    return [best[key] for key in order]
+    return deduplicate(records)
 
 
-def _record_key(record: dict) -> str:
-    payload = record.get("payload") or {}
-    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
-    doi = str(
-        payload.get("doi")
-        or metadata.get("doi")
-        or _external_doi(metadata)
-        or ""
-    ).strip().casefold()
-    doi = doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
-    if doi:
-        return "doi:" + doi.rstrip(".")
-
-    title = " ".join(
-        re.sub(r"[^a-z0-9]+", " ", str(record.get("title") or "").casefold()).split()
-    )
-    if title:
-        return "title:" + title
-
-    return (
-        "id:"
-        + str(record.get("source") or "")
-        + ":"
-        + str(record.get("source_record_id") or "")
-    )
-
-
-def _record_identity(record: dict) -> str:
-    return _record_key(record)
+def _record_identity(record: dict):
+    return identity(record)
 
 
 def _record_text(record: dict) -> str:

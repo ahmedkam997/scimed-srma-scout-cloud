@@ -11,6 +11,7 @@ from typing import Any
 from datetime import datetime, timezone
 from dataclasses import asdict
 from .checkpoints import GENERATION, AUDIT_PREFIX, draft_from_saved, audit_snapshot, restore_audit
+from scimed_scout.sources.europe_pmc import EuropePMCSource
 from scimed_scout.diagnostics import exception_diagnostic
 from scimed_scout.run_telemetry import MeteredDiscoveryProvider, aggregate, incident, write_report
 
@@ -387,6 +388,8 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 max_reviews=18,
                 max_registrations=12,
                 batch_size=3,
+                enrichment_client=EuropePMCSource(),
+                max_enrichment_lookups=2,
             )
             scoring = DiscoveryScoringService(provider)
 
