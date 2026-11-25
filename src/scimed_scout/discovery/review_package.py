@@ -91,6 +91,7 @@ def build_discovery_review_package(
             "search_terms": list(candidate.search_terms or []),
             "preflight_bibliographic_evidence": dict((candidate.metadata or {}).get("evidence_preflight") or {}),
             "evidence_first_link": dict((candidate.metadata or {}).get("evidence_first_link") or {}),
+            "adaptive_search_audit": dict((candidate.metadata or {}).get("adaptive_search_audit") or {}),
             "triage": discovery_triage(verification),
             "research_dossier": _build_research_dossier(
                 ledger, candidate, verification,
@@ -190,6 +191,7 @@ def build_discovery_review_package(
             "search_terms": list(candidate.search_terms or []),
             "preflight_bibliographic_evidence": dict(metadata.get("evidence_preflight") or {}),
             "evidence_first_link": dict(metadata.get("evidence_first_link") or {}),
+            "adaptive_search_audit": dict(metadata.get("adaptive_search_audit") or {}),
             "triage": discovery_triage(
                 verified, pico_fit=fit_by_id.get(verified.candidate_id, {}),
             ),
@@ -474,6 +476,7 @@ def _build_research_dossier(
             meta.get("discovery_published_review_update_audit") or []
         ),
         "review_opportunity": dict(meta.get("discovery_review_opportunity") or {}),
+        "adaptive_search_audit": dict(meta.get("adaptive_search_audit") or {}),
         "fulltext_search_date_resolutions": list(
             meta.get("discovery_fulltext_search_date_resolutions") or []
         ),

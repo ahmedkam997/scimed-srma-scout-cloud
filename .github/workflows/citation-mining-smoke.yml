@@ -1,0 +1,40 @@
+name: citation-mining-smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/citation-mining-smoke.yml
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e .
+      - name: Test live Europe PMC citation endpoints using a public seed
+        run: |
+          python - <<'PY'
+          import json
+          from scimed_scout.discovery.adaptive_search import direct_links
+          from scimed_scout.sources.europe_pmc import EuropePMCSource
+          client = EuropePMCSource()
+          result = [direct_links(client,"31733140",d,limit=8) for d in ("references","citations")]
+          summary = {"seed_pmid":"31733140","new_ai_requests":0,"directions":[{"direction":x["direction"],"status":x["status"],"reported_count":x["reported_count"],"sample_count":len(x["links"]),"pmid_count":sum(bool(r["pmid"]) for r in x["links"])} for x in result]}
+          print(json.dumps(summary),flush=True)
+          with open("citation-smoke.json","w") as f:
+              json.dump({"summary":summary,"results":result},f,indent=2)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: citation-mining-live-check
+          path: citation-smoke.json
+          retention-days: 7

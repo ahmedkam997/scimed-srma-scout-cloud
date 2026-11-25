@@ -63,3 +63,14 @@ def test_unavailable_endpoint_not_treated_as_zero():
         def get_json(self,*args):raise TimeoutError()
     r=direct_links(Broken(),"123","references")
     assert r["status"]=="ACCESS_UNRESOLVED" and r["reported_count"] is None
+
+
+def test_new_abbreviation_requires_two_distinct_source_records():
+    c=CandidateRecord("C","P","Colchicine in CAD","Cardiology",
+        population="Coronary artery disease",intervention_exposure_index_test="Colchicine")
+    rows=[row(str(x),"Colchicine in coronary artery disease (CAD)") for x in (1,2)]
+    assert harvest(c,[rows[0],rows[0]])["abbreviations"]==[]
+    q,reason,audit=refinement(c,rows,{"pico_design_family_leads":0})
+    assert reason=="OBSERVED_ABBREVIATION_EXPANSION"
+    assert 'TITLE_ABS:"CAD"' in q and 'TITLE_ABS:"colchicine"' in q
+    assert audit["abbreviations"][0]["support_pmids"]==["1","2"]

@@ -529,6 +529,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     "pico_screening_status_counts": verified.evidence.pico_audit.get("status_counts", {}),
                     "scorecard": scorecard,
                     "review_opportunity": ((checked.metadata or {}).get("discovery_review_opportunity") or {}) if checked else {},
+                    "adaptive_search_audit": ((checked.metadata or {}).get("adaptive_search_audit") or {}) if checked else {},
                     "competitor_audit": ({
                         "published_reviews_discovered": (checked.metadata or {}).get(
                             "discovery_competitor_records_discovered", 0
