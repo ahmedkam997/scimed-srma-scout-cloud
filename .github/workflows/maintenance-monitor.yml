@@ -1,0 +1,38 @@
+name: maintenance-monitor
+on:
+  workflow_run:
+    workflows: [tests, discovery-worker, evidence-first-smoke, comparative-validation]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/maintenance-monitor.yml
+permissions:
+  contents: read
+  actions: read
+  issues: write
+concurrency:
+  group: scimed-maintenance-notes
+  cancel-in-progress: false
+jobs:
+  notes:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.event != 'pull_request_target')
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Publish bounded maintenance notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OBSERVED_RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          if [[ "$OBSERVED_RUN" =~ ^[0-9]+$ ]]; then
+            python src/scimed_scout/maintenance_notes.py --run-id "$OBSERVED_RUN"
+          else
+            python src/scimed_scout/maintenance_notes.py
+          fi
