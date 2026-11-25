@@ -52,6 +52,7 @@ class ReviewDiscoveryOrchestrator:
         adaptive_search: bool = False,
         adaptive_retrieval: bool = False,
         adaptive_recovery_only: bool = False,
+        strict_rct_minimum: int = 0,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
@@ -67,6 +68,7 @@ class ReviewDiscoveryOrchestrator:
         self.adaptive_search = adaptive_search
         self.adaptive_retrieval = adaptive_retrieval
         self.adaptive_recovery_only = adaptive_recovery_only
+        self.strict_rct_minimum = max(0,int(strict_rct_minimum))
 
     def run(
         self,
@@ -283,6 +285,15 @@ class ReviewDiscoveryOrchestrator:
         pending = list(coverage.blockers)
         if self.require_pico_signals and evidence.conservative_family_lead_count >= MIN_DISCOVERY_STUDIES and pico_audit["pico_design_family_leads"] < MIN_DISCOVERY_STUDIES:
             pending.append("TYPE-A: insufficient source-linked PICO/design cues for the minimum family-lead count; unresolved records need title/abstract and full-text assessment")
+        strict_ready=True
+        if self.strict_rct_minimum:
+            from .rct_first import strict_candidate_audit
+            strict_audit=strict_candidate_audit(candidate,primary_records)
+            strict_ready=min(strict_audit.get('family_leads',0),pico_audit['pico_design_family_leads'])>=self.strict_rct_minimum
+            candidate.metadata={**(candidate.metadata or {}),'rct_first_final_audit':strict_audit}
+            self.ledger.upsert_candidate(candidate)
+            if not strict_ready:
+                pending.append(f'TYPE-A: fewer than {self.strict_rct_minimum} comparison-linked RCT family cues in bounded retrieval; not an eligibility exclusion')
         scoring_records = pico_records if self.require_pico_signals else primary_records
         reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
         registrations = self.ledger.list_external_evidence(candidate_id, "REGISTRATION")
@@ -292,7 +303,7 @@ class ReviewDiscoveryOrchestrator:
         if self.novelty_service is not None:
             try:
                 novelty = self.novelty_service.assess_candidate(
-                    candidate_id, allow_ai=coverage.complete,
+                    candidate_id, allow_ai=coverage.complete and strict_ready,
                     **({"recovery": True} if recover_only else {}),
                 )
             except Exception as exc:
@@ -346,7 +357,7 @@ class ReviewDiscoveryOrchestrator:
         # Keep AI calls deferred for incomplete mandatory registry/pipeline
         # searches, when the source-based context is insufficient.
         scoring_preliminary = bool(pending)
-        if self.scoring_service is not None and coverage.complete:
+        if self.scoring_service is not None and coverage.complete and strict_ready:
             try:
                 gate_inputs = self.scoring_service.score(
                     candidate,
@@ -400,7 +411,10 @@ class ReviewDiscoveryOrchestrator:
         decision = "PENDING — DISCOVERY VERIFICATION INCOMPLETE"
         final_gate_result = None
 
-        if (coverage.complete and evidence.unique_primary_study_candidates >= MIN_DISCOVERY_STUDIES
+        if self.strict_rct_minimum and not strict_ready:
+            status=CandidateStatus.PROVISIONAL_BACKUP
+            decision='PROVISIONAL — RCT COMPARISON FAMILY SIGNAL INSUFFICIENT'
+        elif (coverage.complete and evidence.unique_primary_study_candidates >= MIN_DISCOVERY_STUDIES
                 and evidence.conservative_family_lead_count < MIN_DISCOVERY_STUDIES):
             pending.append('TYPE-A: registry-linked report families reduce apparent study availability; comparison-level and population independence must be adjudicated manually')
             status = CandidateStatus.PROVISIONAL_BACKUP

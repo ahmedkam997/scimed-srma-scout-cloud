@@ -10,6 +10,8 @@ on:
       - '.github/workflows/discovery-worker.yml'
       - 'src/scimed_scout/cloud/supabase.py'
       - 'src/scimed_scout/cloud/worker.py'
+      - 'src/scimed_scout/cloud/rct_worker.py'
+      - 'src/scimed_scout/discovery/rct_first.py'
   schedule:
     - cron: '3-58/5 * * * *'
   workflow_dispatch:
@@ -42,6 +44,7 @@ jobs:
       SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
       OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }} # Optional free account key, server-side only
       PROSPERO_NETWORK_MODE: online
+      SCIMED_RCT_FIRST: '1'
 
     steps:
       - name: Check worker configuration

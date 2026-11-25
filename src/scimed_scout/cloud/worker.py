@@ -132,6 +132,11 @@ def _within_specialty(candidate, specialty: str) -> bool:
     return scope in declared or declared in scope and bool(declared)
 
 def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
+    if os.getenv('SCIMED_RCT_FIRST','0')=='1':
+        from .rct_worker import process_rct_job,SEED
+        from scimed_scout.discovery.rct_first import should_route
+        if store.load_step(job.id,SEED) or (should_route(job.specialty,job.question_type) and not store.load_step(job.id,GENERATION)):
+            return process_rct_job(job,store)
     store.ensure_active(job.id)
     history_rows = store.recent_completed_jobs(
         client_token_hash=job.client_token_hash,

@@ -1,0 +1,33 @@
+name: rct-first
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/scimed_scout/discovery/rct_first.py'
+      - 'src/scimed_scout/cloud/rct_worker.py'
+      - '.github/workflows/rct-first.yml'
+permissions:
+  contents: read
+jobs:
+  seed-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[dev]'
+      - run: pytest -q tests/test_rct_first.py
+      - run: python -m scimed_scout.discovery.rct_first --specialty Cardiology --rotation 0 --output rct-first-cardiology.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rct-first-cardiology
+          path: rct-first-cardiology.json
