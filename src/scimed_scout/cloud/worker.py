@@ -10,6 +10,7 @@ from typing import Any
 from datetime import datetime, timezone
 from dataclasses import asdict
 from .checkpoints import GENERATION, AUDIT_PREFIX, draft_from_saved, audit_snapshot, restore_audit
+from scimed_scout.diagnostics import exception_diagnostic
 
 from scimed_scout.ai import CandidateDiscoveryService, FreeProviderFallback
 from scimed_scout.competitors import SemanticCompetitorAssessor
@@ -669,7 +670,7 @@ def run_once(store: SupabaseJobStore | None = None) -> int:
         except JobCancelled:
             print(json.dumps({"status": "CANCELLED", "job_id": job.id}))
             return 0
-        print(json.dumps({"status": "FAILED", "job_id": job.id, "error": str(exc)}))
+        print(json.dumps({"status": "FAILED", "job_id": job.id, "diagnostic": exception_diagnostic(exc)}))
         return 1
 
 

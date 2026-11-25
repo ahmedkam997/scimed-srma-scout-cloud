@@ -53,3 +53,25 @@ def test_failed_generation_not_a_zero_quality_verdict():
     assert audit["status"]=="GENERATION_FAILED"
     assert audit["logical_ai_requests"]==1
     assert audit["requested"]==TARGET
+
+
+def test_fixed_probe_failover_before_comparison_only():
+    from scimed_scout.discovery.comparative_validation import probe_fixed_provider
+    from scimed_scout.ai.providers import FreeProviderFallback, ProviderFailure
+    class Stub:
+        api_key="test"
+        def __init__(self,name,fail):
+            self.name=name
+            self.model=name+"-fixed"
+            self.fail=fail
+            self.calls=0
+        def complete(self,request):
+            self.calls+=1
+            if self.fail:
+                raise ProviderFailure(self.name,503,"unavailable")
+            return AIResponse('{"ready":true}',self.name,self.model)
+    a,b=Stub("first",True),Stub("second",False)
+    selected,probes=probe_fixed_provider(FreeProviderFallback(a,b))
+    assert selected is b
+    assert [p["status"] for p in probes]==["UNAVAILABLE","HEALTHY"]
+    assert a.calls==b.calls==1

@@ -18,6 +18,7 @@ from pathlib import Path
 from scimed_scout.ai.discovery import SYSTEM_PROMPT, build_discovery_prompt, parse_candidate_proposals, _recover_complete_candidate_proposals
 from scimed_scout.ai.models import AIRequest
 from scimed_scout.ai.providers import FreeProviderFallback
+from scimed_scout.diagnostics import classify_failure, comparison_diagnostic
 from scimed_scout.cloud.worker import _within_specialty
 from scimed_scout.competitors import SemanticCompetitorAssessor
 from scimed_scout.domain import SourceStatus
@@ -45,8 +46,8 @@ DEEP_AI_BUDGET = 8
 ARMS = ("A_title_seed_baseline", "B_evidence_first")
 
 
-def choose_fixed_provider(config):
-    """No model routing or failover in the experiment."""
+def fixed_providers(config):
+    """Yield fixed configured free routes; never use dynamic model routing."""
     queue = [config]
     while queue:
         item = queue.pop(0)
@@ -56,8 +57,33 @@ def choose_fixed_provider(config):
             queue[0:0] = [item.primary, item.backup]
             continue
         if getattr(item, "model", "") != "openrouter/free" and getattr(item, "api_key", ""):
-            return item
-    raise RuntimeError("No fixed free model configured; dynamic routing cannot hold model constant")
+            yield item
+
+
+def choose_fixed_provider(config):
+    return next(fixed_providers(config), None)
+
+
+def probe_fixed_provider(config):
+    """Select a healthy route BEFORE both arms; never switch mid-experiment."""
+    probes = []
+    for item in list(fixed_providers(config))[:3]:
+        meter = MeteredProvider(item, 1)
+        try:
+            response = meter.complete(AIRequest(system='Return only JSON.',
+                prompt='Return {"ready":true}', temperature=0.0, max_tokens=512))
+            payload = json.loads(response.text)
+            if not isinstance(payload, dict) or payload.get("ready") is not True:
+                raise ValueError("unexpected probe response")
+            probes.append({"provider":item.name,"model":response.model,"status":"HEALTHY",
+                           "calls":meter.calls})
+            return item, probes
+        except Exception as exc:
+            code=getattr(exc,"status_code",None)
+            probes.append({"provider":item.name,"model":item.model,"status":"UNAVAILABLE",
+                           "http_status":code,"error_type":type(exc).__name__,
+                           "diagnosis":classify_failure(code),"calls":meter.calls})
+    return None, probes
 
 
 class MeteredProvider:
@@ -253,6 +279,7 @@ def main():
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--rotation",type=int,default=0)
     parser.add_argument("--deep",action="store_true")
+    parser.add_argument("--seed-report",type=Path)
     args=parser.parse_args()
     start=time.monotonic()
     order=list(ARMS)
@@ -269,7 +296,10 @@ def main():
                 "Model token usage is provider-reported; logical requests exclude internal bounded HTTP retries."]}
     _write(args.output,report)
     try:
-        provider=choose_fixed_provider(FreeProviderFallback.from_env())
+        provider, probes=probe_fixed_provider(FreeProviderFallback.from_env())
+        report["provider_probes"]=probes
+        if provider is None:
+            raise RuntimeError("No healthy fixed free model")
     except Exception as exc:
         report.update(status="FIXED_MODEL_UNAVAILABLE",error_type=type(exc).__name__)
         _write(args.output,report)
@@ -277,14 +307,35 @@ def main():
         return 1
     report["configured_provider"]=provider.name
     report["configured_model"]=provider.model
-    seed=[]
-    gaps=[]
-    for i in (args.rotation,args.rotation+3,args.rotation+6):
-        seed.extend(recent_pubmed_cues("Cardiology","ALL",max_records=6,rotation_index=i))
-        gaps.extend(recent_review_gap_cues("Cardiology","ALL",max_records=2,rotation_index=i))
-    seed=list({str(x.get("pmid") or x.get("title")):x for x in seed}.values())
-    gaps=list({str(x.get("pmid") or x.get("title")):x for x in gaps}.values())
-    evidence=collect_evidence_map("Cardiology","ALL",rotation_index=args.rotation)
+    prior = None
+    if args.seed_report and args.seed_report.is_file():
+        try:
+            if args.seed_report.stat().st_size > 2_000_000:
+                raise ValueError("Oversized seed report")
+            old=json.loads(args.seed_report.read_text(encoding="utf-8"))
+            frozen=old["frozen_seed"]
+            if old["version"]!=VERSION or old["rotation"]!=args.rotation or not isinstance(frozen["pubmed_cues"],list) or not isinstance(frozen["review_gap_cues"],list) or not isinstance(frozen["evidence_map"],dict):
+                raise ValueError("Seed report scope mismatch")
+            if frozen["evidence_map"].get("specialty")!="Cardiology" or frozen["evidence_map"].get("question_type")!="ALL":
+                raise ValueError("Seed report question scope mismatch")
+            prior=frozen
+        except (ValueError,KeyError,TypeError,OSError):
+            report["seed_reuse_warning"]="Invalid prior seed snapshot; collect fresh bounded sample"
+    if prior:
+        seed=prior["pubmed_cues"]
+        gaps=prior["review_gap_cues"]
+        evidence=prior["evidence_map"]
+        report["seed_origin"]="REUSED_FROZEN_SNAPSHOT"
+    else:
+        seed=[]
+        gaps=[]
+        for i in (args.rotation,args.rotation+3,args.rotation+6):
+            seed.extend(recent_pubmed_cues("Cardiology","ALL",max_records=6,rotation_index=i))
+            gaps.extend(recent_review_gap_cues("Cardiology","ALL",max_records=2,rotation_index=i))
+        seed=list({str(x.get("pmid") or x.get("title")):x for x in seed}.values())
+        gaps=list({str(x.get("pmid") or x.get("title")):x for x in gaps}.values())
+        evidence=collect_evidence_map("Cardiology","ALL",rotation_index=args.rotation)
+        report["seed_origin"]="FRESH_BOUNDED_SAMPLE"
     common=(cue_prompt(seed)+"\n"+review_gap_prompt(gaps)).strip()
     report["frozen_seed"]={"pubmed_cues":seed,"review_gap_cues":gaps,"evidence_map":evidence}
     report["status"]="SEEDS_SAVED"
@@ -336,6 +387,7 @@ def main():
             for arm in ARMS:
                 report["arms"][arm]["deep_audit"]={"status":"NOT_RUN_INCOMPARABLE_PILOT","qualified":None}
     report["status"]="PILOT_FINISHED" if comparable else "PILOT_INCONCLUSIVE"
+    report["diagnostics"]=comparison_diagnostic(report)
     report["seconds"]=round(time.monotonic()-start,3)
     _write(args.output,report)
     print(json.dumps({"status":report["status"],"comparable":comparable,

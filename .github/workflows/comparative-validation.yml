@@ -7,6 +7,7 @@ on:
       - .github/workflows/comparative-validation.yml
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: scimed-comparative-validation
   cancel-in-progress: false
@@ -33,10 +34,23 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -e '.[dev]'
       - run: pytest -q tests/test_comparative_validation.py
-      - run: python -m scimed_scout.discovery.comparative_validation --output comparison-report.json --deep
+      - name: Reuse exact previous frozen evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download 45622888183 -n paired-discovery-pilot -D previous-pilot --repo "$GITHUB_REPOSITORY"
+        continue-on-error: true
+      - run: python -m scimed_scout.discovery.comparative_validation --output comparison-report.json --deep --seed-report previous-pilot/comparison-report.json
+      - name: Generate incident diagnostics
+        if: always()
+        run: |
+          if [ -f comparison-report.json ]; then
+            python -m scimed_scout.diagnostics --comparison comparison-report.json --output diagnostics-report.json
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: paired-discovery-pilot
-          path: comparison-report.json
+          path: |
+            comparison-report.json
+            diagnostics-report.json
           retention-days: 7
