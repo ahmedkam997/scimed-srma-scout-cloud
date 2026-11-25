@@ -1,0 +1,40 @@
+name: focused-comparison-replay
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/focused-comparison-replay.yml
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: scimed-focused-comparison-replay
+  cancel-in-progress: false
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[dev]'
+      - run: pytest -q tests/test_focused_replay.py tests/test_comparative_validation.py
+      - name: Retrieve frozen third comparison
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download 45624521509 -n paired-discovery-pilot -D original --repo "$GITHUB_REPOSITORY"
+      - run: python -m scimed_scout.discovery.focused_replay --prior original/comparison-report.json --output focused-replay.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: focused-comparison-replay
+          path: focused-replay.json
+          retention-days: 14

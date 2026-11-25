@@ -166,7 +166,7 @@ def _record(item):
             "payload":{"year":item.year,"doi":item.doi,"url":item.url,"metadata":item.metadata}}
 
 
-def audit_candidate(candidate, clients, cache, evidence_map):
+def audit_candidate(candidate, clients, cache, evidence_map, *, focused=False):
     """Same query planner and cap for both arms; no seed records injected."""
     started=time.monotonic()
     plan=build_search_plan(candidate,max_queries=1)
@@ -175,7 +175,12 @@ def audit_candidate(candidate, clients, cache, evidence_map):
     logs=[]
     for purpose, queries in (("PRIMARY",plan.primary_queries),("REVIEW",plan.review_queries)):
         for client in clients:
-            for query in queries:
+            selected=queries
+            if focused:
+                from .focused_queries import focused_query
+                query=focused_query(candidate,client.name,purpose)
+                selected=(query,) if query else ()
+            for query in selected:
                 key=(client.name,query,LIMIT)
                 cached=key in cache
                 if not cached:
@@ -199,8 +204,10 @@ def audit_candidate(candidate, clients, cache, evidence_map):
     # The anchor-link endpoint is intentionally secondary: it favors the
     # treatment by construction. Primary endpoint uses fresh common queries.
     link=link_candidate(candidate,evidence_map)
-    source_complete=(len(logs)==4 and all(x["status"] in ("SEARCHED_POSITIVE","SEARCHED_NEGATIVE")
-                            for x in logs))
+    source_complete=(len(logs)==4 and all(
+        (x["status"]=="SEARCHED_POSITIVE" and x["retrieved"]>0)
+        or (x["status"]=="SEARCHED_NEGATIVE" and x["total_count"]==0)
+        for x in logs))
     return {"candidate":asdict(candidate),"cluster_link":link,"search_logs":logs,
             "sample_source_access_complete":source_complete,
             "pico_design_report_leads":pico["pico_design_report_leads"],
