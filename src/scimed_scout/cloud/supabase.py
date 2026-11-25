@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import json
+import base64
+import gzip
+import hashlib
+import io
 import os
 import time
 import urllib.error
@@ -194,18 +198,50 @@ class SupabaseJobStore:
 
     def checkpoint_keys(self, job_id: str) -> list[str]:
         query = urllib.parse.urlencode({"job_id": f"eq.{job_id}", "select": "step_key",
+                                        "step_key": "not.like.chunk:v2:*",
                                         "order": "updated_at.asc,step_key.asc", "limit": "80"})
         return [row["step_key"] for row in self._request("GET", f"/rest/v1/scimed_discovery_steps?{query}")]
 
-    def load_step(self, job_id: str, step_key: str) -> dict | None:
+    def _read_step(self, job_id: str, step_key: str) -> dict | None:
         query = urllib.parse.urlencode({"job_id": f"eq.{job_id}", "step_key": f"eq.{step_key}",
                                         "select": "payload", "limit": "1"})
         rows = self._request("GET", f"/rest/v1/scimed_discovery_steps?{query}")
         return rows[0]["payload"] if rows else None
 
-    def save_step(self, job_id: str, step_key: str, payload: dict) -> None:
-        # Idempotent worker-only upsert, one independent step per row.
-        self.ensure_active(job_id)
+    def load_step(self, job_id: str, step_key: str) -> dict | None:
+        payload = self._read_step(job_id, step_key)
+        if payload is None or payload.get("checkpoint_codec") != "gzip-base64-v2":
+            return payload  # compatible with all existing v1 JSON reports
+        count = payload.get("chunks")
+        digest = payload.get("sha256")
+        size = payload.get("raw_bytes")
+        if (not isinstance(count, int) or not 1 <= count <= 512
+                or not isinstance(size, int) or not 0 < size <= 32 * 1024 * 1024
+                or not isinstance(digest, str) or len(digest) != 64
+                or any(c not in "0123456789abcdef" for c in digest)):
+            raise ValueError("Invalid checkpoint manifest")
+        prefix = self._chunk_prefix(step_key, digest)
+        parts = []
+        for index in range(count):
+            row = self._read_step(job_id, f"{prefix}:{index:04d}")
+            if not row or not isinstance(row.get("data"), str) or len(row["data"]) > 96000:
+                raise ValueError("Checkpoint chunk missing or invalid")
+            parts.append(row["data"])
+        packed = base64.b64decode("".join(parts), validate=True)
+        with gzip.GzipFile(fileobj=io.BytesIO(packed)) as stream:
+            raw = stream.read(size + 1)
+        if len(raw) != size or hashlib.sha256(raw).hexdigest() != digest:
+            raise ValueError("Checkpoint integrity verification failed")
+        decoded = json.loads(raw)
+        if not isinstance(decoded, dict):
+            raise ValueError("Invalid checkpoint payload")
+        return decoded
+
+    @staticmethod
+    def _chunk_prefix(step_key: str, digest: str) -> str:
+        return "chunk:v2:" + hashlib.sha256(step_key.encode()).hexdigest()[:24] + ":" + digest
+
+    def _write_step(self, job_id: str, step_key: str, payload: dict) -> None:
         for attempt in range(3):
             try:
                 self._request("POST", "/rest/v1/scimed_discovery_steps?on_conflict=job_id,step_key",
@@ -217,6 +253,29 @@ class SupabaseJobStore:
                 if "57014" not in str(exc) or attempt == 2:
                     raise
                 time.sleep(1 + 2 * attempt)
+
+    def save_step(self, job_id: str, step_key: str, payload: dict) -> None:
+        # Small generation snapshots retain their original JSON representation.
+        # Large audit payloads are losslessly compressed and stored in bounded,
+        # content-addressed pieces. Publish the manifest LAST, so a failed
+        # write never replaces the previous complete checkpoint.
+        self.ensure_active(job_id)
+        raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+        if len(raw) <= 64000:
+            self._write_step(job_id, step_key, payload)
+            return
+        if len(raw) > 32 * 1024 * 1024:
+            raise ValueError("Checkpoint exceeds safe uncompressed size")
+        digest = hashlib.sha256(raw).hexdigest()
+        encoded = base64.b64encode(gzip.compress(raw, compresslevel=6, mtime=0)).decode("ascii")
+        parts = [encoded[i:i + 96000] for i in range(0, len(encoded), 96000)]
+        if len(parts) > 512:
+            raise ValueError("Checkpoint exceeds safe chunk count")
+        prefix = self._chunk_prefix(step_key, digest)
+        for index, part in enumerate(parts):
+            self._write_step(job_id, f"{prefix}:{index:04d}", {"data": part})
+        self._write_step(job_id, step_key, {"checkpoint_codec": "gzip-base64-v2",
+                         "chunks": len(parts), "sha256": digest, "raw_bytes": len(raw)})
 
     def legacy_checkpoint(self, job_id: str) -> dict:
         rows = self._select({"id": f"eq.{job_id}", "select": "checkpoint:result_json->checkpoint", "limit": "1"})

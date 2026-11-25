@@ -173,3 +173,47 @@ def test_cardio_scope_guard_excludes_pulmonary_only_questions():
     assert _within_specialty(candidate, "ALL")
     candidate.outcomes = ["Cardiovascular mortality"]
     assert _within_specialty(candidate, "Cardiology")
+
+
+def test_large_checkpoint_roundtrip_and_atomic_manifest(monkeypatch):
+    import random
+    from scimed_scout.cloud.supabase import SupabaseJobStore
+    store = SupabaseJobStore("https://example.supabase.co", "anon", "worker")
+    rows = {}
+    writes = []
+    monkeypatch.setattr(store, "ensure_active", lambda _: None)
+    monkeypatch.setattr(store, "_read_step", lambda job, key: rows.get(key))
+    def write(job, key, payload):
+        writes.append(key)
+        rows[key] = payload
+    monkeypatch.setattr(store, "_write_step", write)
+    rng = random.Random(42)
+    original = {"evidence": rng.randbytes(240000).hex()}
+    store.save_step("J1", "audit:v1:C1", original)
+    manifest = rows["audit:v1:C1"]
+    assert manifest["checkpoint_codec"] == "gzip-base64-v2"
+    assert manifest["chunks"] > 1
+    assert writes[-1] == "audit:v1:C1"
+    assert all(len(row["data"]) <= 96000 for key, row in rows.items() if key.startswith("chunk:v2:"))
+    assert store.load_step("J1", "audit:v1:C1") == original
+    # An interrupted new version must not replace the old committed manifest.
+    def fail(job, key, payload):
+        if key == "audit:v1:C1":
+            raise RuntimeError("57014")
+        rows[key] = payload
+    monkeypatch.setattr(store, "_write_step", fail)
+    import pytest
+    with pytest.raises(RuntimeError, match="57014"):
+        store.save_step("J1", "audit:v1:C1", {"evidence": original["evidence"] + "updated"})
+    assert store.load_step("J1", "audit:v1:C1") == original
+    rows.pop(next(key for key in writes if key.startswith("chunk:v2:")))
+    with pytest.raises(ValueError, match="chunk missing"):
+        store.load_step("J1", "audit:v1:C1")
+
+
+def test_legacy_checkpoint_still_readable(monkeypatch):
+    from scimed_scout.cloud.supabase import SupabaseJobStore
+    store = SupabaseJobStore("https://example.supabase.co", "anon", "worker")
+    old = {"version": 1, "evidence": [{"id": "123"}]}
+    monkeypatch.setattr(store, "_read_step", lambda job, key: old)
+    assert store.load_step("J1", "audit:v1:C1") == old
