@@ -86,7 +86,7 @@ class SemanticScholarSource:
                         metadata=row,
                     )
                 )
-            return SearchResult(self.name, query, SourceStatus.SEARCHED_POSITIVE, records, total)
+            return SearchResult(self.name, query, SourceStatus.SEARCHED_POSITIVE if records and all(r.title.strip() for r in records) and len(records)<=total else SourceStatus.PARTIAL, records, total)
         except Exception as exc:
             if "429" in str(exc):
                 self._rate_limited = True

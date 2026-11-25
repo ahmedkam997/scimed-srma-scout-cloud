@@ -22,7 +22,7 @@ def review(pmcid="PMC1234567", year=2025):
 
 
 XML = b"""<?xml version="1.0"?>
-<article><front><article-meta><title-group><article-title>A review</article-title></title-group></article-meta></front>
+<article><front><article-meta><article-id pub-id-type="pmid">12345678</article-id><article-id pub-id-type="pmc">1234567</article-id><title-group><article-title>A review</article-title></title-group></article-meta></front>
 <body><sec><title>Methods and search strategy</title><p>We searched
 MEDLINE, Embase and CENTRAL from inception through November 2022.
 Two reviewers screened the records.</p></sec></body></article>"""

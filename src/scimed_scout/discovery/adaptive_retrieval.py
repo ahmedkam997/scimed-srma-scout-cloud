@@ -12,7 +12,7 @@ from scimed_scout.discovery.query_optimizer import optimized_queries
 from scimed_scout.discovery.pico_matching import assess_pico
 from scimed_scout.discovery.evidence_classification import classify_review_search_hit,review_intervention_citation_signal
 
-VERSION="ADAPTIVE_RETRIEVAL_V2"
+VERSION="ADAPTIVE_RETRIEVAL_V3"
 MAX_UNIQUE=50
 # Design cues prioritize a second exploratory search only; no exclusion.
 RCT_CUE='(randomized controlled trial[pt] OR controlled clinical trial[pt] OR randomized[tiab] OR randomised[tiab] OR placebo[tiab] OR randomly[tiab] OR trial[tiab])'
@@ -61,7 +61,10 @@ def collect(candidate,purpose,legacy,baseline,client,*,initial_limit=12,base_acc
             "status":"NOT_NEEDED"}
     if not base_access:
         report["status"]="DEFERRED_BASE_SOURCE_UNRESOLVED";return report,[]
-    if initial>=target:return report,[]
+    # Review counts alone do not demonstrate useful competitor coverage.
+    # One bounded relevance search complements the date-ranked base even
+    # when numerous generic review cues were retrieved.
+    if initial>=target and purpose=="PRIMARY":return report,[]
     query=adaptive_query(candidate,purpose,legacy)
     if not query:
         report["status"]="NO_SAFE_QUERY";return report,[]
@@ -75,8 +78,8 @@ def collect(candidate,purpose,legacy,baseline,client,*,initial_limit=12,base_acc
     previous_total=None
     previous_ids=[]
     previous_query=None
-    for depth in DEPTHS:
-        if depth<=initial_limit:continue
+    for depth in ((25,) if purpose=="REVIEW" else DEPTHS):
+        if depth<=initial_limit and purpose=="PRIMARY":continue
         if cancellation_check:cancellation_check()
         report["source_calls"]+=1
         # For a very broad first sample with insufficient PICO/design cues,
@@ -108,7 +111,7 @@ def collect(candidate,purpose,legacy,baseline,client,*,initial_limit=12,base_acc
         previous_total=r.total_count
         previous_query=active_query
         previous_ids=current_ids
-        if cues>=target:
+        if purpose=="PRIMARY" and cues>=target:
             report["status"]="TARGET_CUES_REACHED";break
         if r.total_count is None or r.total_count<=requested:
             report["status"]="SCOPED_QUERY_EXHAUSTED";break

@@ -463,6 +463,8 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 require_pico_signals=True,
                 optimize_literature_queries=True,
                 adaptive_search=True,
+                adaptive_retrieval=True,
+                adaptive_recovery_only=True,
             )
             result = orchestrator.run(
                 project_id,

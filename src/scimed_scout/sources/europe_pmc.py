@@ -33,7 +33,7 @@ class EuropePMCSource:
                     year=int(row["pubYear"]) if str(row.get("pubYear", "")).isdigit() else None,
                     doi=str(row.get("doi") or ""), metadata=row,
                 ))
-            status = SourceStatus.SEARCHED_POSITIVE if records or total > 0 else SourceStatus.PARTIAL
+            status = SourceStatus.SEARCHED_POSITIVE if records and all(r.title.strip() for r in records) and len(records)<=total else SourceStatus.PARTIAL
             return SearchResult(self.name, query, status, records, total)
         except Exception as exc:
             return SearchResult(self.name, query, SourceStatus.ACCESS_FAILED, message=str(exc))

@@ -51,6 +51,7 @@ class ReviewDiscoveryOrchestrator:
         optimize_literature_queries: bool = False,
         adaptive_search: bool = False,
         adaptive_retrieval: bool = False,
+        adaptive_recovery_only: bool = False,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
@@ -65,6 +66,7 @@ class ReviewDiscoveryOrchestrator:
         self.optimize_literature_queries = optimize_literature_queries
         self.adaptive_search = adaptive_search
         self.adaptive_retrieval = adaptive_retrieval
+        self.adaptive_recovery_only = adaptive_recovery_only
 
     def run(
         self,
@@ -258,7 +260,9 @@ class ReviewDiscoveryOrchestrator:
             self._search_sources(candidate, policy.pipeline_sources, plan.pipeline_queries, evidence_type="ONGOING_STUDY", purpose="future evidence pipeline", limit_per_query=limit_per_query, recover_only=recover_only)
 
         self._check_cancellation()
-        if self.adaptive_retrieval and not (candidate.metadata or {}).get("adaptive_retrieval_audit"):
+        # Use additional retrieval only in the existing bounded recovery
+        # pass for production; test/explicit callers can opt in directly.
+        if self.adaptive_retrieval and (recover_only or not self.adaptive_recovery_only) and not (candidate.metadata or {}).get("adaptive_retrieval_audit"):
             self._adaptive_pubmed_retrieval(candidate,plan,limit_per_query)
             candidate=self.ledger.get_candidate(candidate_id) or candidate
         if self.adaptive_search and not (candidate.metadata or {}).get("adaptive_search_audit"):
@@ -571,7 +575,7 @@ class ReviewDiscoveryOrchestrator:
                                 classification = kind + ":" + signal
                                 if signal == (
                                     "NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK"
-                                ):
+                                ) and record.source not in ("PubMed","Europe PMC"):
                                     # A broad bibliographic search can yield
                                     # systematic reviews on green tea, carotenoids
                                     # or oncology when investigating ketone esters.
@@ -592,7 +596,7 @@ class ReviewDiscoveryOrchestrator:
                             if _obvious_review(record):
                                 signal=review_intervention_citation_signal(candidate,record)
                                 self._store_record(candidate.candidate_id,
-                                    "PUBLISHED_REVIEW" if signal!="NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK" else "OTHER",
+                                    "PUBLISHED_REVIEW" if signal!="NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK" or record.source in ("PubMed","Europe PMC") else "OTHER",
                                     record,query,purpose,classification="CONFIRMED_REVIEW_CUE:"+signal,
                                     originally_requested=evidence_type)
                                 continue
@@ -619,7 +623,7 @@ class ReviewDiscoveryOrchestrator:
         logs=[l for l in self.ledger.list_search_log(candidate.candidate_id) if l.source=="PubMed"]
         # Separate supplemental audit; never overwrite the mandatory search
         # log or use this bounded retrieval to clear source failures.
-        access=bool(logs) and all(l.status in DEFINITIVE for l in logs)
+        access=any(l.status in DEFINITIVE for l in logs) and not any(l.status==SourceStatus.ACCESS_FAILED or "429" in (l.message or "") for l in logs)
         audits=[]
         for purpose,legacy,kind in (("PRIMARY",plan.primary_queries,"PRIMARY_STUDY"),("REVIEW",plan.review_queries,"PUBLISHED_REVIEW")):
             self._check_cancellation()
@@ -632,10 +636,10 @@ class ReviewDiscoveryOrchestrator:
                 citation=classify_review_search_hit(record)
                 if purpose=="REVIEW":
                     signal=review_intervention_citation_signal(candidate,record)
-                    record_type="PUBLISHED_REVIEW" if citation=="CONFIRMED_REVIEW_CUE" and signal!="NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK" else "OTHER"
+                    record_type="PUBLISHED_REVIEW" if citation=="CONFIRMED_REVIEW_CUE" and (signal!="NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK" or record.source in ("PubMed","Europe PMC")) else "OTHER"
                 else:
                     if citation=="CONFIRMED_REVIEW_CUE":
-                        record_type="PUBLISHED_REVIEW" if review_intervention_citation_signal(candidate,record)!="NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK" else "OTHER"
+                        record_type="PUBLISHED_REVIEW" if (review_intervention_citation_signal(candidate,record)!="NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK" or record.source in ("PubMed","Europe PMC")) else "OTHER"
                     else:record_type="PRIMARY_STUDY"
                 self._store_record(candidate.candidate_id,record_type,record,(record.metadata.get("adaptive_pubmed") or {}).get("query",report.get("query","")),"ADAPTIVE_PUBMED",classification=citation,originally_requested="SUPPLEMENTARY_DISCOVERY")
         candidate=self.ledger.get_candidate(candidate.candidate_id) or candidate
@@ -664,7 +668,7 @@ class ReviewDiscoveryOrchestrator:
                 for record in records:
                     self._check_cancellation()
                     kind=classify_review_search_hit(record)
-                    record_type=("PUBLISHED_REVIEW" if review_intervention_citation_signal(candidate,record)!="NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK" else "OTHER") if kind=="CONFIRMED_REVIEW_CUE" else "PRIMARY_STUDY"
+                    record_type=("PUBLISHED_REVIEW" if (review_intervention_citation_signal(candidate,record)!="NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK" or record.source in ("PubMed","Europe PMC")) else "OTHER") if kind=="CONFIRMED_REVIEW_CUE" else "PRIMARY_STUDY"
                     self._store_record(candidate.candidate_id,record_type,record,query,purpose,
                         classification=kind,originally_requested="SUPPLEMENTARY_DISCOVERY")
             candidate=self.ledger.get_candidate(candidate.candidate_id) or candidate

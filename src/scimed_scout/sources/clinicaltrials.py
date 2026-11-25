@@ -24,10 +24,12 @@ class ClinicalTrialsGovSource:
                 self.name, query, SourceStatus.PARTIAL,
                 message="No usable ClinicalTrials.gov search terms",
             )
+        records: dict[str, SearchRecord] = {}
+        total: int | None = None
         try:
-            records: dict[str, SearchRecord] = {}
             seen_tokens: set[str] = set()
-            total: int | None = None
+            duplicate_count=0
+            malformed_count=0
             token: str | None = None
             pages = 0
             exhausted = False
@@ -79,11 +81,16 @@ class ClinicalTrialsGovSource:
                     )
                 for study in studies:
                     if not isinstance(study, dict):
+                        malformed_count+=1
                         continue
                     protocol = study.get("protocolSection") or {}
                     ident = protocol.get("identificationModule") or {}
                     nct = str(ident.get("nctId") or "").strip()
                     if not re.fullmatch(r"NCT\d{8}", nct):
+                        malformed_count+=1
+                        continue
+                    if nct in records:
+                        duplicate_count+=1
                         continue
                     records[nct] = SearchRecord(
                         self.name, nct, str(ident.get("briefTitle") or ident.get("officialTitle") or ""),
@@ -94,14 +101,14 @@ class ClinicalTrialsGovSource:
                 if not token:
                     exhausted = True
                     break
-            if total == 0 and exhausted:
+            if total == 0 and exhausted and not records and not malformed_count:
                 return SearchResult(
                     self.name, query, SourceStatus.SEARCHED_NEGATIVE, total_count=0,
                     message="ClinicalTrials.gov verified zero matching studies for scoped query",
                 )
             complete = (
                 exhausted and total is not None and total > 0
-                and len(records) >= total
+                and len(records) == total and not malformed_count and not duplicate_count
             )
             return SearchResult(
                 self.name, query,
@@ -114,7 +121,7 @@ class ClinicalTrialsGovSource:
                 ),
             )
         except Exception as exc:
-            return SearchResult(self.name, query, SourceStatus.ACCESS_FAILED, message=str(exc))
+            return SearchResult(self.name, query, SourceStatus.PARTIAL if records else SourceStatus.ACCESS_FAILED, list(records.values()),total,message=str(exc))
 
 def _plain_terms(value: str) -> str:
     """Avoid sending unbalanced or operator-like PICO punctuation to v2 search."""

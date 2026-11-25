@@ -477,6 +477,8 @@ def _build_research_dossier(
         ),
         "review_opportunity": dict(meta.get("discovery_review_opportunity") or {}),
         "adaptive_search_audit": dict(meta.get("adaptive_search_audit") or {}),
+        "adaptive_retrieval_audit": list(meta.get("adaptive_retrieval_audit") or []),
+        "registration_enrichment_audit": dict(meta.get("registration_enrichment_audit") or {}),
         "fulltext_search_date_resolutions": list(
             meta.get("discovery_fulltext_search_date_resolutions") or []
         ),
