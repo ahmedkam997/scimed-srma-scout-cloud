@@ -31,3 +31,9 @@ test('invalid rating/source/missing rationale fail closed',()=>{
  raw.ratings.clinical_importance={rating:5,source_urls:['https://example.org']};
  assert.equal(m.save(job,topic,JSON.stringify(raw)).ok,false);
 });
+
+test('cloud polling preserves open manual editor and topic transfer preserves saved assessment',()=>{
+ const app=fs.readFileSync('web/app.js','utf8');
+ assert.ok(app.includes("els.jobs.querySelector('details.mcda-editor[open]')"));
+ assert.ok(app.includes('researcher_recorded_assessment:manual'));
+});

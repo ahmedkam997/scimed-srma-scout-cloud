@@ -1,6 +1,6 @@
 // Network first: phone users receive newly deployed JS even after PWA installation.
-const CACHE='scimed-review-scout-v38';
-const ASSETS=['./','./index.html','./styles.css?v=20261125-durable-resume-rctfirst-mcda2','./app.js?v=20261125-durable-resume-rctfirst-mcda2','./gap-verification.js?v=20261125-durable-resume-rctfirst-mcda2','./final-audit-evidence.js?v=20261125-durable-resume-rctfirst-mcda2','./final-evidence-audit.js?v=20261125-durable-resume-rctfirst-mcda2','./opportunity-assessment.js?v=20261125-durable-resume-rctfirst-mcda2','./manifest.webmanifest','./config.js?v=20261125-durable-resume-rctfirst-mcda2'];
+const CACHE='scimed-review-scout-v39';
+const ASSETS=['./','./index.html','./styles.css?v=20261125-durable-resume-rctfirst-mcda3','./app.js?v=20261125-durable-resume-rctfirst-mcda3','./gap-verification.js?v=20261125-durable-resume-rctfirst-mcda3','./final-audit-evidence.js?v=20261125-durable-resume-rctfirst-mcda3','./final-evidence-audit.js?v=20261125-durable-resume-rctfirst-mcda3','./opportunity-assessment.js?v=20261125-durable-resume-rctfirst-mcda3','./manifest.webmanifest','./config.js?v=20261125-durable-resume-rctfirst-mcda3'];
 self.addEventListener('install',e=>e.waitUntil(
   caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())
 ));

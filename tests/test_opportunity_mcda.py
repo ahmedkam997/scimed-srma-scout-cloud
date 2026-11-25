@@ -39,3 +39,38 @@ def test_no_review_is_not_novelty():
     a=profile(c)
     assert a["routes"]==["EXPLORATORY_SYNTHESIS_UNCERTAIN"]
     assert a["assessment"]["domains"]["research_gap_novelty"]["status"]=="UNKNOWN"
+
+def test_strict_rct_cues_do_not_turn_into_final_go(tmp_path):
+    from scimed_scout.discovery.orchestrator import ReviewDiscoveryOrchestrator
+    from scimed_scout.domain import CandidateStatus,SourceStatus
+    from scimed_scout.storage import ProjectRecord,SQLiteLedger
+    from scimed_scout.sources.base import SearchRecord,SearchResult
+    pair=("hypertension","renal denervation",(),())
+    c=CandidateRecord("C","P","Renal denervation versus sham in hypertension","Cardiology","EFFECTIVENESS",
+        population=pair[0],intervention_exposure_index_test=pair[1],comparator_reference="sham",
+        outcomes=["blood pressure"],eligible_designs=["Randomized controlled trial"],
+        metadata={"rct_first":{"pair":pair},"discovery_gate_inputs":{"design_framework_defined":True,"meaningful_synthesis_plausible":True,"clinical_question_novelty":5,"overall_novelty":5,"question_framework_coherent":True,"feasibility":"HIGH","fatal_methodological_flaw":False,"clinical_importance":5,"publication_potential":5,"new_information_gain":5,"publication_oriented_score":100,"editorial_grade":"A"}})
+    class Source:
+        def __init__(self,name):self.name=name
+        def search(self,q,*,limit):
+            result=[] if self.name not in ("PubMed","Europe PMC") or "systematic review" in q.casefold() or "meta-analysis" in q.casefold() else [
+                SearchRecord(self.name,str(i),f"Renal denervation versus sham in hypertension: randomized trial {i}",year=2025,doi=f"10.1234/{i}",metadata={"pubtype":["Randomized Controlled Trial"],"trial_registration_ids":[f"NCT{i:08d}"]}) for i in range(1,8)]
+            return SearchResult(self.name,q,SourceStatus.SEARCHED_POSITIVE if result else SourceStatus.SEARCHED_NEGATIVE,result,len(result))
+    names=["PubMed","Europe PMC","OpenAlex","Crossref","Semantic Scholar","PROSPERO","OSF Registries","ClinicalTrials.gov"]
+    with SQLiteLedger(tmp_path/"rct.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P","Cardiology","EFFECTIVENESS"))
+        ledger.upsert_candidate(c)
+        result=ReviewDiscoveryOrchestrator(ledger,[Source(n) for n in names],require_pico_signals=True,strict_rct_minimum=7).verify_candidate("C")
+        assert ledger.get_candidate("C").metadata["rct_first_final_audit"]["family_leads"]==7
+        assert result.candidate_status==CandidateStatus.PROVISIONAL_BACKUP
+        assert any("independent eligibility" in p for p in result.pending)
+        assert result.final_gate_result is None
+
+def test_primary_research_need_does_not_become_synthesis_gap():
+    p=("hypertension","renal denervation",(),())
+    rev={"title":"Renal denervation versus sham in hypertension: systematic review","source":"PubMed","source_record_id":"99","payload":{"year":2025,"url":"https://pubmed.ncbi.nlm.nih.gov/99/","metadata":{"pubtype":["Systematic Review"],"abstractText":"Further randomized trials are needed."}}}
+    c=CandidateRecord("c","p","Topic","Cardiology",population=p[0],intervention_exposure_index_test=p[1],comparator_reference="sham",outcomes=["blood pressure"],metadata={"rct_first":{"pair":p,"family_leads":7}})
+    result=profile(c,[rev])
+    assert "PRIMARY_RESEARCH_NEED_CUE" in result["routes"]
+    assert "REVIEW_GAP_SIGNAL" not in result["routes"]
+    assert result["priority_key"][2]==0

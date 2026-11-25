@@ -79,16 +79,20 @@ def compare_assessments(items):
     return {"scenarios":out,"robust_winner":winners[0] if winners and winners[0] and len(set(winners))==1 else None,
             "status":"ROBUST_INTERVAL_DOMINANCE" if winners and winners[0] and len(set(winners))==1 else "INDETERMINATE_OR_WEIGHT_SENSITIVE",
             "qualification_granted":False}
-def profile(candidate, reviews=None, *, opportunity=None, scorecard=None):
+def profile(candidate, reviews=None, *, opportunity=None, scorecard=None, primary_records=None):
     from .rct_first import explicit_comparison, any_term, phrases, has, family_summary, MIN_FAMILIES
     from .evidence_classification import classify_review_search_hit
     from scimed_scout.sources.base import SearchRecord
     info=(candidate.metadata or {}).get("rct_first") or {}
     pair=info.get("pair") or ()
     records=info.get("comparison_records") or []
+    if primary_records is not None and len(pair)==4:
+        from .rct_first import comparison_rows
+        _,buckets=comparison_rows(pair,primary_records,candidate.comparator_reference)
+        records=buckets.get(candidate.comparator_reference,[])
     seed=info.get("competing_review_preflight") or {}
     review_rows=seed.get("records",[]) if reviews is None else reviews
-    findings=[];related=[];cutoffs=[];outcome_hypotheses=[]
+    findings=[];related=[];cutoffs=[];outcome_hypotheses=[];direct_review_records=[]
     if len(pair)==4:
         pop,inter,pa,ia=pair
         for group in _groups(review_rows):
@@ -101,10 +105,13 @@ def profile(candidate, reviews=None, *, opportunity=None, scorecard=None):
                 if not (explicit_comparison(title,phrases(inter,ia),candidate.comparator_reference) or any(explicit_comparison(s,phrases(inter,ia),candidate.comparator_reference) for s in re.split(r"(?<=[.!?])\s+|\n+",abstract) if re.match(r"(?i)^(?:methods?|objective|aim)\s*:",s))):continue
                 citation=ref(row)
                 if not (link(citation["url"]) or citation["doi"]):continue
-                related.append(citation)
+                related.append(citation);direct_review_records.append(row)
                 for sentence in re.split(r"(?<=[.!?])\s+|\n+",abstract):
                     for code,pattern in GAP_PATTERNS.items():
                         if re.search(pattern,sentence,re.I):
+                            # A routine mention of long follow-up or risk-of-bias methods
+                            # is not itself evidence of an uncertainty or gap.
+                            if code in ('MISSING_RELEVANT_INFORMATION','POTENTIAL_BIAS_OR_METHODS_LIMITATION') and not re.search(r'\b(?:not|lack|limited|insufficient|uncertain|unclear|low|high risk|serious|underreported|underrepresented|inadequate|unknown|unavailable)\b',sentence,re.I):continue
                             findings.append({**citation,"kind":code,"excerpt":sentence[:400],
                                 "status":"PRIMARY_RESEARCH_NEED_CUE_NOT_SYNTHESIS_OPPORTUNITY" if code=="PRIMARY_RESEARCH_NEED" else "REVIEW_ABSTRACT_GAP_CUE_NOT_SYNTHESIS_GAP_CONFIRMED",
                                 "next_action":"Check whether eligible RCTs and existing synthesis answer this specific uncertainty, or new primary research is required."})
@@ -113,7 +120,7 @@ def profile(candidate, reviews=None, *, opportunity=None, scorecard=None):
                                     matched=[r for r in records if has(str(r.get("title") or "")+" "+str((r.get("payload") or {}).get("metadata",{}).get("abstractText") or ""),outcome)]
                                     n=family_summary(matched)["family_leads"]
                                     if n>=MIN_FAMILIES:
-                                        outcome_hypotheses.append({"outcome":outcome,"comparison_family_cues":n,"review":citation,
+                                        outcome_hypotheses.append({"outcome":outcome,"proposed_title":f"{candidate.intervention_exposure_index_test} versus {candidate.comparator_reference} for {outcome} in {candidate.population}: systematic review of randomized trials","comparison_family_cues":n,"review":citation,
                                             "status":"OUTCOME_SPECIFIC_PICO_HYPOTHESIS_NOT_ELIGIBILITY_OR_NOVELTY_VERIFIED",
                                             "next_action":"Verify exact outcome definitions, extractability, prior synthesis and independent trial families before refining PICO."})
                 # A methods abstract date is a lead for full-text verification.
@@ -132,7 +139,7 @@ def profile(candidate, reviews=None, *, opportunity=None, scorecard=None):
             if b and b[0]>date.fromisoformat(latest) and b[0]<=date.today():
                 post.append(ref(row))
     opportunity=opportunity or {};scorecard=scorecard or {}
-    correction=opportunity.get("correction_method_cues") or []
+    correction=opportunity.get("correction_method_cues") or _correction_cues(direct_review_records)
     routes=[]
     synthesis_cues=[f for f in findings if f["kind"]!="PRIMARY_RESEARCH_NEED"]
     if synthesis_cues:routes.append("REVIEW_GAP_SIGNAL")
@@ -141,7 +148,7 @@ def profile(candidate, reviews=None, *, opportunity=None, scorecard=None):
     if correction or opportunity.get("route") in ("CORRECTIVE_SIGNAL","UPDATE_AND_CORRECTIVE_SIGNAL"):routes.append("CORRECTIVE_SIGNAL")
     if outcome_hypotheses:routes.append("OUTCOME_SPECIFIC_SIGNAL")
     if not routes:routes=["EXPLORATORY_SYNTHESIS_UNCERTAIN"]
-    n=int(info.get("family_leads") or 0)
+    n=family_summary(records)["family_leads"] if primary_records is not None else int(info.get("family_leads") or 0)
     # Operational priority only: evidence floor, source-linked actionable gaps,
     # and capped count rather than reward for the largest saturated topic.
     priority=(int(n>=MIN_FAMILIES),int(bool(post or correction)),int(bool(synthesis_cues)),min(n,14))
@@ -157,7 +164,8 @@ def profile(candidate, reviews=None, *, opportunity=None, scorecard=None):
     return {"version":VERSION,"routes":routes,"priority_key":list(priority),
             "source_linked_gap_cues":findings[:12],"direct_comparison_review_sample":related[:15],
             "abstract_search_date_cues":cutoffs[:15],"post_cutoff_report_cues":post[:15],
-            "outcome_specific_hypotheses":outcome_hypotheses[:8],"verified_review_opportunity":opportunity,
+            "outcome_specific_hypotheses":outcome_hypotheses[:8],"correction_method_cues":correction[:12],"verified_review_opportunity":opportunity,
+            "comparison_family_cues":n,"comparison_count_stage":"DEEP_RETRIEVAL_CUES" if primary_records is not None else "SEED_CUES",
             "review_preflight_status":seed.get("status","NOT_SEARCHED"),"confirmed_independent_eligible_trials":None,
             "assessment":weighted_assessment(ratings),
             "scope":"DISCOVERY_SIGNALS_NOT_CONFIRMED_RESEARCH_GAPS_OR_PUBLICATION_PROBABILITY"}

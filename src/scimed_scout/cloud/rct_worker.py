@@ -136,7 +136,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     adaptive_retrieval=True,strict_rct_minimum=MIN_FAMILIES)
                 result=engine.verify_candidate(c.candidate_id,ranking_score=rank.score,limit_per_query=min(12,job.limit_per_query),recover_only=bool(previous))
                 assessed=ledger.get_candidate(c.candidate_id)
-                assessed.metadata["opportunity_mcda"]=profile(assessed,ledger.list_external_evidence(c.candidate_id,"PUBLISHED_REVIEW"),opportunity=assessed.metadata.get("discovery_review_opportunity"),scorecard=assessed.metadata.get("discovery_gate_inputs"))
+                assessed.metadata["opportunity_mcda"]=profile(assessed,ledger.list_external_evidence(c.candidate_id,"PUBLISHED_REVIEW"),opportunity=assessed.metadata.get("discovery_review_opportunity"),scorecard=assessed.metadata.get("discovery_gate_inputs"),primary_records=ledger.list_external_evidence(c.candidate_id,"PRIMARY_STUDY"))
                 ledger.upsert_candidate(assessed)
                 checked.append(result)
                 if result.candidate_status==CandidateStatus.QUALIFIED:qualified.append(c.candidate_id)

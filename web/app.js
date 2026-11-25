@@ -740,7 +740,8 @@ function topicDetailHtml(job, topic) {
 
 function renderJobs() {
   // Do not erase an in-progress manual evidence note on 5-second cloud polling.
-  if (document.activeElement?.closest?.('.gap-record')) return;
+  // Preserve unsaved researcher assessment JSON while the editor is open.
+  if (document.activeElement?.closest?.('.gap-record, .mcda-editor') || els.jobs.querySelector('details.mcda-editor[open]')) return;
   const gapOpen = [...els.jobs.querySelectorAll('details[data-gap-key][open]')]
     .map(node => ({
       key: node.dataset.gapKey,
