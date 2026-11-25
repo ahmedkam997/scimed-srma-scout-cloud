@@ -26,7 +26,7 @@ class ProsperoCliSource:
     executable: str = "prospero"
     runner: Runner | None = None
     name: str = "PROSPERO"
-    max_pages: int = 3
+    max_pages: int = 5
 
     def search(self, query: str, *, limit: int = 20) -> SearchResult:
         node_entry = os.getenv("PROSPERO_CLI_JS", "").strip() if self.runner is None else ""
@@ -45,6 +45,9 @@ class ProsperoCliSource:
         total: int | None = None
         count_changed = False
         pages_fetched = 0
+        page_integrity_failed = False
+        duplicate_count = 0
+        malformed_count = 0
         for page in range(1, max_pages + 1):
             prefix = ["node", node_entry] if node_entry and os.path.isfile(node_entry) else [self.executable]
             command = [
@@ -76,7 +79,11 @@ class ProsperoCliSource:
                 data = envelope["data"]
                 if not isinstance(data, dict) or "total_hits" not in data:
                     raise ValueError("CLI missing PROSPERO total_hits")
-                reported = int(data["total_hits"])
+                if type(data["total_hits"]) is not int:
+                    raise ValueError("PROSPERO non-integer total_hits")
+                reported = data["total_hits"]
+                if data.get("page", page) != page or data.get("page_size", page_size) != page_size:
+                    raise ValueError("PROSPERO returned unexpected page or size")
                 if reported < 0:
                     raise ValueError("invalid negative PROSPERO total_hits")
                 if total is None:
@@ -93,9 +100,7 @@ class ProsperoCliSource:
                 # upstream response. A transport/index warning is not a
                 # trustworthy zero-match registry search.
                 note = str(data.get("raw_note") or "").strip()
-                if note and any(mark in note.casefold() for mark in (
-                    "error", "unavailable", "timeout", "failed", "invalid",
-                )):
+                if note:
                     raise ValueError("upstream PROSPERO search reported an error")
             except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
                 return SearchResult(
@@ -105,12 +110,20 @@ class ProsperoCliSource:
                 )
 
             pages_fetched += 1
+            expected_count = min(page_size, max(0, reported - (page - 1) * page_size))
+            if len(hits) != expected_count:
+                page_integrity_failed = True
             for hit in hits:
                 if not isinstance(hit, dict):
+                    malformed_count += 1
                     continue
                 accession = str(hit.get("accession_number") or "").strip()
                 rid = accession or str(hit.get("record_id") or "").strip()
-                if not rid:
+                if not rid or not str(hit.get("title") or "").strip():
+                    malformed_count += 1
+                    continue
+                if rid in all_records:
+                    duplicate_count += 1
                     continue
                 year = hit.get("year_first_published")
                 if isinstance(year, str) and year.isdigit():
@@ -126,6 +139,9 @@ class ProsperoCliSource:
             if total == 0:
                 if hits:
                     return SearchResult(self.name, query, SourceStatus.PARTIAL, message="PROSPERO reported zero with hits")
+                if self.runner is None and os.getenv("PROSPERO_PAGINATION_CONTRACT") != "FIXED_LINE_V1":
+                    return SearchResult(self.name, query, SourceStatus.PARTIAL, total_count=0,
+                                        message="Zero from unverified CLI build; use shared patched installer")
                 return SearchResult(self.name, query, SourceStatus.SEARCHED_NEGATIVE, total_count=0,
                                     message=f"PROSPERO returned confirmed zero on page {page}")
             if not hits:
@@ -133,7 +149,9 @@ class ProsperoCliSource:
             if total is not None and len(all_records) >= total:
                 break
 
-        complete = (not count_changed and total is not None and len(all_records) >= total)
+        complete = (not count_changed and not page_integrity_failed and not duplicate_count
+                    and not malformed_count and total is not None and len(all_records) == total
+                    and (self.runner is not None or os.getenv("PROSPERO_PAGINATION_CONTRACT") == "FIXED_LINE_V1"))
         supplemental = 0
         if not complete and pages_fetched and total and (
             total > page_size * max_pages or count_changed
@@ -185,6 +203,7 @@ class ProsperoCliSource:
             message=(
                 f"PROSPERO pages checked={pages_fetched}; retrieved={len(all_records)}; "
                 f"total={total}; count_changed={count_changed}; "
+                f"page_integrity_failed={page_integrity_failed}; duplicates={duplicate_count}; malformed={malformed_count}; "
                 f"title_only_supplemental_records={supplemental}; "
                 f"{'complete response' if complete else 'additional matches not retrieved or index changed; manual verification required'}"
             ),
@@ -193,4 +212,5 @@ class ProsperoCliSource:
     def _run(self, command: list[str]) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env.setdefault("PROSPERO_NETWORK_MODE", "online")
+        env["PROSPERO_CACHE_ENABLED"] = "false"
         return subprocess.run(command, capture_output=True, text=True, timeout=32, check=False, env=env)

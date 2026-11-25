@@ -26,11 +26,9 @@ jobs:
         run: python -m pip install -e .
       - name: Build pinned PROSPERO v0.2.2 source
         run: |
-          git clone --quiet --depth 1 --branch v0.2.2 https://github.com/erichuang777777/PROSPERO-MCP.git "$RUNNER_TEMP/prospero-mcp"
-          npm install --prefix "$RUNNER_TEMP/prospero-mcp" --no-audit --no-fund
-          npm run build --prefix "$RUNNER_TEMP/prospero-mcp"
-          test -s "$RUNNER_TEMP/prospero-mcp/dist/cli.js"
-          echo "PROSPERO_CLI_JS=$RUNNER_TEMP/prospero-mcp/dist/cli.js" >> "$GITHUB_ENV"
+          bash scripts/install_prospero_cli.sh
+      - name: Verify complete production pagination
+        run: python -m scimed_scout.discovery.prospero_pagination_check
       - name: Test live SciMed registry adapters with public queries
         env:
           PROSPERO_NETWORK_MODE: online
@@ -47,3 +45,8 @@ jobs:
             assert result.status == SourceStatus.PARTIAL, "Broad sample must not be marked as exhaustive"
           print("REGISTRY_LIVE_TEST_PASS")
           PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prospero-production-check
+          path: prospero-production-check.json

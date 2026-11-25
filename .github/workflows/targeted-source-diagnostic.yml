@@ -27,11 +27,7 @@ jobs:
           node-version: '22'
       - name: Install pinned PROSPERO-MCP read-only CLI
         run: |
-          git clone --depth 1 --branch v0.2.2 https://github.com/erichuang777777/PROSPERO-MCP.git "$RUNNER_TEMP/prospero-mcp"
-          npm install --prefix "$RUNNER_TEMP/prospero-mcp" --no-audit --no-fund
-          npm run build --prefix "$RUNNER_TEMP/prospero-mcp"
-          test -s "$RUNNER_TEMP/prospero-mcp/dist/cli.js"
-          echo "PROSPERO_CLI_JS=$RUNNER_TEMP/prospero-mcp/dist/cli.js" >> "$GITHUB_ENV"
+          bash scripts/install_prospero_cli.sh
       - run: python -m pytest -q tests/test_targeted_source_diagnostic.py
       - run: python -m scimed_scout.discovery.targeted_source_diagnostic
       - uses: actions/upload-artifact@v4
