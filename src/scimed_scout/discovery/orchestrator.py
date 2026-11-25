@@ -522,7 +522,12 @@ class ReviewDiscoveryOrchestrator:
                     message=result.message
                     if self.optimize_literature_queries and evidence_type in ("PRIMARY_STUDY","PUBLISHED_REVIEW") and source_name in ("PubMed","Europe PMC"):
                         import json
-                        message=(message or "")+" | "+QUERY_OPTIMIZER_VERSION+" "+json.dumps(sample_quality(result),ensure_ascii=True)
+                        quality=sample_quality(result)
+                        message=(message or "")+" | "+QUERY_OPTIMIZER_VERSION+" "+json.dumps(quality,ensure_ascii=True)
+                        # A positive hit count without usable metadata cannot
+                        # establish a completed bibliographic retrieval.
+                        if result.status==SourceStatus.SEARCHED_POSITIVE and quality["records_with_title"]==0:
+                            result=replace(result,status=SourceStatus.PARTIAL)
                     self.ledger.append_search_log(
                         SearchLogRecord(
                             candidate.project_id,

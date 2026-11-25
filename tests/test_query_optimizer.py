@@ -58,3 +58,19 @@ def test_production_plan_is_source_specific_and_logged(tmp_path):
         logs=ledger.list_search_log("C")
         assert len(logs)==4
         assert all("CLINICAL_QUERY_OPTIMIZER_V1" in x.message for x in logs)
+
+
+def test_positive_count_without_titles_stays_partial(tmp_path):
+    class Stub:
+        name="PubMed"
+        def search(self,q,*,limit):
+            return SearchResult(self.name,q,SourceStatus.SEARCHED_POSITIVE,[],500)
+    with SQLiteLedger(tmp_path/"metadata.sqlite") as ledger:
+        ledger.upsert_project(ProjectRecord("P","Cardiology"))
+        c=candidate();ledger.upsert_candidate(c)
+        engine=ReviewDiscoveryOrchestrator(ledger,[Stub()],optimize_literature_queries=True)
+        engine._search_sources(c,("PubMed",),("colchicine",),
+            evidence_type="PRIMARY_STUDY",purpose="test",limit_per_query=4)
+        logs=ledger.list_search_log("C")
+        assert len(logs)==1 and logs[0].status==SourceStatus.PARTIAL
+        assert "METADATA_INCOMPLETE" in logs[0].message
