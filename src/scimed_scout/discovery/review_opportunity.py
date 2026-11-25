@@ -50,6 +50,7 @@ def date_bounds(value):
     strictly after the cutoff interval ends to count as definitely later.
     """
     text = str(value or "").strip().rstrip(".")
+    text = re.sub(r"^([A-Za-z]+) (\d{1,2}), (\d{4})$",r"\2 \1 \3",text)
     m = re.fullmatch(r"((?:19|20)\d{2})(?:-(\d{2})(?:-(\d{2}))?)?", text)
     if not m:
         named = re.fullmatch(r"(?:(\d{1,2})\s+)?([A-Za-z]+)\s+((?:19|20)\d{2})", text)

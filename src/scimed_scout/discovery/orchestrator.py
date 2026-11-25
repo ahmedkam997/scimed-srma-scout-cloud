@@ -287,6 +287,8 @@ class ReviewDiscoveryOrchestrator:
             pending.append("TYPE-A: insufficient source-linked PICO/design cues for the minimum family-lead count; unresolved records need title/abstract and full-text assessment")
         strict_ready=True
         if self.strict_rct_minimum:
+            # No full-text screening / extraction or independently adjudicated trial ledger exists here.
+            pending.append(f"TYPE-A: independent eligibility, exact arms and extractable outcomes for at least {self.strict_rct_minimum} RCTs require independent adjudication; bibliography is not a final GO")
             from .rct_first import strict_candidate_audit
             strict_audit=strict_candidate_audit(candidate,primary_records)
             strict_ready=min(strict_audit.get('family_leads',0),pico_audit['pico_design_family_leads'])>=self.strict_rct_minimum

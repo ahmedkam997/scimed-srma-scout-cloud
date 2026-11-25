@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import math
 from typing import Any
 
 from scimed_scout.ai import AIProvider, AIRequest
@@ -110,6 +111,10 @@ class DiscoveryScoringService:
             publication_potential=result["publication_potential"],
         )
         result["publication_oriented_score"] = composite["publication_oriented_score"]
+        # Missing/invalid AI fields are UNKNOWN in the new assessment, never silently zero.
+        def opinion(value):
+            return float(value) if isinstance(value,(int,float)) and not isinstance(value,bool) and math.isfinite(value) and 0<=value<=5 else None
+        result["model_domain_opinions"] = {"clinical_importance":opinion(raw.get("clinical_importance")), "editorial_relevance":opinion(raw.get("publication_potential")), "methodological_feasibility": {"HIGH":5,"STRONG MODERATE":4,"MODERATE":2.5,"LOW":1}.get(str(raw.get("feasibility") or "").strip().upper())}
         result["scoring_trace"] = {
             **metrics,
             **composite,

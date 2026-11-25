@@ -85,7 +85,7 @@
        url:'https://pmc.ncbi.nlm.nih.gov/articles/PMC8008539/'},
     ];
   }
-  function gatesFor(type,sourceProblems,curated) {
+  function gatesFor(type,sourceProblems,curated,minimum=4) {
     const common=[
       {gate:'COMPREHENSIVE_SOURCE_SEARCH',status:'UNRESOLVED',
        reason:sourceProblems.length ?
@@ -96,7 +96,7 @@
          'High-priority registry leads exist, but full protocols, review search dates and publication links remain unconfirmed.' :
          'No completed, source-linked assessment of all competing reviews and registrations is available.'},
       {gate:'INDEPENDENT_ELIGIBLE_STUDY_FAMILIES',status:'UNRESOLVED',
-       reason:'Independently eligible study populations are not verified. The Scout four-study screening target is a project feasibility target, not a universal minimum required by evidence-synthesis methodology.'},
+       reason:'Independently eligible study populations are not verified. The Scout '+minimum+'-study target is a project feasibility target, not a universal evidence-synthesis requirement.'},
     ];
     if (type==='DIAGNOSTIC_TEST_ACCURACY') return [...common,
       {gate:'INDEX_TEST_REFERENCE_STANDARD_AND_2X2_DATA',status:'UNRESOLVED',
@@ -194,7 +194,9 @@
     const familyOverlapFlags=(curated?.study_reports||[]).filter(
       s=>Array.isArray(s.possible_overlaps) && s.possible_overlaps.length
     ).length;
-    const gates=gatesFor(type,sourceProblems,curated);
+    const rct=topic?.research_dossier?.rct_first_seed || topic?.research_dossier?.rct_first || {};
+    const minimum=rct.minimum===7 ? 7 : 4;
+    const gates=gatesFor(type,sourceProblems,curated,minimum);
     const recommendation=curated?.review_decision === 'REFINE' ? 'REFINE' : 'UNRESOLVED';
     return {
       schema:'SCIMED_FINAL_EVIDENCE_AUDIT_V1',
@@ -207,7 +209,8 @@
       audit_rules_version:'2026-11-24-question-specific-gates-v2',
       question_type_verified_from_saved_pico:type,
       method_guidance:methodsFor(type),
-      minimum_independent_study_target_for_scout:4,
+      minimum_independent_study_target_for_scout:minimum,
+      opportunity_mcda:topic?.research_dossier?.opportunity_mcda || null,
       minimum_target_is_methodological_requirement:false,
       external_research_curated_as_of:curated?.as_of || null,
       recommendation,
@@ -306,7 +309,7 @@
       recordSet(audit.prioritized_published_reviews,'Published competing reviews','review')+
       recordSet(audit.study_family_screening_ledger,'Primary study family ledger','study')+
       '<p class="help">Audit framework: '+esc(audit.question_type_verified_from_saved_pico)+
-      '. The four-study screening target is a SciMed planning criterion, not a universal DTA meta-analysis requirement.</p>'+
+      '. The '+audit.minimum_independent_study_target_for_scout+'-study target is a SciMed planning criterion, not a universal meta-analysis requirement.</p>'+
       '<details class="gap-queue"><summary>Scientific gates (all unresolved)</summary>'+
       audit.scientific_gates_unresolved.map(g=>'<p><b>'+esc(g.gate)+
       ':</b> '+esc(g.reason)+'</p>').join('')+'</details>'+

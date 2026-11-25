@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from datetime import datetime,timezone
 from scimed_scout.discovery.rct_first import collect,MIN_FAMILIES,MAX_DEEP,VERSION
 from scimed_scout.discovery.orchestrator import ReviewDiscoveryOrchestrator
+from scimed_scout.discovery.opportunity_mcda import profile,compare_assessments,PROMPT
 from scimed_scout.discovery.models import DiscoveryRunResult
 from scimed_scout.discovery.review_package import build_discovery_review_package
 from scimed_scout.discovery.novelty import DiscoveryNoveltyService
@@ -59,7 +60,7 @@ def _draft(c):
         "research_dossier":{"candidate_id":c.candidate_id,"title":c.title,"scientific_question":{"population":c.population,
         "intervention_exposure_index_test":c.intervention_exposure_index_test,"comparator_reference":c.comparator_reference,
         "outcomes":c.outcomes,"eligible_designs":c.eligible_designs},"qualification_label":"RCT_SEED_CUES_NOT_DEEP_VERIFIED",
-        "rct_first":info,"eligible_independent_studies_confirmed":None,"independent_literature_confirmation_required":True,
+        "rct_first":info,"opportunity_mcda":c.metadata.get("opportunity_mcda"),"eligible_independent_studies_confirmed":None,"independent_literature_confirmation_required":True,
         "next_actions":["Verify complete PICO, exact comparison arms, trial independence and extractable outcomes.",
         "Search published reviews and registrations; verify actual search cutoffs."]}}
 
@@ -81,6 +82,9 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
         seed=collector(job.specialty,len(history),check=check,prior=prior)
         store.save_step(job.id,SEED,{"version":VERSION,"job_id":job.id,"report":seed})
     candidates=[_candidate(row,job) for row in seed.get("candidates",[])]
+    for c in candidates:
+        c.metadata["opportunity_mcda"]=profile(c)
+    candidates.sort(key=lambda c:(tuple(-x for x in c.metadata["opportunity_mcda"]["priority_key"]),c.candidate_id))
     drafts=[_draft(c) for c in candidates]
     store.update_job(job.id,stage="RCT_EVIDENCE_TRIAGE",progress=20,message=f"Found {len(candidates)} source-linked comparison question(s); selecting up to three for deep verification",
         result_json={"checkpoint":{"stage":"RCT_EVIDENCE_TRIAGE","verified":False,"candidates":drafts,"rct_first":seed}})
@@ -111,7 +115,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     result=restore_audit(ledger,previous,job.id,c.candidate_id)
                     # Retry restores source records and cached assessments rather
                     # than regenerating questions or repeating successful queries.
-                    if result.candidate_status==CandidateStatus.QUALIFIED:checked.append(result);qualified.append(c.candidate_id);continue
+                    # A legacy discovery-only QUALIFIED label cannot establish seven independent eligible trials.
                 else:
                     for row in c.metadata["rct_first"]["comparison_records"]:
                         ledger.upsert_external_evidence(c.candidate_id,"PRIMARY_STUDY",row["source_record_id"],source=row["source"],title=row["title"],payload=row["payload"])
@@ -131,6 +135,9 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     cancellation_check=check,require_pico_signals=True,optimize_literature_queries=True,adaptive_search=True,
                     adaptive_retrieval=True,strict_rct_minimum=MIN_FAMILIES)
                 result=engine.verify_candidate(c.candidate_id,ranking_score=rank.score,limit_per_query=min(12,job.limit_per_query),recover_only=bool(previous))
+                assessed=ledger.get_candidate(c.candidate_id)
+                assessed.metadata["opportunity_mcda"]=profile(assessed,ledger.list_external_evidence(c.candidate_id,"PUBLISHED_REVIEW"),opportunity=assessed.metadata.get("discovery_review_opportunity"),scorecard=assessed.metadata.get("discovery_gate_inputs"))
+                ledger.upsert_candidate(assessed)
                 checked.append(result)
                 if result.candidate_status==CandidateStatus.QUALIFIED:qualified.append(c.candidate_id)
                 store.save_step(job.id,AUDIT+c.candidate_id,audit_snapshot(ledger,result))
@@ -143,10 +150,13 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     "adaptive_retrieval_audit":m.get("adaptive_retrieval_audit") or [],"fulltext_search_date_resolutions":m.get("discovery_fulltext_search_date_resolutions") or [],
                     "competitor_audit":{"published_reviews_discovered":m.get("discovery_competitor_records_discovered",0),
                     "unassessed_reviews":m.get("discovery_unassessed_review_count",0),"unassessed_registrations":m.get("discovery_unassessed_registration_count",0)},
-                    "scorecard":m.get("discovery_gate_inputs") or {}})
+                    "scorecard":m.get("discovery_gate_inputs") or {},"opportunity_mcda":m.get("opportunity_mcda") or {}})
             desired=min(3,job.final_options)
             run=DiscoveryRunResult(job.id,ranked,checked,qualified[:desired],qualified,desired)
             package=build_discovery_review_package(ledger,run)
+            package["topic_review_prompt"] += "\n\n"+PROMPT
+            package["review_instructions"]="RCT evidence-first discovery shortlist: no automatically confirmed independent trials. Assess the dossiers independently before registration.\n"+PROMPT
+            package["weighted_assessment_comparison"]=compare_assessments([(x["candidate_id"],x["opportunity_mcda"]["assessment"]) for x in audits if x["opportunity_mcda"]])
             ids={x.candidate_id for x in checked}
             package["unverified_generated_options"]=[_draft(c) for c in candidates if c.candidate_id not in ids]
             package["unverified_generated_options_are_not_qualified"]=True
@@ -162,6 +172,6 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                 "qualified_candidate_ids":qualified,"desired_options":desired,"candidate_audits":audits,
                 "ai_telemetry":provider.snapshot() if provider else {"logical_requests":0,"logical_call_cap":BUDGET,"provider_available":False},
                 "generation_shortfall":0,"generation_warnings":["Evidence-first mode: no AI-generated topics; bounded source samples, not systematic review eligibility."],
-                "rct_first":package["rct_first"],"topic_history":[{**{k:getattr(c,k) for k in ("candidate_id","title","specialty","question_type","population","intervention_exposure_index_test","comparator_reference","outcomes","eligible_designs")},"status":x.candidate_status.value,"checked_at":datetime.now(timezone.utc).isoformat()} for x in checked if (c:=ledger.get_candidate(x.candidate_id))],
+                "rct_first":package["rct_first"],"weighted_assessment_comparison":package["weighted_assessment_comparison"],"topic_history":[{**{k:getattr(c,k) for k in ("candidate_id","title","specialty","question_type","population","intervention_exposure_index_test","comparator_reference","outcomes","eligible_designs")},"status":x.candidate_status.value,"checked_at":datetime.now(timezone.utc).isoformat()} for x in checked if (c:=ledger.get_candidate(x.candidate_id))],
                 "generated_topic_history":[{k:getattr(c,k) for k in ("candidate_id","title","specialty","question_type","population","intervention_exposure_index_test","comparator_reference","outcomes","eligible_designs")} for c in candidates],
                 "recent_topics_skipped":seed.get("skipped_recent",[]),"recent_topics_skipped_count":len(seed.get("skipped_recent",[]))}}

@@ -155,6 +155,7 @@ def build_discovery_review_package(
     ordered_unresolved = sorted(
         unresolved,
         key=lambda item: (
+            tuple(((ledger.get_candidate(item.candidate_id).metadata or {}).get("opportunity_mcda") or {}).get("priority_key", [])) if ledger.get_candidate(item.candidate_id) else (),
             opportunity_priority(item),
             fit_by_id.get(item.candidate_id, {}).get("abstract_or_title_full_pico_signals", 0),
             fit_by_id.get(item.candidate_id, {}).get("intervention_outcome_text_matches", 0),
@@ -478,6 +479,7 @@ def _build_research_dossier(
         "review_opportunity": dict(meta.get("discovery_review_opportunity") or {}),
         "adaptive_search_audit": dict(meta.get("adaptive_search_audit") or {}),
         "adaptive_retrieval_audit": list(meta.get("adaptive_retrieval_audit") or []),
+        "opportunity_mcda": dict(meta.get("opportunity_mcda") or {}),
         "rct_first_seed": dict(meta.get("rct_first") or {}),
         "rct_first_final_audit": dict(meta.get("rct_first_final_audit") or {}),
         "registration_enrichment_audit": dict(meta.get("registration_enrichment_audit") or {}),

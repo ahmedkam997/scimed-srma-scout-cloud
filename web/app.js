@@ -599,6 +599,19 @@ function registrationAgeSummaryHtml(topic) {
   </details>`;
 }
 
+function opportunityAssessmentHtml(profile) {
+  if (!profile?.assessment?.domains) return '';
+  const a=profile.assessment;
+  const rows=Object.entries(a.domains).map(([k,d])=>`<p><b>${escapeHtml(k.replaceAll('_',' '))}</b> (${escapeHtml(d.weight)}): ${escapeHtml(d.rating ?? 'UNKNOWN')} / 5 · ${escapeHtml(d.status)}. ${escapeHtml(d.rationale || '')}</p>`).join('');
+  const ranges=Object.entries(a.scenarios || {}).map(([k,v])=>`<p>${escapeHtml(k)}: documented bounds ${escapeHtml((v.documented_bounds||[]).join('–'))}; exploratory bounds ${escapeHtml((v.exploratory_bounds||[]).join('–'))}</p>`).join('');
+  const signals=(profile.source_linked_gap_cues || []).map(r=>`<p>${safeEvidenceLink(r)} — ${escapeHtml(r.kind)}: ${escapeHtml(r.excerpt)}</p>`).join('');
+  const alternatives=(profile.outcome_specific_hypotheses || []).map(r=>`<p>Outcome-specific hypothesis: ${escapeHtml(r.outcome)} · ${escapeHtml(r.comparison_family_cues)} comparison-family cues (NOT eligible trials). ${escapeHtml(r.next_action)}</p>`).join('');
+  return `<details class="score-audit"><summary>8-domain opportunity assessment · ${escapeHtml(a.status)}</summary>
+  <p class="help">Unvalidated discovery priorities. UNKNOWN is not zero. Neither the bounds nor model opinions clear scientific gates.</p>
+  <p>Opportunity routes: ${escapeHtml((profile.routes||[]).join(', '))}</p>
+  <p>Documented score: ${escapeHtml(a.publication_oriented_score ?? 'INCOMPLETE')} / 100; range ${escapeHtml((a.documented_score_bounds||[]).join('–'))}.</p>
+  ${rows}${ranges}<p><b>Source-linked discovery signals (unverified gaps)</b></p>${signals||'<p>No verified gap established in this sample.</p>'}${alternatives}</details>`;
+}
 function topicDetailHtml(job, topic) {
   const dossier = topic.research_dossier || {};
   const q = dossier.scientific_question || topic;
@@ -638,6 +651,7 @@ function topicDetailHtml(job, topic) {
       <button class="secondary small" data-download-topic="${escapeHtml(job.id)}"
         data-topic-id="${escapeHtml(topic.candidate_id || '')}">Download detailed brief (.md)</button>
     </div>
+    ${opportunityAssessmentHtml(dossier.opportunity_mcda || topic.opportunity_mcda)}
     ${field('Research question', q.review_question)}
     ${field('Population', q.population)}
     ${field('Intervention / exposure / index test', q.intervention_exposure_index_test)}
@@ -788,11 +802,12 @@ function renderJobs() {
             <p>Eligible for another check: ${escapeHtml(item.recheck_after ? new Date(item.recheck_after).toLocaleDateString() : 'unknown')}</p>
           </article>`).join('')}
         </details>` : '';
-    const summaryHtml = job.status === 'COMPLETED' && checked
+    const summaryHtml = job.status === 'COMPLETED' && (checked || summary.rct_first)
       ? `<div class="job-result-summary">
           <b>Discovery review summary</b>
           <p>Generated ${escapeHtml(generated)} candidates. Checked ${escapeHtml(checked)}.
           Qualified ${escapeHtml(options.length)}.
+          ${summary.rct_first ? `RCT-only mode: ${escapeHtml(summary.rct_first.selected_for_deep_verification ?? 0)} selected for deep checks, independent eligible trial counts NOT confirmed. Seed status ${escapeHtml(summary.rct_first.seed_status || 'UNKNOWN')}.` : ''}
           Unresolved / provisional ${escapeHtml(unresolvedCount)}
           ${incompleteFromLegacy ? '(including ' + escapeHtml(incompleteFromLegacy) + ' earlier runs left in DEEP_VERIFYING)' : ''}.
           Rejected ${escapeHtml(rejected)}.
@@ -978,8 +993,8 @@ function renderJobs() {
       ? job.result_json.package.unverified_generated_options : [];
     const unverifiedGeneratedHtml = job.status === 'COMPLETED' && unverifiedGenerated.length
       ? `<details class="score-audit">
-          <summary>Other generated PICO drafts (${unverifiedGenerated.length}) - not source checked</summary>
-          <p class="help">These ideas were generated but were NOT selected for source verification. There is no novelty clearance, eligible-study count, or bibliography yet. Use ChatGPT to perform independent source searches first.</p>
+          <summary>${summary.rct_first ? 'Other source-linked RCT questions' : 'Other generated PICO drafts'} (${unverifiedGenerated.length}) - not deeply checked</summary>
+          <p class="help">These questions were not selected for deep verification. Source-linked citation cues do not establish novelty or independent eligibility. Use the dossier for independent checking.</p>
           ${unverifiedGenerated.map(topic => `<article class="score-item">
             <b>${escapeHtml(topic.title || '')}</b>
             <p>${escapeHtml(topic.review_question || '')}</p>
@@ -1029,6 +1044,8 @@ function renderJobs() {
             ).join('; ');
             return `<article class="score-item">
               <b>${escapeHtml(audit.title)}</b>
+              ${opportunityAssessmentHtml(audit.opportunity_mcda)}
+              ${audit.opportunity_mcda?.assessment ? '<p class="help">Legacy five-domain proxy below is not the eight-domain assessment or a final scientific score.</p>' : ''}
               <div class="score-data">
                 <span>Novelty: ${escapeHtml(trace.novelty_status === 'NOT_ESTIMABLE' ? 'Not estimable' : (score.overall_novelty ?? 'N/A'))} / 5</span>
                 <span>Information gain proxy: ${escapeHtml(String(trace.information_gain_status || '').startsWith('NOT_ESTIMABLE') ? 'Not estimable' : (score.new_information_gain ?? 'N/A'))} / 5</span>

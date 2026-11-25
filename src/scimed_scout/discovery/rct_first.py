@@ -25,7 +25,7 @@ MAX_PAIRS=6
 MAX_DEEP=3
 MAX_SEED_RECORDS=60
 MAX_EUROPE_SUPPLEMENTS=2
-MAX_REVIEW_PREFLIGHTS=3
+MAX_REVIEW_PREFLIGHTS=4
 MAX_COMPARISON_RECOVERIES=2
 # Clinical search vocabulary; no claim that any pair is novel or eligible.
 # Each tuple has a population phrase, intervention phrase and optional aliases.
@@ -349,10 +349,22 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
         if len(seen)>=MAX_REVIEW_PREFLIGHTS:break
         seen.add(key2)
         reviews=_search(pubmed,query_pair(pair,review=True),15,"REVIEW_PREFLIGHT",report["queries"],check)
-        info["competing_review_preflight"]={"status":report["queries"][-1]["status"],"records":reviews,"actual_search_dates_verified":False,"novelty_confirmed":False}
+        review_status=report["queries"][-1]["status"]
+        if reviews and abstract_enricher:
+            if check:check()
+            reviews,abstract_audit=abstract_enricher(reviews)
+            report["queries"].append({**abstract_audit,"stage":"REVIEW_ABSTRACT_ENRICHMENT"})
+        info["competing_review_preflight"]={"status":review_status,"records":reviews,"actual_search_dates_verified":False,"novelty_confirmed":False}
         dates=[r["payload"]["year"] for r in reviews if isinstance(r["payload"].get("year"),int) and classify_review_search_hit(SearchRecord(r["source"],r["source_record_id"],r["title"],metadata=r["payload"].get("metadata") or {}))=="CONFIRMED_REVIEW_CUE"]
         info["latest_sampled_review_publication_year"]=max(dates,default=None)
         info["newer_publication_report_cues"]=sum(isinstance(r["payload"].get("year"),int) and bool(dates) and r["payload"]["year"]>max(dates) for r in info["comparison_records"])
+    from .opportunity_mcda import profile
+    # All questions receive a transparent profile; unsampled competitor cells
+    # stay UNKNOWN, not "no competing reviews".
+    for row in report["candidates"]:
+        candidate=CandidateRecord(**row)
+        row["metadata"]["opportunity_mcda"]=profile(candidate)
+    report["candidates"].sort(key=lambda row: (tuple(-x for x in row["metadata"]["opportunity_mcda"]["priority_key"]),row["candidate_id"]))
     report["status"]="SAMPLED" if report["queries"] and all(q["status"] in ("SEARCHED_POSITIVE","SEARCHED_NEGATIVE") for q in report["queries"]) else "PARTIAL_SAMPLE" if any(q["retrieved"] for q in report["queries"]) else "ACCESS_UNRESOLVED"
     return report
 

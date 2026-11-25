@@ -673,11 +673,11 @@ def run_once(store: SupabaseJobStore | None = None) -> int:
     try:
         result_json = process_job(job, store)
         options = len((result_json.get("package") or {}).get("options") or [])
-        store.complete(
-            job.id,
-            result_json,
-            f"Discovery complete with {options} qualified first-choice topic(s)",
-        )
+        summary=result_json.get("run_summary") or {}
+        message=f"Discovery complete with {options} qualified first-choice topic(s)"
+        if summary.get("mode","").startswith("RCT_FIRST"):
+            message=f"RCT discovery complete: {summary.get('generated_candidates',0)} source-linked questions; {summary.get('verified_candidates',0)} deeply assessed; {options} independently qualified. Open evidence dossiers to resolve remaining checks."
+        store.complete(job.id,result_json,message)
         try:
             write_report(aggregate(result_json,elapsed_seconds=time.monotonic()-started,
                 requested=job.candidate_count,specialty=job.specialty,question_type=job.question_type))
