@@ -26,6 +26,7 @@ MAX_DEEP=3
 MAX_SEED_RECORDS=60
 MAX_EUROPE_SUPPLEMENTS=2
 MAX_REVIEW_PREFLIGHTS=3
+MAX_COMPARISON_RECOVERIES=2
 # Clinical search vocabulary; no claim that any pair is novel or eligible.
 # Each tuple has a population phrase, intervention phrase and optional aliases.
 ANCHORS={
@@ -149,6 +150,10 @@ def _query(terms,field="[tiab]"):
 def query_pair(pair,review=False):
     pop,inter,pa,ia=pair
     return _query(phrases(pop,pa))+" AND "+_query(phrases(inter,ia))+" AND "+(REVIEW_FILTER if review else RCT_FILTER)
+def comparison_query(pair, comparator):
+    # Supplemental only: preserve the broader P+I sample.
+    return query_pair(pair)+" AND "+_query((comparator,))
+
 def ep_query(pair):
     pop,inter,pa,ia=pair
     q=lambda ts:"("+" OR ".join('TITLE_ABS:"'+t.replace('"','')+'"' for t in ts)+")"
@@ -282,6 +287,27 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
         pair,rows,n=samples[i]
         if n<2:continue
         rows+=_search(europe,ep_query(pair),MAX_SEED_RECORDS,"ABSTRACT_SUPPLEMENT",report["queries"],check)
+    # Recover near-threshold comparisons before spending AI requests.
+    recovery=[]
+    for i,(pair,rows,_) in enumerate(samples):
+        _,buckets=comparison_rows(pair,rows,year=year)
+        for control,exact in buckets.items():
+            n=family_summary(exact)["family_leads"]
+            if 4<=n<MIN_FAMILIES:recovery.append((n,i,control))
+    recovered_cells=set()
+    for before,i,control in sorted(recovery,key=lambda x:(-x[0],x[1],x[2])):
+        if len(recovered_cells)>=MAX_COMPARISON_RECOVERIES:break
+        if i in recovered_cells:continue
+        recovered_cells.add(i)
+        pair,rows,_=samples[i]
+        additional=_search(pubmed,comparison_query(pair,control),MAX_SEED_RECORDS,"COMPARISON_RECOVERY",report["queries"],check)
+        if additional and abstract_enricher:
+            if check:check()
+            additional,abstract_audit=abstract_enricher(additional)
+            report["queries"].append(abstract_audit)
+        rows.extend(additional)
+        _,updated=comparison_rows(pair,rows,year=year)
+        report.setdefault("comparison_recovery",[]).append({"population":pair[0],"intervention":pair[1],"comparator":control,"before_family_cues":before,"after_family_cues":family_summary(updated.get(control,[]))["family_leads"],"confirmed_independent_eligible_trials":None})
     for pair,rows,_ in samples:
         all_rows,buckets=comparison_rows(pair,rows,year=year)
         primary=family_summary(all_rows)
@@ -298,14 +324,14 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
             title=f"{pair[1].capitalize()} versus {comp} in {pair[0]}: systematic review of randomized trials"
             info={"version":VERSION,"pair":pair,**family_summary(exact),"population_intervention_family_leads":primary["family_leads"],
                   "observed_outcome_terms":outcomes,"comparison_records":exact,"minimum":MIN_FAMILIES,
-                  "shortlist_eligible":primary["family_leads"]>=MIN_FAMILIES,
+                  "shortlist_eligible":family_summary(exact)["family_leads"]>=MIN_FAMILIES,
                   "novelty_confirmed":False,"confirmed_independent_eligible_trials":None}
             candidate=CandidateRecord("RCT-"+ident,"",title,key.title(),"EFFECTIVENESS",
                 review_question=title,population=pair[0],intervention_exposure_index_test=pair[1],comparator_reference=comp,
                 outcomes=outcomes,eligible_designs=["Randomized controlled trial"],
                 rationale="Observed randomized-report comparison cues; independent eligibility and extractable outcomes remain unverified.",
                 novelty_hypothesis="Check existing reviews and actual search dates; neither novelty nor update value is confirmed.",
-                search_terms=[pair[0],pair[1],comp],metadata={"rct_first":info,"evidence_preflight":{"priority_signal":primary["family_leads"],"eligibility_confirmed":False,"novelty_confirmed":False}})
+                search_terms=[pair[0],pair[1],comp],metadata={"rct_first":info,"evidence_preflight":{"priority_signal":family_summary(exact)["family_leads"],"eligibility_confirmed":False,"novelty_confirmed":False}})
             if any(is_recently_checked(candidate,x) for x in prior):
                 report["skipped_recent"].append({"candidate_id":candidate.candidate_id,"title":title,"reason":"RECENTLY_CHECKED_PICO"});continue
             from dataclasses import asdict
@@ -335,5 +361,5 @@ def main():
     from pathlib import Path
     p=argparse.ArgumentParser();p.add_argument("--output",type=Path,required=True);p.add_argument("--rotation",type=int,default=0);p.add_argument("--specialty",default="Cardiology");args=p.parse_args()
     r=collect(args.specialty,args.rotation);args.output.write_text(json.dumps(r,indent=2,default=str)+"\n")
-    print(json.dumps({"status":r["status"],"queries":r["queries"],"cells":[{k:v for k,v in c.items() if k!="source_records"} for c in r["cells"]],"candidates":[{"title":c["title"],"family_leads":c["metadata"]["rct_first"]["family_leads"],"pi_families":c["metadata"]["rct_first"]["population_intervention_family_leads"],"shortlist_eligible":c["metadata"]["rct_first"]["shortlist_eligible"]} for c in r["candidates"]],"new_ai_requests":0}),flush=True)
+    print(json.dumps({"status":r["status"],"queries":r["queries"],"cells":[{k:v for k,v in c.items() if k!="source_records"} for c in r["cells"]],"candidates":[{"title":c["title"],"family_leads":c["metadata"]["rct_first"]["family_leads"],"pi_families":c["metadata"]["rct_first"]["population_intervention_family_leads"],"shortlist_eligible":c["metadata"]["rct_first"]["shortlist_eligible"]} for c in r["candidates"]],"comparison_recovery":r.get("comparison_recovery",[]),"new_ai_requests":0}),flush=True)
 if __name__=="__main__":main()

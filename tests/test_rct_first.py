@@ -92,3 +92,30 @@ def test_efetch_identity_and_registry_data():
     out,audit=enrich_rows(None,original,fetcher=lambda ids:wrong)
     assert out==original and audit["unexpected_pmids"]==1
     with pytest.raises(ValueError):parse_efetch(b'<!DOCTYPE x [<!ENTITY y "bad">]><x/>',{"1"})
+
+
+def test_comparison_recovery_and_exact_shortlist():
+    class Source:
+        name="PubMed"
+        def search(self,q,*,limit):
+            records=[]
+            if "renal denervation" in q and "systematic[sb]" not in q:
+                records=[record(i) for i in range(1,7)]
+                records += [record(20,"Renal denervation in hypertension: randomized trial"),record(21,"Renal denervation in hypertension: randomized trial 21")]
+                if '"sham"[tiab]' in q:records=[record(i) for i in range(1,8)]
+            return SearchResult(self.name,q,SourceStatus.SEARCHED_POSITIVE if records else SourceStatus.SEARCHED_NEGATIVE,records,len(records))
+    class Empty:
+        name="Europe PMC"
+        def search(self,q,*,limit):return SearchResult(self.name,q,SourceStatus.SEARCHED_NEGATIVE,[],0)
+    report=collect("Cardiology",pubmed=Source(),europe=Empty(),year=2026,max_pairs=1)
+    assert report["comparison_recovery"][0]["before_family_cues"]==6
+    assert report["comparison_recovery"][0]["after_family_cues"]==7
+    assert report["candidates"][0]["metadata"]["rct_first"]["shortlist_eligible"]
+    class NoRecovery(Source):
+        def search(self,q,*,limit):
+            if '"sham"[tiab]' in q:return SearchResult(self.name,q,SourceStatus.SEARCHED_NEGATIVE,[],0)
+            return super().search(q,limit=limit)
+    report=collect("Cardiology",pubmed=NoRecovery(),europe=Empty(),year=2026,max_pairs=1)
+    info=report["candidates"][0]["metadata"]["rct_first"]
+    assert info["population_intervention_family_leads"]>=7 and info["family_leads"]==6
+    assert not info["shortlist_eligible"]

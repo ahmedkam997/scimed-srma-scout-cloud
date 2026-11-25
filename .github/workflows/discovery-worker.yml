@@ -69,13 +69,10 @@ jobs:
             echo "has_job=true" >> "$GITHUB_OUTPUT"
             echo "kind=recheck" >> "$GITHUB_OUTPUT"
           elif [ "$DISCOVERY" != "[]" ] || [ "$STALE" != "[]" ]; then
-            if [ -z "$SCIMED_AI_API_KEY" ] && [ -z "$GEMINI_API_KEY" ] && [ -z "$GROQ_API_KEY" ]; then
-              echo "has_job=false" >> "$GITHUB_OUTPUT"
-              echo "No AI provider key configured for the discovery queue."
-            else
-              echo "has_job=true" >> "$GITHUB_OUTPUT"
-              echo "kind=discovery" >> "$GITHUB_OUTPUT"
-            fi
+            echo "has_job=true" >> "$GITHUB_OUTPUT"
+            echo "kind=discovery" >> "$GITHUB_OUTPUT"
+            # RCT seed discovery is deterministic and does not require AI.
+            # The legacy worker retains its explicit configuration check.
           else
             echo "has_job=false" >> "$GITHUB_OUTPUT"
             echo "No queued work."

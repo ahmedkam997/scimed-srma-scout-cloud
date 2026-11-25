@@ -92,7 +92,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
     selected=[];seen=set()
     for c in candidates:
         info=c.metadata["rct_first"]
-        if not info["shortlist_eligible"]:continue
+        if not info.get("shortlist_eligible") or info.get("family_leads",0)<MIN_FAMILIES:continue
         cell=tuple(info["pair"][:2])
         if cell in seen:continue
         seen.add(cell);selected.append(c)
@@ -151,7 +151,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
             package["unverified_generated_options"]=[_draft(c) for c in candidates if c.candidate_id not in ids]
             package["unverified_generated_options_are_not_qualified"]=True
             package["rct_first"]={"version":VERSION,"minimum_comparison_family_leads":MIN_FAMILIES,"seed_status":seed["status"],
-                "seed_queries":seed["queries"],"cells":[{k:v for k,v in x.items() if k!="source_records"} for x in seed.get("cells",[])],
+                "seed_queries":seed["queries"],"comparison_recovery":seed.get("comparison_recovery",[]),"cells":[{k:v for k,v in x.items() if k!="source_records"} for x in seed.get("cells",[])],
                 "deep_limit":MAX_DEEP,"confirmed_independent_eligible_trials":None,"novelty_confirmed_by_seed":False,
                 "scope_note":"Unsupported specialties return explicit diagnostic instead of switching to mixed-design AI generation. Bounded samples do not establish absence.",
                 "selected_for_deep_verification":len(selected),"source_linked_candidates":len(candidates)}

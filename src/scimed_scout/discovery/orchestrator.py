@@ -704,7 +704,11 @@ class ReviewDiscoveryOrchestrator:
         existing = next((item for item in self.ledger.list_external_evidence(candidate_id, evidence_type) if str(item.get("source_record_id") or "") == str(record.record_id)), None)
         previous = dict((existing or {}).get("payload") or {})
         previous_metadata = previous.get("metadata") if isinstance(previous.get("metadata"), dict) else {}
-        new_metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        new_metadata = dict(record.metadata) if isinstance(record.metadata, dict) else {}
+        if existing and record.source == "PubMed" and existing.get("source") == "PubMed" and previous_metadata.get("pubmed_efetch_identity") == "EXACT_PMID":
+            for key in ("abstractText", "pubtype", "trial_registration_ids", "pubmed_efetch_identity"):
+                if previous_metadata.get(key):
+                    new_metadata[key] = previous_metadata[key]
         payload = {
             **previous,
             "url": record.url or previous.get("url", ""),
