@@ -33,7 +33,7 @@ def test_seed_bounded_and_rct_only():
             return SearchResult(self.name,q,SourceStatus.SEARCHED_POSITIVE if rr else SourceStatus.SEARCHED_NEGATIVE,rr,len(rr))
     p=Source();e=Source();e.name="Europe PMC"
     r=collect("Cardiology",pubmed=p,europe=e,year=2026)
-    assert len(p.calls)<=9 and len(e.calls)<=2 and r["new_ai_requests"]==0
+    assert len(p.calls)<=12 and len(e.calls)<=2 and r["new_ai_requests"]==0
     assert r["candidates"] and all(c["eligible_designs"]==["Randomized controlled trial"] for c in r["candidates"])
     assert r["candidates"][0]["metadata"]["rct_first"]["shortlist_eligible"]
     assert should_route("Cardiology","ALL") and not should_route("Cardiology","DIAGNOSTIC_ACCURACY")
@@ -119,3 +119,29 @@ def test_comparison_recovery_and_exact_shortlist():
     info=report["candidates"][0]["metadata"]["rct_first"]
     assert info["population_intervention_family_leads"]>=7 and info["family_leads"]==6
     assert not info["shortlist_eligible"]
+
+
+def test_review_comparison_recovery_is_bounded_and_source_linked():
+    class PubMed:
+        name="PubMed"
+        def __init__(self):self.calls=[]
+        def search(self,q,*,limit):
+            self.calls.append(q);rr=[]
+            if "renal denervation" in q:
+                if "systematic[sb]" not in q:
+                    rr=[record(i) for i in range(1,8)]
+                elif '"sham"[tiab]' in q:
+                    rr=[SearchRecord("PubMed","99","Renal denervation versus sham in hypertension: systematic review",year=2024,url="https://pubmed.ncbi.nlm.nih.gov/99/",metadata={"pubtype":["Systematic Review"],"abstractText":"CONCLUSIONS: Evidence is insufficient for blood pressure."})]
+            return SearchResult(self.name,q,SourceStatus.SEARCHED_POSITIVE if rr else SourceStatus.SEARCHED_NEGATIVE,rr,len(rr))
+    class Europe:
+        name="Europe PMC"
+        def search(self,q,*,limit):return SearchResult(self.name,q,SourceStatus.SEARCHED_NEGATIVE,[],0)
+    p=PubMed()
+    r=collect("Cardiology",pubmed=p,europe=Europe(),year=2026,max_pairs=1)
+    assert len(r["review_comparison_recovery"])==1
+    assert r["review_comparison_recovery"][0]["after_direct_review_cues"]==1
+    assert r["review_comparison_recovery"][0]["gap_cues"]>=1
+    assert r["new_ai_requests"]==0
+    profile=r["candidates"][0]["metadata"]["opportunity_mcda"]
+    assert "REVIEW_GAP_SIGNAL" in profile["routes"]
+    assert profile["assessment"]["publication_oriented_score"] is None

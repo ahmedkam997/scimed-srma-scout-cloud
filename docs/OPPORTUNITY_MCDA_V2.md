@@ -16,3 +16,5 @@ Methods consulted:
 Limits: no validated independent study or gap classifier; no automated clinical guideline, stakeholder preference, patient-priority or journal acceptance model; no automatic change to eligibility for outcome-specific hypotheses. No automated full-text extraction or proof of registration readiness. Local researcher-rating editor and JSON export are available, with source/rationale/counterevidence/uncertainty fields. They do not authenticate inputs or update cloud qualification. Cloud synchronization of manual ratings and completed-job continuation remain future work. The manual input interface in Python is a validation/calculation contract, not an independent adjudication service.
 
 Local manual assessment supports candidate interval comparisons across four prespecified weighting scenarios and report/topic exports. Each unresolved domain gets a concrete proposed recovery action (not a claim of execution).
+
+A bounded exact-comparison review search (up to two additional searches plus abstract enrichment) recovers direct review cues missed by the broad population/intervention sample. Failure or absence remains uncertainty. No extra AI requests.

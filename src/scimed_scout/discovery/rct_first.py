@@ -26,6 +26,7 @@ MAX_DEEP=3
 MAX_SEED_RECORDS=60
 MAX_EUROPE_SUPPLEMENTS=2
 MAX_REVIEW_PREFLIGHTS=4
+MAX_REVIEW_COMPARISON_RECOVERIES=2
 MAX_COMPARISON_RECOVERIES=2
 # Clinical search vocabulary; no claim that any pair is novel or eligible.
 # Each tuple has a population phrase, intervention phrase and optional aliases.
@@ -364,6 +365,29 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
     for row in report["candidates"]:
         candidate=CandidateRecord(**row)
         row["metadata"]["opportunity_mcda"]=profile(candidate)
+    # Broad P+I review retrieval is sensitive but may obscure exact comparisons.
+    # Run a bounded supplemental query only for top evidence-backed questions
+    # where no direct review or gap cue was retrieved. Preserve both searches.
+    review_recoveries=0
+    for row in report["candidates"]:
+        info=row["metadata"]["rct_first"];p=row["metadata"]["opportunity_mcda"]
+        pre=info.get("competing_review_preflight")
+        if not pre or pre.get("status") not in ("SEARCHED_POSITIVE","SEARCHED_NEGATIVE","PARTIAL"):continue
+        if p["source_linked_gap_cues"] or p["post_cutoff_report_cues"] or p["correction_method_cues"]:continue
+        if review_recoveries>=MAX_REVIEW_COMPARISON_RECOVERIES:break
+        pair=info["pair"];control=row["comparator_reference"];before=len(p["direct_comparison_review_sample"])
+        query=query_pair(pair,review=True)+" AND "+_query((control,))
+        extra=_search(pubmed,query,15,"REVIEW_COMPARISON_RECOVERY",report["queries"],check)
+        supplement_status=report["queries"][-1]["status"]
+        if extra and abstract_enricher:
+            if check:check()
+            extra,abstract_audit=abstract_enricher(extra)
+            report["queries"].append({**abstract_audit,"stage":"REVIEW_COMPARISON_ABSTRACT_ENRICHMENT"})
+        pre["records"].extend(extra)
+        pre["comparison_recovery_status"]=supplement_status
+        p=profile(CandidateRecord(**row));row["metadata"]["opportunity_mcda"]=p
+        report.setdefault("review_comparison_recovery",[]).append({"candidate_id":row["candidate_id"],"before_direct_review_cues":before,"after_direct_review_cues":len(p["direct_comparison_review_sample"]),"gap_cues":len(p["source_linked_gap_cues"]),"novelty_confirmed":False,"status":supplement_status})
+        review_recoveries+=1
     report["candidates"].sort(key=lambda row: (tuple(-x for x in row["metadata"]["opportunity_mcda"]["priority_key"]),row["candidate_id"]))
     report["status"]="SAMPLED" if report["queries"] and all(q["status"] in ("SEARCHED_POSITIVE","SEARCHED_NEGATIVE") for q in report["queries"]) else "PARTIAL_SAMPLE" if any(q["retrieved"] for q in report["queries"]) else "ACCESS_UNRESOLVED"
     return report
@@ -373,5 +397,5 @@ def main():
     from pathlib import Path
     p=argparse.ArgumentParser();p.add_argument("--output",type=Path,required=True);p.add_argument("--rotation",type=int,default=0);p.add_argument("--specialty",default="Cardiology");args=p.parse_args()
     r=collect(args.specialty,args.rotation);args.output.write_text(json.dumps(r,indent=2,default=str)+"\n")
-    print(json.dumps({"status":r["status"],"queries":r["queries"],"cells":[{k:v for k,v in c.items() if k!="source_records"} for c in r["cells"]],"candidates":[{"title":c["title"],"family_leads":c["metadata"]["rct_first"]["family_leads"],"pi_families":c["metadata"]["rct_first"]["population_intervention_family_leads"],"shortlist_eligible":c["metadata"]["rct_first"]["shortlist_eligible"],"opportunity_routes":c["metadata"].get("opportunity_mcda",{}).get("routes",[]),"gap_cue_count":len(c["metadata"].get("opportunity_mcda",{}).get("source_linked_gap_cues",[]))} for c in r["candidates"]],"comparison_recovery":r.get("comparison_recovery",[]),"new_ai_requests":0}),flush=True)
+    print(json.dumps({"status":r["status"],"queries":r["queries"],"cells":[{k:v for k,v in c.items() if k!="source_records"} for c in r["cells"]],"candidates":[{"title":c["title"],"family_leads":c["metadata"]["rct_first"]["family_leads"],"pi_families":c["metadata"]["rct_first"]["population_intervention_family_leads"],"shortlist_eligible":c["metadata"]["rct_first"]["shortlist_eligible"],"opportunity_routes":c["metadata"].get("opportunity_mcda",{}).get("routes",[]),"gap_cue_count":len(c["metadata"].get("opportunity_mcda",{}).get("source_linked_gap_cues",[]))} for c in r["candidates"]],"comparison_recovery":r.get("comparison_recovery",[]),"review_comparison_recovery":r.get("review_comparison_recovery",[]),"new_ai_requests":0}),flush=True)
 if __name__=="__main__":main()
