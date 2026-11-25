@@ -20,12 +20,12 @@ def fixtures():
     ]
 
 def test_real_title_clustering_does_not_claim_eligibility():
-    # DELIVER's broader population is not collapsed to pure HFpEF:
-    # only the exact preserved phrase matches, and scope is a cue.
-    records=fixtures()
-    records[1]["title"]="Dapagliflozin in Heart Failure with Preserved Ejection Fraction: randomized trial"
-    # Synthetic lexical variant tests matching behavior, not a publication title.
-    records[1]["source_record_id"]="synthetic-deliver-title-variant"
+    # Actual PRESERVED-HF citation, not an invented title variation.
+    # https://pubmed.ncbi.nlm.nih.gov/34711976/
+    # https://clinicaltrials.gov/study/NCT03030235
+    records=fixtures()+[
+        row("34711976","The SGLT2 inhibitor dapagliflozin in heart failure with preserved ejection fraction: a multicenter randomized trial","NCT03030235",year=2021),
+    ]
     clusters=build_clusters(records,"EFFECTIVENESS",current_year=2026)
     cell=next(c for c in clusters if c["population_anchor"]=="hfpef" and c["intervention_anchor"]=="sglt2")
     assert cell["distinct_report_leads"]==2
@@ -33,6 +33,10 @@ def test_real_title_clustering_does_not_claim_eligibility():
     assert cell["confirmed_independent_eligible_studies"] is None
     assert not cell["novelty_confirmed"]
     assert len(cell["reports"])==2
+    assert {r["record_id"] for r in cell["reports"]} == {"34449189","34711976"}
+    # EMPEROR-Preserved enrolled EF >40%; the literal title anchor is
+    # not proof of an EF >=50% population or an eligible outcome.
+    assert cell["registered_family_count"] == 2
 
 def test_duplicate_and_companion_reports_do_not_create_cluster():
     a=row("1","Empagliflozin in HFpEF","NCT00000001",doi="10.1/a")
