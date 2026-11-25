@@ -211,6 +211,7 @@
       method_guidance:methodsFor(type),
       minimum_independent_study_target_for_scout:minimum,
       opportunity_mcda:topic?.research_dossier?.opportunity_mcda || null,
+      researcher_recorded_assessment:window.SCIMED_MCDA?.read(job,topic) || null,
       minimum_target_is_methodological_requirement:false,
       external_research_curated_as_of:curated?.as_of || null,
       recommendation,

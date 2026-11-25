@@ -21,6 +21,8 @@ jobs:
           name: discovery-benchmark-report
           path: benchmark-report.json
       - run: node --check web/app.js
+      - run: node --check web/opportunity-assessment.js
+      - run: node --test tests/web_opportunity_assessment.mjs
       - run: node --check web/gap-verification.js
       - run: node --check web/final-audit-evidence.js
       - run: node --check web/final-evidence-audit.js

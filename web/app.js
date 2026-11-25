@@ -652,6 +652,7 @@ function topicDetailHtml(job, topic) {
         data-topic-id="${escapeHtml(topic.candidate_id || '')}">Download detailed brief (.md)</button>
     </div>
     ${opportunityAssessmentHtml(dossier.opportunity_mcda || topic.opportunity_mcda)}
+    ${(dossier.opportunity_mcda || topic.opportunity_mcda) && window.SCIMED_MCDA ? window.SCIMED_MCDA.render(job,topic) : ''}
     ${field('Research question', q.review_question)}
     ${field('Population', q.population)}
     ${field('Intervention / exposure / index test', q.intervention_exposure_index_test)}
@@ -1281,11 +1282,13 @@ function topicTransferText(job, topic) {
     .find(item => item.candidate_id === topic.candidate_id);
   // Earlier jobs lack the new detailed dossier. Preserve their available data
   // and explicitly tell ChatGPT the omitted source searches are unrecoverable.
-  const dossier = topic.research_dossier || {
+  const baseDossier = topic.research_dossier || {
     ...topic,
     historical_export_limitation: 'This job predates detailed topic dossiers. Only preserved fields are available.',
     original_scientific_audit: savedAudit || null
   };
+  const manual = typeof window !== "undefined" ? window.SCIMED_MCDA?.read(job,topic) : null;
+  const dossier = manual ? {...baseDossier,researcher_recorded_assessment:manual} : baseDossier;
   return [
     '# SciMed Review Scout: Independent Topic Verification',
     '',
@@ -1476,6 +1479,24 @@ els.refresh.addEventListener('click', async () => {
   }
 });
 els.jobs.addEventListener('click', async event => {
+  const mcdaButton=event.target.closest('[data-mcda-save],[data-mcda-export]');
+  if(mcdaButton){
+    const job=jobs.find(j=>j.id===(mcdaButton.dataset.mcdaSave||mcdaButton.dataset.mcdaExport));
+    const topic=job&&findTransferTopic(job,mcdaButton.dataset.mcdaTopic);
+    const panel=mcdaButton.closest('.mcda-editor');
+    if(!topic||!panel||!window.SCIMED_MCDA)return;
+    const message=panel.querySelector('.mcda-message');
+    if(mcdaButton.dataset.mcdaExport){
+      const data=window.SCIMED_MCDA.read(job,topic);
+      if(!data){message.textContent='Save valid inputs before export.';return;}
+      saveTextFile(topicFileName(topic).replace(/\.md$/i,'_MCDA_Assessment.json'),JSON.stringify(data,null,2),'application/json;charset=utf-8');
+    }else{
+      const data=window.SCIMED_MCDA.save(job,topic,panel.querySelector('.mcda-json').value);
+      message.textContent=data.ok?'Saved in this browser only. Export a backup. Scientific status unchanged.':data.error;
+      if(data.ok)panel.querySelector('.mcda-preview').innerHTML=window.SCIMED_MCDA.preview(data.data);
+    }
+    return;
+  }
   const reportButton = event.target.closest('[data-load-report]');
   if (reportButton) {
     reportButton.disabled = true;

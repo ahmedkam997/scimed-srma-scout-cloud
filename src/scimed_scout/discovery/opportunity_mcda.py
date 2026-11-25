@@ -20,13 +20,14 @@ SCENARIOS={"balanced":WEIGHTS,"novelty_information":dict(zip(WEIGHTS,(10,25,25,1
            "readiness_feasibility":dict(zip(WEIGHTS,(10,15,15,25,20,5,5,5))),
            "equal":{k:12.5 for k in WEIGHTS}}
 GAP_PATTERNS={
+    "PRIMARY_RESEARCH_NEED":r"\b(?:further|more|additional|larger|new) (?:well designed |high quality )?(?:randomized|randomised|clinical|controlled) trials? (?:are |is )?(?:needed|required|necessary|warranted)\b",
     "IMPRECISION_OR_INSUFFICIENT_INFORMATION":r"\b(?:insufficient evidence|limited evidence|imprecise estimates?|wide confidence intervals?|evidence (?:is|remains|was) (?:uncertain|inconclusive|limited|insufficient))\b",
     "INCONSISTENCY":r"\b(?:conflicting (?:evidence|results|findings)|inconsistent (?:results|findings|evidence)|substantial heterogeneity)\b",
     "MISSING_RELEVANT_INFORMATION":r"\b(?:long.term (?:outcomes?|effects?|safety|follow.up)|safety (?:data|outcomes?)|underrepresented|under.reported|not (?:reported|assessed|evaluated))\b",
     "POTENTIAL_BIAS_OR_METHODS_LIMITATION":r"\b(?:risk of bias|publication bias|methodological limitations?|low quality evidence)\b",
 }
 PROMPT="""RCT-first independent scientific adjudication: verify at least seven independent RCTs with the exact comparison and extractable relevant outcomes; do not count citation cues. Distinguish primary-research gaps from synthesis gaps. For novel, update, corrective, outcome and long-term routes, assess the difference from existing syntheses on its own merits. An identical PICO can be valuable if meaningful new evidence or a verified material correction exists. For updates compare actual search dates AND included-trial lists; new reports are not automatically new trials.
-Use eight weighted domains (0–5): clinical importance 15, route-specific research gap/novelty 20, incremental knowledge 20, evidence readiness 15, methodological feasibility 15, scientific timeliness 5, operational feasibility 5, editorial relevance 5. For each give original-source URLs, rationale, counterevidence and uncertainty; missing evidence = UNKNOWN, not 0. Do not double-count a single advantage. Calculate lower and upper weighted bounds without redistributing unknown weights. Compare balanced, novelty/information, readiness/feasibility and equal-weight scenarios. These local weights are not a validated instrument. Full score >=75, clinical importance >=4, information gain >=4, route-specific and overall novelty >=3, publication potential >=4, strong-moderate or high feasibility, grade A/B/corrected C and all scientific gates are mandatory. A score never clears unresolved eligibility, coverage, registry overlap, or fatal flaws. Only recommend registration after independently documenting all gates."""
+Use eight weighted domains (0–5): clinical importance 15, route-specific research gap/novelty 20, incremental knowledge 20, evidence readiness 15, methodological feasibility 15, scientific timeliness 5, operational feasibility 5, editorial relevance 5. For each give original-source URLs, rationale, counterevidence and uncertainty; missing evidence = UNKNOWN, not 0. Do not double-count a single advantage. Calculate lower and upper weighted bounds without redistributing unknown weights. Compare balanced, novelty/information, readiness/feasibility and equal-weight scenarios. These local weights are not a validated instrument. Full score >=75, clinical importance >=4, information gain >=4, route-specific and overall novelty >=3, publication potential >=4, strong-moderate or high feasibility, grade A/B/corrected C and all scientific gates are mandatory. A score never clears unresolved eligibility, coverage, registry overlap, or fatal flaws. Only recommend registration after independently documenting all gates. To transfer researcher ratings back into SciMed, output a separate JSON object with candidate_id matching the supplied dossier and ratings keyed by the eight machine-readable domains clinical_importance, research_gap_novelty, information_gain, evidence_readiness, methodological_feasibility, timeliness, operational_feasibility, editorial_relevance. Each rating has rating (0–5 or null), source_urls (array), rationale, counterevidence and uncertainty (strings). The researcher must check every input before saving; model output is not independent confirmation."""
 def number(v):
     return float(v) if isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v) and 0<=v<=5 else None
 def link(v):
@@ -105,9 +106,9 @@ def profile(candidate, reviews=None, *, opportunity=None, scorecard=None):
                     for code,pattern in GAP_PATTERNS.items():
                         if re.search(pattern,sentence,re.I):
                             findings.append({**citation,"kind":code,"excerpt":sentence[:400],
-                                "status":"REVIEW_ABSTRACT_GAP_CUE_NOT_SYNTHESIS_GAP_CONFIRMED",
+                                "status":"PRIMARY_RESEARCH_NEED_CUE_NOT_SYNTHESIS_OPPORTUNITY" if code=="PRIMARY_RESEARCH_NEED" else "REVIEW_ABSTRACT_GAP_CUE_NOT_SYNTHESIS_GAP_CONFIRMED",
                                 "next_action":"Check whether eligible RCTs and existing synthesis answer this specific uncertainty, or new primary research is required."})
-                            for outcome in candidate.outcomes:
+                            for outcome in candidate.outcomes if code!="PRIMARY_RESEARCH_NEED" else []:
                                 if has(sentence,outcome):
                                     matched=[r for r in records if has(str(r.get("title") or "")+" "+str((r.get("payload") or {}).get("metadata",{}).get("abstractText") or ""),outcome)]
                                     n=family_summary(matched)["family_leads"]
@@ -133,7 +134,9 @@ def profile(candidate, reviews=None, *, opportunity=None, scorecard=None):
     opportunity=opportunity or {};scorecard=scorecard or {}
     correction=opportunity.get("correction_method_cues") or []
     routes=[]
-    if findings:routes.append("REVIEW_GAP_SIGNAL")
+    synthesis_cues=[f for f in findings if f["kind"]!="PRIMARY_RESEARCH_NEED"]
+    if synthesis_cues:routes.append("REVIEW_GAP_SIGNAL")
+    if any(f["kind"]=="PRIMARY_RESEARCH_NEED" for f in findings):routes.append("PRIMARY_RESEARCH_NEED_CUE")
     if post or opportunity.get("route") in ("UPDATE_SIGNAL","UPDATE_AND_CORRECTIVE_SIGNAL"):routes.append("UPDATE_SIGNAL")
     if correction or opportunity.get("route") in ("CORRECTIVE_SIGNAL","UPDATE_AND_CORRECTIVE_SIGNAL"):routes.append("CORRECTIVE_SIGNAL")
     if outcome_hypotheses:routes.append("OUTCOME_SPECIFIC_SIGNAL")
@@ -141,7 +144,7 @@ def profile(candidate, reviews=None, *, opportunity=None, scorecard=None):
     n=int(info.get("family_leads") or 0)
     # Operational priority only: evidence floor, source-linked actionable gaps,
     # and capped count rather than reward for the largest saturated topic.
-    priority=(int(n>=MIN_FAMILIES),int(bool(post or correction)),int(bool(findings)),min(n,14))
+    priority=(int(n>=MIN_FAMILIES),int(bool(post or correction)),int(bool(synthesis_cues)),min(n,14))
     ratings={}
     if n:
         ratings["evidence_readiness"]={"rating":min(5,round(n/MIN_FAMILIES*3,2)),"status":"PRELIMINARY",
