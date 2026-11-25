@@ -504,6 +504,21 @@ def _record_identity(record: dict):
     return identity(record)
 
 
+def _primary_bibliographic_key(record: dict) -> str:
+    # Keep the existing primary-publication freshness heuristic separate from
+    # competitor identity. Neither key establishes trial independence.
+    payload = record.get("payload") or {}
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    doi = str(payload.get("doi") or metadata.get("doi") or _external_doi(metadata) or "").strip().casefold()
+    doi = doi.removeprefix("https://doi.org/").removeprefix("http://doi.org/")
+    if doi:
+        return "doi:" + doi.rstrip(".")
+    title = " ".join(re.sub(r"[^a-z0-9]+", " ", str(record.get("title") or "").casefold()).split())
+    if title:
+        return "title:" + title
+    return "id:" + str(record.get("source") or "") + ":" + str(record.get("source_record_id") or "")
+
+
 def _record_text(record: dict) -> str:
     payload = record.get("payload") or {}
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
@@ -614,7 +629,7 @@ def _bibliographic_leads_after(candidate, records: list[dict], baseline_year: in
         tokens = _tokens(title)
         if not tokens or len(tokens & intervention) / len(intervention) < 0.5:
             continue
-        ident = _record_key(item)
+        ident = _primary_bibliographic_key(item)
         if ident not in found:
             found[ident] = {
                 "title": title, "year": year, "source": item.get("source", ""),
