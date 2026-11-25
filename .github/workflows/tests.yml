@@ -15,6 +15,11 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -e '.[dev]'
       - run: pytest -q
+      - run: python -m scimed_scout.discovery.benchmark --output benchmark-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: discovery-benchmark-report
+          path: benchmark-report.json
       - run: node --check web/app.js
       - run: node --check web/gap-verification.js
       - run: node --check web/final-audit-evidence.js

@@ -1,0 +1,252 @@
+{
+  "version": "1.0",
+  "date": "2026-11-25",
+  "scope": "Policy regression and published bibliographic reference cases; not a validated topic-level gold standard",
+  "policy_baseline": {
+    "design_framework_defined": true,
+    "unique_primary_study_candidates": 4,
+    "complete_literature_sources": 2,
+    "meaningful_synthesis_plausible": true,
+    "clinical_question_novelty": 4,
+    "overall_novelty": 4,
+    "fatal_redundancy": false,
+    "question_framework_coherent": true,
+    "feasibility": "HIGH",
+    "fatal_methodological_flaw": false,
+    "clinical_importance": 5,
+    "publication_potential": 5,
+    "new_information_gain": 4,
+    "publication_oriented_score": 85,
+    "editorial_grade": "B",
+    "sources": [
+      {
+        "source": "PubMed",
+        "status": "SEARCHED_POSITIVE"
+      },
+      {
+        "source": "Europe PMC",
+        "status": "SEARCHED_POSITIVE"
+      },
+      {
+        "source": "PROSPERO",
+        "status": "SEARCHED_NEGATIVE"
+      },
+      {
+        "source": "OSF Registries",
+        "status": "SEARCHED_NEGATIVE"
+      }
+    ],
+    "unresolved_type_a": []
+  },
+  "cases": [
+    {
+      "id": "S01",
+      "kind": "synthetic_policy",
+      "description": "All stated discovery conditions met",
+      "overrides": {},
+      "expected_qualified": true
+    },
+    {
+      "id": "S02",
+      "kind": "synthetic_policy",
+      "description": "Too few bibliographic primary leads",
+      "overrides": {
+        "unique_primary_study_candidates": 3
+      },
+      "expected_qualified": false
+    },
+    {
+      "id": "S03",
+      "kind": "synthetic_policy",
+      "description": "Confirmed redundant review",
+      "overrides": {
+        "fatal_redundancy": true
+      },
+      "expected_qualified": false
+    },
+    {
+      "id": "S04",
+      "kind": "synthetic_policy",
+      "description": "Only one conclusive scholarly source",
+      "overrides": {
+        "complete_literature_sources": 1
+      },
+      "expected_qualified": false
+    },
+    {
+      "id": "S05",
+      "kind": "synthetic_policy",
+      "description": "Mandatory PROSPERO search failed",
+      "overrides": {
+        "sources": [
+          {
+            "source": "PubMed",
+            "status": "SEARCHED_POSITIVE"
+          },
+          {
+            "source": "Europe PMC",
+            "status": "SEARCHED_POSITIVE"
+          },
+          {
+            "source": "PROSPERO",
+            "status": "ACCESS_FAILED"
+          },
+          {
+            "source": "OSF Registries",
+            "status": "SEARCHED_NEGATIVE"
+          }
+        ]
+      },
+      "expected_qualified": false
+    },
+    {
+      "id": "S06",
+      "kind": "synthetic_policy",
+      "description": "OSF partial coverage",
+      "overrides": {
+        "sources": [
+          {
+            "source": "PubMed",
+            "status": "SEARCHED_POSITIVE"
+          },
+          {
+            "source": "Europe PMC",
+            "status": "SEARCHED_POSITIVE"
+          },
+          {
+            "source": "PROSPERO",
+            "status": "SEARCHED_NEGATIVE"
+          },
+          {
+            "source": "OSF Registries",
+            "status": "PARTIAL"
+          }
+        ]
+      },
+      "expected_qualified": false
+    },
+    {
+      "id": "S07",
+      "kind": "synthetic_policy",
+      "description": "Unresolved competitor overlap",
+      "overrides": {
+        "unresolved_type_a": [
+          "Competing review requires adjudication"
+        ]
+      },
+      "expected_qualified": false
+    },
+    {
+      "id": "S08",
+      "kind": "synthetic_policy",
+      "description": "Publication-oriented score below policy",
+      "overrides": {
+        "publication_oriented_score": 74
+      },
+      "expected_qualified": false
+    },
+    {
+      "id": "S09",
+      "kind": "synthetic_policy",
+      "description": "Fatal methodological flaw",
+      "overrides": {
+        "fatal_methodological_flaw": true
+      },
+      "expected_qualified": false
+    },
+    {
+      "id": "S10",
+      "kind": "synthetic_policy",
+      "description": "Novelty below threshold",
+      "overrides": {
+        "overall_novelty": 2
+      },
+      "expected_qualified": false
+    },
+    {
+      "id": "S11",
+      "kind": "synthetic_policy",
+      "description": "No explicit fatal-redundancy judgment",
+      "overrides": {
+        "fatal_redundancy": null
+      },
+      "expected_qualified": false
+    },
+    {
+      "id": "S12",
+      "kind": "synthetic_policy",
+      "description": "Insufficient evidence of added information",
+      "overrides": {
+        "new_information_gain": 3
+      },
+      "expected_qualified": false
+    },
+    {
+      "id": "R01",
+      "kind": "published_trial_family",
+      "description": "REGROUP: original and intermediate-term follow-up are reports of one randomized trial",
+      "scope": "Endoscopic versus open vein harvesting during CABG",
+      "records": [
+        {
+          "pmid": "30417737",
+          "title": "Randomized Trial of Endoscopic or Open Vein-Graft Harvesting for Coronary-Artery Bypass",
+          "year": 2019,
+          "registry_id": "NCT01850082",
+          "comparison": "EVH versus OVH",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/30417737/"
+        },
+        {
+          "pmid": "33720367",
+          "title": "Intermediate-Term Outcomes of Endoscopic or Open Vein Harvesting for Coronary Artery Bypass Grafting: The REGROUP Randomized Clinical Trial",
+          "year": 2021,
+          "registry_id": "NCT01850082",
+          "comparison": "EVH versus OVH",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/33720367/"
+        }
+      ],
+      "expected_reports": 2,
+      "reference_trial_families": 1,
+      "reference_distinct_comparisons": 1,
+      "reference_basis": "Same trial registration and follow-up of original randomized population; JAMA Network Open full text https://pmc.ncbi.nlm.nih.gov/articles/PMC7961312/."
+    },
+    {
+      "id": "R02",
+      "kind": "published_trial_family",
+      "description": "RECOVERY platform: one registration is not sufficient to establish identical comparisons or participant independence",
+      "scope": "Systemic corticosteroid dose/comparator comparisons in hospitalized COVID-19",
+      "records": [
+        {
+          "pmid": "32678530",
+          "title": "Dexamethasone in Hospitalized Patients with Covid-19",
+          "year": 2021,
+          "registry_id": "NCT04381936",
+          "comparison": "6 mg dexamethasone versus usual care",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/32678530/"
+        },
+        {
+          "pmid": "37060915",
+          "title": "Higher dose corticosteroids in patients admitted to hospital with COVID-19 who are hypoxic but not requiring ventilatory support (RECOVERY): a randomised, controlled, open-label, platform trial",
+          "year": 2023,
+          "registry_id": "NCT04381936",
+          "comparison": "higher dose corticosteroids versus usual care including low-dose corticosteroids",
+          "url": "https://pubmed.ncbi.nlm.nih.gov/37060915/"
+        }
+      ],
+      "expected_reports": 2,
+      "reference_trial_families": 1,
+      "reference_distinct_comparisons": 2,
+      "reference_basis": "Same platform registration, but different randomized intervention/control questions. Population independence is not asserted."
+    },
+    {
+      "id": "R03",
+      "kind": "published_update_chronology",
+      "description": "A 2022 Cochrane review search predates a published 2023 corticosteroid-dose comparison",
+      "review_url": "https://www.cochrane.org/evidence/CD014963_are-corticosteroids-anti-inflammatory-medicines-given-orally-or-injection-effective-treatment-people",
+      "last_search_date": "2022-01-06",
+      "new_report_url": "https://pubmed.ncbi.nlm.nih.gov/37060915/",
+      "new_report_date": "2023-04-13",
+      "expected_after_cutoff": true,
+      "reference_basis": "Publication after search cutoff is an update lead only. Verify eligibility, trial independence and later reviews before recommending an update."
+    }
+  ]
+}

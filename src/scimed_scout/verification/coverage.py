@@ -66,7 +66,7 @@ def evaluate_coverage(logs: list[SearchLogRecord], policy: VerificationPolicy) -
 
 
 def _aggregate(values: list[SourceStatus]) -> SourceStatus:
-    if not values:
+    if not values or all(x == SourceStatus.NOT_SEARCHED for x in values):
         return SourceStatus.NOT_SEARCHED
     if all(x == SourceStatus.ACCESS_FAILED for x in values):
         return SourceStatus.ACCESS_FAILED
