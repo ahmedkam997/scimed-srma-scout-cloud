@@ -15,6 +15,7 @@ from scimed_scout.verification.queries import build_search_plan
 from .constants import MIN_DISCOVERY_STUDIES
 from .candidate_preflight import FocusedEvidencePreflight
 from .query_optimizer import optimized_queries, sample_quality, VERSION as QUERY_OPTIMIZER_VERSION
+from .adaptive_search import collect as collect_supplementary
 from .evidence import discovery_evidence_snapshot
 from .pico_matching import assess_pico
 from .review_opportunity import assess_review_opportunity
@@ -46,6 +47,7 @@ class ReviewDiscoveryOrchestrator:
         resumed_results: list[DiscoveryCandidateResult] | None = None,
         require_pico_signals: bool = False,
         optimize_literature_queries: bool = False,
+        adaptive_search: bool = False,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
@@ -58,6 +60,7 @@ class ReviewDiscoveryOrchestrator:
         self.resumed_results = list(resumed_results or [])
         self.require_pico_signals = require_pico_signals
         self.optimize_literature_queries = optimize_literature_queries
+        self.adaptive_search = adaptive_search
 
     def run(
         self,
@@ -251,6 +254,9 @@ class ReviewDiscoveryOrchestrator:
             self._search_sources(candidate, policy.pipeline_sources, plan.pipeline_queries, evidence_type="ONGOING_STUDY", purpose="future evidence pipeline", limit_per_query=limit_per_query, recover_only=recover_only)
 
         self._check_cancellation()
+        if self.adaptive_search and not (candidate.metadata or {}).get("adaptive_search_audit"):
+            self._supplementary_search(candidate)
+            candidate=self.ledger.get_candidate(candidate_id) or candidate
         logs = self.ledger.list_search_log(candidate_id)
         coverage = evaluate_coverage(logs, policy)
         evidence = discovery_evidence_snapshot(self.ledger, candidate_id)
@@ -588,6 +594,42 @@ class ReviewDiscoveryOrchestrator:
                             classification=classification,
                             originally_requested=evidence_type,
                         )
+
+    def _supplementary_search(self,candidate):
+        client=self.clients.get("Europe PMC")
+        if client is None or not hasattr(client,"http"):
+            return
+        logs=self.ledger.list_search_log(candidate.candidate_id)
+        if any(log.source=="Europe PMC" and log.status==SourceStatus.ACCESS_FAILED for log in logs):
+            candidate.metadata={**(candidate.metadata or {}),"adaptive_search_audit":{
+                "version":"ADAPTIVE_SEARCH_V1","status":"DEFERRED_BASE_SOURCE_FAILURE","coverage_clearance_allowed":False}}
+            self.ledger.upsert_candidate(candidate)
+            return
+        try:
+            report,rows=collect_supplementary(candidate,
+                self.ledger.list_external_evidence(candidate.candidate_id,"PRIMARY_STUDY"),
+                self.ledger.list_external_evidence(candidate.candidate_id,"PUBLISHED_REVIEW"),
+                client,existing_queries={log.query for log in logs if log.source=="Europe PMC"})
+            # Supplementary attempts are deliberately separate from the
+            # mandatory database coverage ledger. Preserve all returned hits;
+            # only confirmed review cues are tagged as competing reviews.
+            for purpose,query,records in rows:
+                for record in records:
+                    self._check_cancellation()
+                    kind=classify_review_search_hit(record)
+                    record_type="PUBLISHED_REVIEW" if kind=="CONFIRMED_REVIEW_CUE" else "OTHER" if _obvious_review(record) else "PRIMARY_STUDY"
+                    self._store_record(candidate.candidate_id,record_type,record,query,purpose,
+                        classification=kind,originally_requested="SUPPLEMENTARY_DISCOVERY")
+            candidate=self.ledger.get_candidate(candidate.candidate_id) or candidate
+            candidate.metadata={**(candidate.metadata or {}),"adaptive_search_audit":report}
+            self.ledger.upsert_candidate(candidate)
+        except Exception as exc:
+            self._check_cancellation()
+            candidate=self.ledger.get_candidate(candidate.candidate_id) or candidate
+            candidate.metadata={**(candidate.metadata or {}),"adaptive_search_audit":{
+                "version":"ADAPTIVE_SEARCH_V1","status":"FAILED","error_type":type(exc).__name__,
+                "coverage_clearance_allowed":False}}
+            self.ledger.upsert_candidate(candidate)
 
     def _store_record(
         self, candidate_id: str, evidence_type: str, record: SearchRecord,

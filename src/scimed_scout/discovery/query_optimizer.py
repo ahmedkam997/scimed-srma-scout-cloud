@@ -20,8 +20,8 @@ class Concept:
 # Verified NLM descriptors. More specific HF subtypes stay separate; broad
 # Heart Failure heading is never substituted for a subtype in the focused plan.
 CONCEPTS=(
-    Concept(("heart failure with preserved ejection fraction","HFpEF"),),
-    Concept(("heart failure with reduced ejection fraction","HFrEF"),),
+    Concept(("heart failure with preserved ejection fraction","heart failure with a preserved ejection fraction","heart failure and preserved ejection fraction","heart failure and a preserved ejection fraction","HFpEF"),),
+    Concept(("heart failure with reduced ejection fraction","heart failure with a reduced ejection fraction","heart failure and reduced ejection fraction","HFrEF"),),
     Concept(("heart failure","cardiac failure"),"Heart Failure","D006333"),
     Concept(("chronic coronary syndrome","chronic coronary syndromes","stable coronary artery disease"),),
     Concept(("coronary artery disease","coronary heart disease"),"Coronary Artery Disease","D003324"),
