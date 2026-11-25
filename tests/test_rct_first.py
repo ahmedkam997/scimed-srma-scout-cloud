@@ -67,3 +67,13 @@ def test_no_evidence_no_ai_no_deep():
     def forbidden(*a,**kw):raise AssertionError("seed search repeated")
     result=process_rct_job(job,store,collector=forbidden,clients=[],router_factory=no_ai)
     assert result["run_summary"]["mode"]=="RCT_FIRST_V1"
+
+def test_comparator_requires_actual_comparison_not_background_medication():
+    from scimed_scout.discovery.rct_first import explicit_comparison
+    assert explicit_comparison("Renal denervation versus sham in hypertension: randomized trial",("renal denervation",),"sham")
+    assert not explicit_comparison("Renal denervation versus sham in patients receiving aspirin",("renal denervation",),"aspirin")
+    assert not explicit_comparison("Randomized trial of renal denervation in hypertension with aspirin use",("renal denervation",),"aspirin")
+    assert explicit_comparison("We randomized patients to renal denervation or sham",("renal denervation",),"sham")
+def test_unsupported_scope_does_not_fall_back_to_mixed_design():
+    assert should_route("Dermatology","ALL")
+    assert collect("Dermatology")["status"]=="UNSUPPORTED_SPECIALTY"

@@ -71,6 +71,36 @@ ANCHORS={
  ("parkinson disease","deep brain stimulation",("parkinson's disease",),()),
  ("stroke","robot assisted rehabilitation",(),("robotic rehabilitation",)),
  ),
+ "neurosurgery":(
+ ("subdural hematoma","middle meningeal artery embolization",("subdural haematoma",),()),
+ ("intracerebral hemorrhage","minimally invasive surgery",("intracerebral haemorrhage",),()),
+ ("glioblastoma","tumor treating fields",("glioblastoma multiforme",),("tumour treating fields",)),
+ ("lumbar spinal stenosis","decompression",(),()),
+ ),
+ "radiology":(
+ ("breast cancer","digital breast tomosynthesis",(),("tomosynthesis",)),
+ ("colorectal cancer","computed tomography colonography",(),("CT colonography",)),
+ ("ischemic stroke","mechanical thrombectomy",("ischaemic stroke",),("endovascular thrombectomy",)),
+ ("hepatocellular carcinoma","radiofrequency ablation",(),()),
+ ),
+ "endocrinology":(
+ ("type 1 diabetes","continuous glucose monitoring",("type 1 diabetes mellitus",),("CGM",)),
+ ("type 2 diabetes","semaglutide",(),()),
+ ("type 2 diabetes","tirzepatide",(),()),
+ ("obesity","liraglutide",(),()),
+ ),
+ "anesthesiology":(
+ ("general anesthesia","dexmedetomidine",("general anaesthesia",),()),
+ ("postoperative pain","lidocaine",(),()),
+ ("postoperative nausea and vomiting","dexamethasone",(),()),
+ ("tracheal extubation","propofol",(),()),
+ ),
+ "obstetrics and gynecology":(
+ ("postpartum hemorrhage","tranexamic acid",("postpartum haemorrhage",),()),
+ ("preterm birth","vaginal progesterone",(),()),
+ ("preeclampsia","aspirin",("pre-eclampsia",),()),
+ ("gestational diabetes","metformin",(),()),
+ ),
  "nephrology":(
  ("acute kidney injury","renal replacement therapy",("AKI","acute renal failure"),("kidney replacement therapy",)),
  ("chronic kidney disease","dapagliflozin",("CKD",),()),
@@ -82,6 +112,7 @@ ANCHORS={
 # remain separate; we never invent the comparator from a generic trial title.
 CONTROLS=("placebo","sham","usual care","standard care","open surgery","open repair",
           "open vein harvesting","open saphenous vein harvesting","medical therapy",
+          "self monitoring of blood glucose","fingerstick glucose monitoring","insulin","mammography","conventional mammography","usual glucose monitoring",
           "aspirin","clopidogrel","warfarin","enalapril","metoprolol",
           "radiofrequency ablation","cryoballoon ablation","early treatment","delayed treatment",
           "appendectomy","appendicectomy","saline","no treatment")
@@ -101,7 +132,7 @@ BACKGROUND=re.compile(r"^(?:background|introduction|rationale|objective|aim)\s*[
 def supported(specialty):
     return str(specialty).strip().casefold() in ANCHORS
 def should_route(specialty,question_type):
-    return str(question_type).strip().upper() in ("ALL","EFFECTIVENESS") and (supported(specialty) or str(specialty).strip().upper()=="ALL")
+    return str(question_type).strip().upper() in ("ALL","EFFECTIVENESS")
 
 def has(text,term):
     target=_normalize(term)
@@ -158,6 +189,34 @@ def family_summary(rows):
             "registry_linked_families":a["registry_linked_families"],"unlinked_reports":len(a["unlinked_reports"]),
             "ambiguous_reports":len(a["ambiguous_reports"]),"confirmed_independent_eligible_trials":None}
 
+def explicit_comparison(text,interventions,control):
+    """Only bounded direct-comparison or control-design phrases count.
+    These are prioritization signals, never evidence of exact randomization arms.
+    """
+    text=str(text or "")
+    if not any_term(text,interventions) or not has(text,control):return False
+    # E.g. named intervention in a placebo-controlled randomized trial.
+    if control in ("placebo","sham") and re.search(r"\b"+control+r"[- ]controlled\b",text,re.I):
+        # Do not infer a comparator if multiple explicit "versus" arms exist.
+        return not re.search(r"\b(?:versus|vs\.?|compared with|compared to)\b",text,re.I) or any(
+            explicit_side(text,m,interventions,control) for m in re.finditer(r"\b(?:versus|vs\.?|compared with|compared to)\b",text,re.I))
+    for m in re.finditer(r"\b(?:versus|vs\.?|compared with|compared to)\b",text,re.I):
+        if explicit_side(text,m,interventions,control):return True
+    # Explicit allocation X or Y only (not general co-mentions).
+    m=re.search(r"\b(?:randomi[sz]ed (?:to|into)|randomly (?:assigned|allocated)(?: to)?)\s+",text,re.I)
+    if m:
+        arms=re.split(r"\b(?:or|and)\b",text[m.end():],maxsplit=1,flags=re.I)
+        if len(arms)==2:
+            left=" ".join(arms[0].split()[-12:]);right=" ".join(arms[1].split()[:12])
+            return (any_term(left,interventions) and has(right,control)) or (has(left,control) and any_term(right,interventions))
+    return False
+
+def explicit_side(text,m,interventions,control):
+    left=" ".join(text[:m.start()].split()[-10:]);right=" ".join(text[m.end():].split()[:6])
+    # "X versus Y in patients receiving aspirin" is not an aspirin arm.
+    right=re.split(r"\b(?:in patients|in adults|among|with concomitant|receiving|undergoing|treated with|on background)\b",right,maxsplit=1,flags=re.I)[0]
+    return (any_term(left,interventions) and has(right,control)) or (has(left,control) and any_term(right,interventions))
+
 def comparison_rows(pair,rows,comparator=None,year=None):
     buckets=defaultdict(list);all_rows=[]
     pop,inter,pa,ia=pair
@@ -167,7 +226,7 @@ def comparison_rows(pair,rows,comparator=None,year=None):
         # allocation passage. This is an explicit cue, not proof of exact arms.
         for control in ((comparator,) if comparator else CONTROLS):
             if any_term(control,phrases(inter,ia)):continue
-            matches=[t for t in eligible if any_term(t,phrases(inter,ia)) and has(t,control) and COMPARE.search(t)]
+            matches=[t for t in eligible if explicit_comparison(t,phrases(inter,ia),control)]
             if matches:
                 buckets[control].append({**r,"comparison_excerpt":matches[0][:500]})
     return all_rows,buckets
@@ -194,11 +253,11 @@ def _search(client,query,cap,stage,audits,check):
 def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),year=None,max_pairs=MAX_PAIRS):
     key=str(specialty).strip().casefold()
     year=year or datetime.now(timezone.utc).year
-    if key=="all":key=("cardiology","general surgery","orthopedics","neurology","nephrology")[rotation%5]
+    if key=="all":key=tuple(ANCHORS)[rotation%len(ANCHORS)]
     report={"version":VERSION,"specialty":key,"queries":[],"cells":[],"candidates":[],"skipped_recent":[],"new_ai_requests":0,"minimum_family_leads":MIN_FAMILIES,"scientific_accuracy_validated":False}
     if key not in ANCHORS:return {**report,"status":"UNSUPPORTED_SPECIALTY"}
     pubmed=pubmed or PubMedSource(sort="relevance");europe=europe or EuropePMCSource()
-    anchors=ANCHORS[key];start=(int(rotation)*MAX_PAIRS)%len(anchors)
+    anchors=ANCHORS[key];start=(int(rotation)*5)%len(anchors)
     pairs=[anchors[(start+i)%len(anchors)] for i in range(min(max_pairs,len(anchors),MAX_PAIRS))]
     samples=[]
     for pair in pairs:
@@ -242,7 +301,7 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
             report["candidates"].append(asdict(candidate))
     # Cap questions by evidence and clinical diversity, never by AI opinion.
     report["candidates"].sort(key=lambda c:(-c["metadata"]["rct_first"]["family_leads"],-c["metadata"]["rct_first"]["population_intervention_family_leads"],c["candidate_id"]))
-    report["status"]="SAMPLED" if any(q["status"] in ("SEARCHED_POSITIVE","SEARCHED_NEGATIVE") for q in report["queries"]) else "ACCESS_UNRESOLVED"
+    report["status"]="SAMPLED" if report["queries"] and all(q["status"] in ("SEARCHED_POSITIVE","SEARCHED_NEGATIVE") for q in report["queries"]) else "PARTIAL_SAMPLE" if any(q["retrieved"] for q in report["queries"]) else "ACCESS_UNRESOLVED"
     return report
 
 def main():

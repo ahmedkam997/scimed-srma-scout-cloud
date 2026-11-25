@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111827">
   <link rel="manifest" href="manifest.webmanifest">
   <title>SciMed Review Scout</title>
-  <link rel="stylesheet" href="styles.css?v=20261125-durable-resume-reportfix">
+  <link rel="stylesheet" href="styles.css?v=20261125-durable-resume-rctfirst">
 </head>
 <body>
 <main>
@@ -57,8 +57,8 @@
 
     <label>Question type
       <select id="questionType">
-        <option value="ALL" selected>All question types</option>
-        <option value="EFFECTIVENESS">Effectiveness</option>
+        <option value="ALL" selected>Evidence-first RCT discovery</option>
+        <option value="EFFECTIVENESS">Effectiveness (RCT only)</option>
         <option value="SAFETY_HARMS">Safety / Harms</option>
         <option value="DIAGNOSTIC_ACCURACY">Diagnostic Accuracy</option>
         <option value="PROGNOSIS">Prognosis</option>
@@ -87,6 +87,7 @@
     <p class="help">The same clinical PICO is skipped temporarily. Topics with incomplete source checks are eligible again after at most 7 days. This applies to previous jobs from this browser.</p>
 
     <button id="start" disabled>Start discovery</button>
+    <p class="help">RCT-first mode uses observed trial comparisons and at most three deep checks. Seven comparison-family cues are not seven verified eligible trials. Supported scopes: Cardiology, General Surgery, Orthopedics, Neurology, Neurosurgery, Nephrology, Radiology, Endocrinology, Anesthesiology, and Obstetrics and Gynecology. Other explicitly selected study question types use the legacy method.</p>
     <p class="help">The job is saved in the cloud. You may close the browser after it enters the queue.</p>
   </section>
 
@@ -129,11 +130,11 @@
 
   <p class="foot">A failed source is never interpreted as a negative search.</p>
 </main>
-<script src="config.js?v=20261125-durable-resume-reportfix"></script>
-<script src="gap-verification.js?v=20261125-durable-resume-reportfix"></script>
-<script src="final-audit-evidence.js?v=20261125-durable-resume-reportfix"></script>
-<script src="final-evidence-audit.js?v=20261125-durable-resume-reportfix"></script>
-<script type="module" src="app.js?v=20261125-durable-resume-reportfix"></script>
+<script src="config.js?v=20261125-durable-resume-rctfirst"></script>
+<script src="gap-verification.js?v=20261125-durable-resume-rctfirst"></script>
+<script src="final-audit-evidence.js?v=20261125-durable-resume-rctfirst"></script>
+<script src="final-evidence-audit.js?v=20261125-durable-resume-rctfirst"></script>
+<script type="module" src="app.js?v=20261125-durable-resume-rctfirst"></script>
 <script>
   // Runs independently of app.js: a failed module import cannot strand
   // the Android UI on a permanently disabled Start button.
