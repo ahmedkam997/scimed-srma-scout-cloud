@@ -20,6 +20,12 @@ class MemoryStore:
     def recent_completed_jobs(self, **kwargs):
         return []
 
+    def load_step(self, job_id, key):
+        return None
+
+    def legacy_checkpoint(self, job_id):
+        return {}
+
     def update_job(self, job_id, **kwargs):
         self.updates.append(kwargs)
 

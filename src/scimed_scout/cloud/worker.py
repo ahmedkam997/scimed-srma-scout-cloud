@@ -110,12 +110,18 @@ def _within_specialty(candidate, specialty: str) -> bool:
     text = " ".join([candidate.title, candidate.review_question, candidate.population,
                      candidate.intervention_exposure_index_test, " ".join(candidate.outcomes or [])])
     if scope == "cardiology":
-        return bool(re.search(
-            r"\b(?:cardi\w*|heart|coronary|atrial|ventricular|myocard\w*|"
+        # NLM MeSH C14-inspired clinical anchors. Exclude generic ventilation,
+        # physical fitness and generic stroke unless the PICO itself addresses
+        # a cardiovascular condition, treatment or outcome.
+        anchor = re.compile(
+            r"\b(?:cardiac|cardiovascular|cardiomyopath\w*|cardiotoxic\w*|"
+            r"cardiometabolic|cardiorenal|heart|coronary|atrial|ventricular|myocard\w*|"
             r"arrhythm\w*|aort\w*|valv\w*|hypertension|blood pressure|"
-            r"dyslipid\w*|cholesterol|atheroscler\w*|stroke|tavr|tavi|"
-            r"vascular|pulmonary hypertension|lipid\w*|ldl|hdl)\b",
-            text, re.I))
+            r"dyslipid\w*|hyperlipid\w*|cholesterol|atheroscler\w*|"
+            r"tavr|tavi|hfpef|hfref|cabg|pci|ecg|echocardiogra\w*|"
+            r"pericardi\w*|endocardi\w*|peripheral arter\w*|"
+            r"ldl|hdl|mace|cardio-oncology)\b", re.I)
+        return bool(anchor.search(text))
     return scope in declared or declared in scope and bool(declared)
 
 def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:

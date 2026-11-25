@@ -30,3 +30,16 @@ def test_roundtrip_completed_candidate_audit_restores_evidence_and_logs(tmp_path
 def test_legacy_draft_cannot_restore_qualification():
     draft = draft_from_saved({"candidate_id":"C1","title":"Cardiac trial","status":"QUALIFIED"}, "J1")
     assert draft.status == CandidateStatus.DISCOVERED
+
+
+def test_cardio_scope_distinguishes_pulmonary_and_cardiovascular_questions():
+    from scimed_scout.cloud.worker import _within_specialty
+    pure = CandidateRecord("C2","J1","Dual bronchodilators for COPD","Cardiology",
+                           population="COPD", outcomes=["Regional ventilation"])
+    mixed = CandidateRecord("C3","J1","COPD treatment and cardiovascular mortality","Pulmonology",
+                            population="COPD", outcomes=["Cardiovascular mortality"])
+    neuro = CandidateRecord("C4","J1","Stroke rehabilitation and mobility","Neurology",
+                            population="Stroke", outcomes=["Mobility"])
+    assert not _within_specialty(pure, "Cardiology")
+    assert _within_specialty(mixed, "Cardiology")
+    assert not _within_specialty(neuro, "Cardiology")

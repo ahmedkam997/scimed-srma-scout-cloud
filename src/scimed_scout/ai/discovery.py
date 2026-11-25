@@ -79,6 +79,7 @@ Each proposal must have a genuinely distinct population/intervention/comparator 
 published therapeutic approaches or diagnostic generations, (2) narrow and
 understudied patient subgroups, (3) head-to-head comparisons or optimal
 treatment sequences, and (4) long-term harms or patient-important outcomes.
+Stay within the requested specialty and question type. The PICO must address a clinical condition, intervention or prespecified outcome in that specialty; a model-assigned specialty label alone is not sufficient. For Cardiology, exclude respiratory-only or neurological-only questions without a cardiovascular clinical target. Preserve clinically relevant cross-specialty questions with a cardiovascular outcome.
 Prioritize source-informed questions when bibliographic cues exist. Prefer a
 clinical question that could be answered by a cluster of primary reports, not
 a novel-sounding question copied from a single recent article. Use different
