@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -50,17 +51,17 @@ class DiscoveryNoveltyService:
         # Expand only the best candidate during recovery, not every draft.
         review_cap = min(36, max(self.max_reviews, 30)) if recovery else self.max_reviews
         registry_cap = min(30, max(self.max_registrations, 24)) if recovery else self.max_registrations
-        review_records = _select_records(candidate, all_reviews, review_cap)
-        registration_records = _select_records(
-            candidate,
-            all_registrations,
-            registry_cap,
-        )
+        select = _select_incremental if allow_ai else _select_records
+        review_records = select(candidate, all_reviews, review_cap, force=force) if allow_ai else select(candidate, all_reviews, review_cap)
+        registration_records = select(candidate, all_registrations, registry_cap, force=force) if allow_ai else select(candidate, all_registrations, registry_cap)
+        cached_reviews = sum(_valid_cached(candidate,r) for r in review_records) if allow_ai and not force else 0
+        cached_registrations = sum(_valid_cached(candidate,r) for r in registration_records) if allow_ai and not force else 0
 
         resolved_dates = self._resolve_search_dates(candidate_id, review_records)
         if resolved_dates:
             all_reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
-            review_records = _select_records(candidate, all_reviews, review_cap)
+            review_records = select(candidate, all_reviews, review_cap, force=force) if allow_ai else select(candidate, all_reviews, review_cap)
+            cached_reviews = sum(_valid_cached(candidate,r) for r in review_records) if allow_ai and not force else 0
         if allow_ai:
             review_assessments = self._assess_records(candidate, review_records, force=force,
                                                        repair_budget=3 if recovery else 0)
@@ -135,6 +136,12 @@ class DiscoveryNoveltyService:
             "discovery_competitor_records_semantically_assessed": len(review_records),
             "discovery_registration_records_discovered": len(all_registrations),
             "discovery_registration_records_semantically_assessed": len(registration_records),
+            "discovery_incremental_competitor_budget": {"version":"INCREMENTAL_V1",
+                "new_review_limit":review_cap,"new_registration_limit":registry_cap,
+                "cached_review_assessments_reused":cached_reviews,
+                "cached_registration_assessments_reused":cached_registrations,
+                "selected_uncached_reviews":len(review_records)-cached_reviews if allow_ai else 0,
+                "selected_uncached_registrations":len(registration_records)-cached_registrations if allow_ai else 0},
             "discovery_unassessed_review_count": len(review_backlog),
             "discovery_unassessed_registration_count": len(registration_backlog),
             "discovery_unassessed_review_queue": review_backlog[:40],
@@ -156,6 +163,7 @@ class DiscoveryNoveltyService:
         self.ledger.upsert_candidate(candidate)
 
         return {
+            "incremental_competitor_budget": metadata["discovery_incremental_competitor_budget"],
             "published_reviews_discovered": len(all_reviews),
             "published_reviews_assessed": len(review_assessments),
             "published_reviews_unresolved": review_unresolved,
@@ -236,14 +244,8 @@ class DiscoveryNoveltyService:
 
         for record in records:
             payload = dict(record.get("payload") or {})
-            input_hash = _record_hash(record)
             existing = payload.get("discovery_semantic_assessment")
-            if (
-                not force
-                and isinstance(existing, dict)
-                and existing.get("unresolved") is False
-                and payload.get("discovery_semantic_assessment_input_hash") == input_hash
-            ):
+            if not force and _valid_cached(candidate,record):
                 results_by_id[_record_identity(record)] = existing
             else:
                 pending.append(record)
@@ -275,7 +277,7 @@ class DiscoveryNoveltyService:
                         "rationale": failure_reason or "No assessment returned by free AI provider",
                         "dimensions": [],
                     }
-                self._persist_assessment(candidate.candidate_id, record, serialized)
+                self._persist_assessment(candidate, record, serialized)
                 results_by_id[_record_identity(record)] = serialized
 
         # Retry isolated unresolved records with the full individual prompt.
@@ -292,7 +294,7 @@ class DiscoveryNoveltyService:
                 assessment = self.assessor.assess(candidate, record)
                 if not assessment.unresolved:
                     serialized = _serialize_assessment(record, assessment)
-                    self._persist_assessment(candidate.candidate_id, record, serialized)
+                    self._persist_assessment(candidate, record, serialized)
                     results_by_id[key] = serialized
             except Exception:
                 continue
@@ -305,15 +307,15 @@ class DiscoveryNoveltyService:
 
     def _persist_assessment(
         self,
-        candidate_id: str,
+        candidate,
         record: dict,
         serialized: dict[str, Any],
     ) -> None:
         payload = dict(record.get("payload") or {})
         payload["discovery_semantic_assessment"] = serialized
-        payload["discovery_semantic_assessment_input_hash"] = _record_hash(record)
+        payload["discovery_semantic_assessment_input_hash"] = _assessment_hash(candidate,record)
         self.ledger.upsert_external_evidence(
-            candidate_id,
+            candidate.candidate_id,
             record["evidence_type"],
             record["source_record_id"],
             source=record.get("source", ""),
@@ -394,11 +396,50 @@ def _unassessed_citation_queue(all_records: list[dict], selected: list[dict]) ->
     return queue
 
 
+def _assessment_hash(candidate, record):
+    # Never carry a prior low-overlap judgement to a changed question.
+    # Explicit version also invalidates legacy record-only cache keys.
+    basis = {
+        "version":"COMPETITOR_PICO_CACHE_V1",
+        "record_hash":_record_hash(record),
+        "evidence_type":record.get("evidence_type"),
+        "record_id":record.get("source_record_id"),
+        "pico":[candidate.title,candidate.population,candidate.intervention_exposure_index_test,
+                candidate.comparator_reference,list(candidate.outcomes or []),
+                list(candidate.eligible_designs or []),candidate.question_type,candidate.review_question],
+    }
+    return hashlib.sha256(json.dumps(basis,sort_keys=True,ensure_ascii=False,default=str).encode()).hexdigest()
+
+
+def _valid_cached(candidate,record):
+    payload=record.get("payload") or {}
+    existing=payload.get("discovery_semantic_assessment")
+    return (isinstance(existing,dict) and existing.get("unresolved") is False
+            and payload.get("discovery_semantic_assessment_input_hash")==_assessment_hash(candidate,record))
+
+
+def _attempted_current(candidate,record):
+    payload=record.get("payload") or {}
+    return (isinstance(payload.get("discovery_semantic_assessment"),dict)
+            and payload.get("discovery_semantic_assessment_input_hash")==_assessment_hash(candidate,record))
+
+
+def _select_incremental(candidate,records,limit,*,force=False):
+    # Keep all valid saved decisions in the audit. Budget only new work.
+    # Fresh/unseen citations precede previously unresolved citations so a
+    # pathological record cannot indefinitely starve the tail of the queue.
+    ranked=_select_records(candidate,records,len(records))
+    if force:
+        return ranked[:limit]
+    cached=[r for r in ranked if _valid_cached(candidate,r)]
+    outstanding=[r for r in ranked if not _valid_cached(candidate,r)]
+    fresh=[r for r in outstanding if not _attempted_current(candidate,r)]
+    retry=[r for r in outstanding if _attempted_current(candidate,r)]
+    return cached+(fresh+retry)[:limit]
+
+
 def _select_records(candidate, records: list[dict], limit: int) -> list[dict]:
     unique = _dedupe_records(records)
-    if len(unique) <= limit:
-        return unique
-
     # Prioritize explicit intervention and comparator concepts over shared
     # generic disease words. This ranks what the limited LLM budget sees
     # first, but never automatically excludes any remaining competitor.
@@ -542,13 +583,9 @@ def _tokens(text: str) -> set[str]:
 def _record_hash(record: dict[str, Any]) -> str:
     payload = record.get("payload") or {}
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
-    basis = repr((
-        record.get("source"),
-        record.get("title"),
-        payload.get("year"),
-        payload.get("doi"),
-        metadata,
-    ))
+    basis = json.dumps([record.get("source"),record.get("title"),payload.get("year"),
+        payload.get("doi"),metadata,payload.get("abstract"),payload.get("summary")],
+        sort_keys=True,ensure_ascii=False,default=str)
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
 

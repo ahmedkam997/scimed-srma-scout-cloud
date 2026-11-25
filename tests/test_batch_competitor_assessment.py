@@ -176,3 +176,60 @@ def test_novelty_service_caps_semantic_scope_to_control_free_ai_budget(tmp_path)
         assert summary["published_reviews_prefiltered_out"] == 15
         assert provider.calls == 2
         assert ledger.get_candidate("C1").metadata["discovery_semantic_scope_capped"] is True
+
+
+def test_incremental_budget_drains_queue_and_reuses_resolved_assessments(tmp_path):
+    provider=CountingProvider()
+    with SQLiteLedger(tmp_path/"incremental.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1","Radiology"))
+        ledger.upsert_candidate(candidate())
+        for i in range(5):
+            r=record(i)
+            ledger.upsert_external_evidence("C1","PUBLISHED_REVIEW",r["source_record_id"],
+                source=r["source"],title=r["title"],payload=r["payload"])
+        service=DiscoveryNoveltyService(ledger,SemanticCompetitorAssessor(provider),max_reviews=2,batch_size=2)
+        a=service.assess_candidate("C1")
+        assert a["published_reviews_prefiltered_out"]==3 and provider.calls==1
+        b=service.assess_candidate("C1")
+        assert b["published_reviews_prefiltered_out"]==1 and provider.calls==2
+        assert b["incremental_competitor_budget"]["cached_review_assessments_reused"]==2
+        c=service.assess_candidate("C1")
+        assert c["published_reviews_prefiltered_out"]==0 and provider.calls==3
+        assert ledger.get_candidate("C1").metadata["discovery_competitor_assessment_complete"]
+        d=service.assess_candidate("C1")
+        assert d["published_reviews_assessed"]==5 and provider.calls==3
+        changed=ledger.get_candidate("C1")
+        changed.population="Children with suspected disease X"
+        ledger.upsert_candidate(changed)
+        e=service.assess_candidate("C1")
+        assert e["incremental_competitor_budget"]["cached_review_assessments_reused"]==0
+        assert e["published_reviews_prefiltered_out"]==3 and provider.calls==4
+
+
+def test_failed_records_do_not_starve_unattempted_queue(tmp_path):
+    class EmptyAssessor:
+        def assess_many(self,c,rows):
+            return []
+    with SQLiteLedger(tmp_path/"starve.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1","Radiology"))
+        ledger.upsert_candidate(candidate())
+        for i in range(4):
+            r=record(i)
+            ledger.upsert_external_evidence("C1","PUBLISHED_REVIEW",r["source_record_id"],source=r["source"],title=r["title"],payload=r["payload"])
+        service=DiscoveryNoveltyService(ledger,EmptyAssessor(),max_reviews=2,batch_size=2)
+        service.assess_candidate("C1")
+        second=service.assess_candidate("C1")
+        rows=ledger.list_external_evidence("C1","PUBLISHED_REVIEW")
+        assert all(r["payload"].get("discovery_semantic_assessment",{}).get("unresolved") for r in rows)
+        assert not ledger.get_candidate("C1").metadata["discovery_competitor_assessment_complete"]
+        assert second["published_reviews_prefiltered_out"]==2
+
+
+def test_metadata_key_order_does_not_invalidate_assessment_hash():
+    from scimed_scout.discovery.novelty import _assessment_hash
+    a=record(1)
+    a["payload"]["metadata"]={"abstract":"same","year":2025}
+    b={**a,"payload":{**a["payload"],"metadata":{"year":2025,"abstract":"same"}}}
+    assert _assessment_hash(candidate(),a)==_assessment_hash(candidate(),b)
+    b["payload"]["metadata"]["abstract"]="changed"
+    assert _assessment_hash(candidate(),a)!=_assessment_hash(candidate(),b)
