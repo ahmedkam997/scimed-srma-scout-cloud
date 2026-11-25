@@ -55,3 +55,29 @@ def test_vexus_cross_design_family_only_uses_one_deep_audit():
     assert [x.candidate_id for x in selected] == ["a", "c"]
     assert skipped[0]["candidate_id"] == "b"
     assert len(by_id) == 3
+
+
+def test_rate_limited_query_plan_retains_unexecuted_variants():
+    from scimed_scout.discovery.orchestrator import _run_source_queries
+    from scimed_scout.domain import SourceStatus
+    from scimed_scout.sources.base import SearchResult
+    from scimed_scout.storage import SearchLogRecord
+    from scimed_scout.verification.coverage import evaluate_coverage
+    from scimed_scout.verification.policy import policy_for_question_type
+    class Limited:
+        name = "PubMed"
+        calls = []
+        def search(self, query, *, limit):
+            self.calls.append(query)
+            return SearchResult(self.name, query, SourceStatus.ACCESS_FAILED,
+                                message="HTTP 429")
+    source = Limited()
+    rows = _run_source_queries(source, ("A", "B", "C"), 12)
+    assert source.calls == ["A"]
+    assert [r.status for _, r in rows] == [SourceStatus.ACCESS_FAILED,
+        SourceStatus.NOT_SEARCHED, SourceStatus.NOT_SEARCHED]
+    logs = [SearchLogRecord("P", "C", "PubMed", query, result.status)
+            for query, result in rows]
+    logs.append(SearchLogRecord("P", "C", "PubMed", "A", SourceStatus.SEARCHED_NEGATIVE))
+    coverage = evaluate_coverage(logs, policy_for_question_type("DIAGNOSTIC_ACCURACY"))
+    assert coverage.source_statuses["PubMed"] == SourceStatus.PARTIAL

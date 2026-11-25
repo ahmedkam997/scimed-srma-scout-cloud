@@ -327,3 +327,27 @@ def test_scoring_uses_newly_persisted_competitor_assessment(tmp_path):
         ).verify_candidate("C1")
         assert result.coverage.complete
         assert not any("competing published reviews are not fully assessed" in p for p in result.pending)
+
+
+def test_optional_semantic_scholar_does_not_veto_otherwise_passing_discovery(tmp_path):
+    with SQLiteLedger(tmp_path / "optional.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Radiology", question_type="DIAGNOSTIC_ACCURACY"))
+        ledger.upsert_candidate(candidate())
+        configured = clients()
+        configured[4] = FixedSource("Semantic Scholar", SourceStatus.NOT_SEARCHED)
+        result = ReviewDiscoveryOrchestrator(ledger, configured).verify_candidate("C1")
+        assert result.coverage.complete
+        assert result.coverage.source_statuses["Semantic Scholar"] == SourceStatus.NOT_SEARCHED
+        assert result.candidate_status == CandidateStatus.QUALIFIED
+        assert ledger.list_decisions("C1")[-1].payload["coverage"]["source_statuses"]["Semantic Scholar"] == "NOT_SEARCHED"
+
+
+def test_optional_source_failure_never_overrides_mandatory_registry_gate(tmp_path):
+    with SQLiteLedger(tmp_path / "registry.sqlite3") as ledger:
+        ledger.upsert_project(ProjectRecord("P1", "Radiology", question_type="DIAGNOSTIC_ACCURACY"))
+        ledger.upsert_candidate(candidate())
+        configured = clients(prospero=SourceStatus.ACCESS_FAILED)
+        configured[4] = FixedSource("Semantic Scholar", SourceStatus.NOT_SEARCHED)
+        result = ReviewDiscoveryOrchestrator(ledger, configured).verify_candidate("C1")
+        assert not result.coverage.complete
+        assert result.candidate_status == CandidateStatus.PROVISIONAL_BACKUP

@@ -347,9 +347,24 @@ class ReviewDiscoveryOrchestrator:
             status = CandidateStatus.REJECTED
             decision = "REJECT — FATAL REVIEW REDUNDANCY"
         elif not pending:
-            required_source_names = set(policy.literature_sources + policy.registry_sources)
+            # Coverage defines a minimum of conclusive literature sources,
+            # not a requirement to search every optional bibliographic index.
+            # Include all conclusive literature audits and the mandatory
+            # registry/pipeline audits in the gate. Preserve ALL statuses in
+            # coverage/decision provenance, including optional failures.
+            required_source_names = {
+                name for name in policy.literature_sources
+                if coverage.source_statuses.get(name) in DEFINITIVE
+            }
+            if policy.require_prospero:
+                required_source_names.add("PROSPERO")
+            if policy.require_osf:
+                required_source_names.add("OSF Registries")
             if policy.require_pipeline_source:
-                required_source_names.update(policy.pipeline_sources)
+                required_source_names.update(
+                    name for name in policy.pipeline_sources
+                    if coverage.source_statuses.get(name) in DEFINITIVE
+                )
             payload = {
                 **gate_inputs,
                 "unique_primary_study_candidates": evidence.unique_primary_study_candidates,
@@ -569,7 +584,7 @@ def _run_source_queries(
     limit_per_query: int,
 ) -> list[tuple[str, SearchResult]]:
     results: list[tuple[str, SearchResult]] = []
-    for query in queries:
+    for index, query in enumerate(queries):
         try:
             result = client.search(query, limit=limit_per_query)
         except Exception as exc:
@@ -587,6 +602,13 @@ def _run_source_queries(
         ):
             # A provider-wide limit is not solved by issuing the other PICO
             # query variants immediately. Retain the failed search audit,
-            # and do not invent negative results for skipped queries.
+            # and explicitly retain every unexecuted planned query. Otherwise
+            # a later recovery of the failed variant can make coverage appear
+            # conclusive despite unexecuted variants.
+            for deferred in queries[index + 1:]:
+                results.append((deferred, SearchResult(
+                    client.name, deferred, SourceStatus.NOT_SEARCHED,
+                    message="Deferred after provider HTTP 429; query not executed",
+                )))
             break
     return results
