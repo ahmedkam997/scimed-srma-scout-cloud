@@ -16,6 +16,7 @@ from .constants import MIN_DISCOVERY_STUDIES
 from .candidate_preflight import FocusedEvidencePreflight
 from .query_optimizer import optimized_queries, sample_quality, VERSION as QUERY_OPTIMIZER_VERSION
 from .adaptive_search import collect as collect_supplementary
+from .adaptive_retrieval import collect as collect_adaptive_retrieval
 from .registration_enrichment import enrich_ledger
 from .evidence import discovery_evidence_snapshot
 from .pico_matching import assess_pico
@@ -49,6 +50,7 @@ class ReviewDiscoveryOrchestrator:
         require_pico_signals: bool = False,
         optimize_literature_queries: bool = False,
         adaptive_search: bool = False,
+        adaptive_retrieval: bool = False,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
@@ -62,6 +64,7 @@ class ReviewDiscoveryOrchestrator:
         self.require_pico_signals = require_pico_signals
         self.optimize_literature_queries = optimize_literature_queries
         self.adaptive_search = adaptive_search
+        self.adaptive_retrieval = adaptive_retrieval
 
     def run(
         self,
@@ -255,6 +258,9 @@ class ReviewDiscoveryOrchestrator:
             self._search_sources(candidate, policy.pipeline_sources, plan.pipeline_queries, evidence_type="ONGOING_STUDY", purpose="future evidence pipeline", limit_per_query=limit_per_query, recover_only=recover_only)
 
         self._check_cancellation()
+        if self.adaptive_retrieval and not (candidate.metadata or {}).get("adaptive_retrieval_audit"):
+            self._adaptive_pubmed_retrieval(candidate,plan,limit_per_query)
+            candidate=self.ledger.get_candidate(candidate_id) or candidate
         if self.adaptive_search and not (candidate.metadata or {}).get("adaptive_search_audit"):
             self._supplementary_search(candidate)
             candidate=self.ledger.get_candidate(candidate_id) or candidate
@@ -601,6 +607,34 @@ class ReviewDiscoveryOrchestrator:
                             classification=classification,
                             originally_requested=evidence_type,
                         )
+
+    def _adaptive_pubmed_retrieval(self,candidate,plan,limit_per_query):
+        client=self.clients.get("PubMed")
+        if client is None:return
+        logs=[l for l in self.ledger.list_search_log(candidate.candidate_id) if l.source=="PubMed"]
+        # Separate supplemental audit; never overwrite the mandatory search
+        # log or use this bounded retrieval to clear source failures.
+        access=bool(logs) and all(l.status in DEFINITIVE for l in logs)
+        audits=[]
+        for purpose,legacy,kind in (("PRIMARY",plan.primary_queries,"PRIMARY_STUDY"),("REVIEW",plan.review_queries,"PUBLISHED_REVIEW")):
+            self._check_cancellation()
+            baseline=self.ledger.list_external_evidence(candidate.candidate_id,kind)
+            report,records=collect_adaptive_retrieval(candidate,purpose,legacy,baseline,client,
+                initial_limit=limit_per_query,base_access=access,cancellation_check=self._check_cancellation)
+            audits.append(report)
+            for record in records:
+                self._check_cancellation()
+                citation=classify_review_search_hit(record)
+                if purpose=="REVIEW":
+                    signal=review_intervention_citation_signal(candidate,record)
+                    record_type="PUBLISHED_REVIEW" if citation=="CONFIRMED_REVIEW_CUE" and signal!="NO_INTERVENTION_MENTION_IN_REVIEW_CITATION_MANUAL_CHECK" else "OTHER"
+                else:
+                    if citation=="CONFIRMED_REVIEW_CUE":record_type="PUBLISHED_REVIEW"
+                    else:record_type="PRIMARY_STUDY"
+                self._store_record(candidate.candidate_id,record_type,record,report.get("query",""),"ADAPTIVE_PUBMED",classification=citation,originally_requested="SUPPLEMENTARY_DISCOVERY")
+        candidate=self.ledger.get_candidate(candidate.candidate_id) or candidate
+        candidate.metadata={**(candidate.metadata or {}),"adaptive_retrieval_audit":audits}
+        self.ledger.upsert_candidate(candidate)
 
     def _supplementary_search(self,candidate):
         client=self.clients.get("Europe PMC")

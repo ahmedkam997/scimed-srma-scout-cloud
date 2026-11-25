@@ -15,15 +15,28 @@ ALIASES = {
     "myocardial infarction": ("myocardial infarction","heart attack"),
     "body mass index": ("body mass index","BMI"),
     "high intensity interval training": ("high intensity interval training","high-intensity interval training","HIIT"),
+    "ischemic stroke": ("ischemic stroke","ischaemic stroke"),
+    "ischaemic stroke": ("ischemic stroke","ischaemic stroke"),
+    "large vessel occlusion": ("large vessel occlusion","large-vessel occlusion","LVO"),
+    "endovascular thrombectomy": ("endovascular thrombectomy","mechanical thrombectomy","endovascular treatment","intraarterial treatment","intra-arterial treatment"),
+    "mechanical thrombectomy": ("endovascular thrombectomy","mechanical thrombectomy","endovascular treatment","intraarterial treatment","intra-arterial treatment"),
+    "acute kidney injury": ("acute kidney injury","acute renal failure","AKI"),
+    "renal replacement therapy": ("renal replacement therapy","kidney replacement therapy"),
+    "kidney replacement therapy": ("renal replacement therapy","kidney replacement therapy"),
+    "type 1 diabetes": ("type 1 diabetes","type 1 diabetes mellitus","T1DM"),
+    "continuous glucose monitoring": ("continuous glucose monitoring","CGM"),
+    "multiple daily insulin injections": ("multiple daily insulin injections","multiple daily injections","insulin injections"),
     "hypertensive": ("hypertensive","hypertension"),
 }
-NOISE={"categories","category","post","pre","chronic","diagnosed","inpatients","outpatients"}
+NOISE={"categories","category","diagnosed"}
+# Grammatical connectors only; preserve clinical temporal/negative modifiers.
+CONNECTORS={"adult","adults","patient","patients","with","of","in","the","a","an","and","for","individuals","people","due","to","by","from","using","receiving","undergoing","among","as","at","on","who","which","that","were","are","is","was","been","being"}
 # 'chronic' is retained within known multiword clinical aliases.
 def _units(value):
     raw=unicodedata.normalize("NFKC",str(value or ""))
     raw=re.sub(r"[\u2010-\u2015/]", " ",raw)
     raw=re.sub(r"[^a-zA-Z0-9 ]"," ",raw)
-    terms=[t for t in raw.casefold().split() if t not in {"adult","adults","patient","patients","with","of","in","the","a","an","and","for","individuals","people"}]
+    terms=[t for t in raw.casefold().split() if t not in CONNECTORS]
     units=[]
     i=0
     while i<len(terms) and len(units)<6:

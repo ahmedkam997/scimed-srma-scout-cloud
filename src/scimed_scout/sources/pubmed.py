@@ -36,12 +36,14 @@ class PubMedSource:
             block = data.get("esearchresult") or {}
             if "count" not in block:
                 return SearchResult(self.name, query, SourceStatus.PARTIAL, message="PubMed response missing count")
+            warning = block.get("warninglist") or {}
+            invalid_query = bool(block.get("errorlist") or data.get("error") or data.get("ERROR") or (isinstance(warning,dict) and warning.get("quotedphrasesnotfound")))
             total = int(block["count"])
             ids = [str(x) for x in block.get("idlist", [])]
             if total < 0 or len(ids) != len(set(ids)) or len(ids) > total or (total == 0 and ids):
                 return SearchResult(self.name, query, SourceStatus.PARTIAL, total_count=total, message="PubMed inconsistent count or IDs")
             if total == 0:
-                return SearchResult(self.name, query, SourceStatus.SEARCHED_NEGATIVE, total_count=0)
+                return SearchResult(self.name, query, SourceStatus.PARTIAL if invalid_query else SourceStatus.SEARCHED_NEGATIVE, total_count=0, message="PubMed query translation warning/error; zero not verified" if invalid_query else "")
 
             summary_rows = {}
             if ids:
@@ -83,8 +85,8 @@ class PubMedSource:
                         metadata=row,
                     )
                 )
-            status = SourceStatus.SEARCHED_POSITIVE if records and len(records)==min(total,max(0,limit)) and all(r.title.strip() for r in records) else SourceStatus.PARTIAL
-            return SearchResult(self.name, query, status, records, total, message=f"PubMed sort={self.sort}; bounded sample; eligibility not established")
+            status = SourceStatus.SEARCHED_POSITIVE if not invalid_query and records and len(records)==min(total,max(0,limit)) and all(r.title.strip() for r in records) else SourceStatus.PARTIAL
+            return SearchResult(self.name, query, status, records, total, message=f"PubMed sort={self.sort}; bounded sample; eligibility not established; query_warning_or_error={invalid_query}")
         except Exception as exc:
             message = str(exc)
             if self.api_key:
