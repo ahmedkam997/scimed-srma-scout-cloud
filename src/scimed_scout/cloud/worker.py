@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import os
 import tempfile
 import traceback
@@ -96,6 +97,24 @@ def _unverified_topic_options(candidates: list, checked_ids: set[str]) -> list[d
         })
     return unverified_drafts
 
+
+
+def _within_specialty(candidate, specialty: str) -> bool:
+    """Operational scope guard, not scientific eligibility screening."""
+    scope = specialty.strip().casefold()
+    if scope == "all":
+        return True
+    declared = str(candidate.specialty or "").casefold()
+    text = " ".join([candidate.title, candidate.review_question, candidate.population,
+                     candidate.intervention_exposure_index_test, " ".join(candidate.outcomes or [])])
+    if scope == "cardiology":
+        return bool(re.search(
+            r"\b(?:cardi\w*|heart|coronary|atrial|ventricular|myocard\w*|"
+            r"arrhythm\w*|aort\w*|valv\w*|hypertension|blood pressure|"
+            r"dyslipid\w*|cholesterol|atheroscler\w*|stroke|tavr|tavi|"
+            r"vascular|pulmonary hypertension|lipid\w*|ldl|hdl)\b",
+            text, re.I))
+    return scope in declared or declared in scope and bool(declared)
 
 def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
     store.ensure_active(job.id)
@@ -213,6 +232,15 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 skipped_recent=recently_skipped,
             )
             store.ensure_active(job.id)
+            outside_scope = [candidate for candidate in candidates if not _within_specialty(candidate, job.specialty)]
+            if outside_scope:
+                from scimed_scout.domain import CandidateStatus
+                for candidate in outside_scope:
+                    ledger.set_candidate_status(candidate.candidate_id, CandidateStatus.REJECTED)
+                candidates = [candidate for candidate in candidates if _within_specialty(candidate, job.specialty)]
+                generator.generation_warnings.append(
+                    f"Skipped {len(outside_scope)} off-specialty proposals before source verification."
+                )
             if not candidates:
                 if recently_skipped:
                     return {
@@ -302,6 +330,25 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                     message=message,
                 )
 
+            completed_audits = {}
+            def save_candidate_checkpoint(item):
+                completed_audits[item.candidate_id] = {
+                    "candidate_id": item.candidate_id,
+                    "status": item.candidate_status.value,
+                    "decision": item.decision,
+                    "pending": list(item.pending),
+                    "source_statuses": {k: v.value for k, v in item.coverage.source_statuses.items()},
+                }
+                # Keep compact source audit checkpoints and all generated PICOs;
+                # these are not complete dossiers or confirmed eligibility.
+                store.update_job(job.id, result_json={"checkpoint": {
+                    "stage": "REVIEW_DISCOVERY", "verified": False,
+                    "recent_pubmed_cues": evidence_cues,
+                    "published_review_gap_cues": review_gap_cues,
+                    "candidates": _unverified_topic_options(candidates, set()),
+                    "completed_candidate_audits": list(completed_audits.values()),
+                }})
+
             source_clients = build_default_source_clients()
             pubmed_client = next(
                 (source for source in source_clients if source.name == "PubMed"), None
@@ -321,6 +368,7 @@ def process_job(job: DiscoveryJob, store: SupabaseJobStore) -> dict[str, Any]:
                 progress_callback=progress_callback,
                 cancellation_check=lambda: store.ensure_active(job.id),
                 evidence_preflight=preflight,
+                candidate_checkpoint=save_candidate_checkpoint,
             )
             result = orchestrator.run(
                 project_id,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -11,6 +12,7 @@ from typing import Any, Callable
 
 
 Requester = Callable[[urllib.request.Request, float], bytes]
+JOB_CONFIG_COLUMNS = 'id,specialty,question_type,candidate_count,final_options,min_verify,max_verify,limit_per_query,revisit_days,client_token_hash'
 
 
 class JobCancelled(RuntimeError):
@@ -100,12 +102,11 @@ class SupabaseJobStore:
             try:
                 self.update_job(
                     job_id,
-                    status="QUEUED",
-                    stage="RECOVERED",
-                    progress=0,
-                    message="Recovered after an interrupted worker run",
-                    error_text="",
-                    started_at=None,
+                    status="FAILED",
+                    stage="FAILED",
+                    message="Worker interrupted; saved evidence retained",
+                    error_text="No worker checkpoint for 90 minutes. Retry explicitly; saved evidence has not been deleted.",
+                    completed_at=_utc_now(),
                 )
                 recovered += 1
             except JobCancelled:
@@ -194,7 +195,7 @@ class SupabaseJobStore:
     def claim_next(self) -> DiscoveryJob | None:
         rows = self._select(
             {
-                "select": "*",
+                "select": JOB_CONFIG_COLUMNS,
                 "status": "eq.QUEUED",
                 "order": "created_at.asc",
                 "limit": "1",
@@ -220,6 +221,7 @@ class SupabaseJobStore:
                 "updated_at": now,
             },
             allowed_statuses=("QUEUED",),
+            returning=JOB_CONFIG_COLUMNS,
         )
         return DiscoveryJob.from_row(updated[0]) if updated else None
 
@@ -301,17 +303,26 @@ class SupabaseJobStore:
         payload: dict[str, Any],
         *,
         allowed_statuses: tuple[str, ...] = (),
+        returning: str = "id",
     ) -> list[dict[str, Any]]:
-        params = {"id": f"eq.{job_id}"}
+        params = {"id": f"eq.{job_id}", "select": returning}
         if allowed_statuses:
             params["status"] = "in.(" + ",".join(allowed_statuses) + ")"
         query = urllib.parse.urlencode(params)
-        return self._request(
-            "PATCH",
-            f"/rest/v1/discovery_jobs?{query}",
-            payload,
-            prefer="return=representation",
-        )
+        for attempt in range(3):
+            try:
+                return self._request(
+                    "PATCH", f"/rest/v1/discovery_jobs?{query}", payload,
+                    prefer="return=representation",
+                )
+            except RuntimeError as exc:
+                # PostgreSQL 57014 cancels the statement; it did not commit.
+                # Retry only that explicit cancellation, not ambiguous network
+                # errors that could have committed a state transition.
+                if "57014" not in str(exc) or attempt == 2:
+                    raise
+                time.sleep(1 + attempt * 2)
+        raise AssertionError("unreachable")
 
     def _request(
         self,

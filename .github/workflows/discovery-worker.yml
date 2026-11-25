@@ -61,10 +61,11 @@ jobs:
           AUTH=(-H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $SUPABASE_ANON_KEY" -H "x-scimed-worker-token: $SCIMED_WORKER_TOKEN")
           RECHECK=$(curl --fail --silent --show-error "${AUTH[@]}" "$SUPABASE_URL/rest/v1/scimed_source_rechecks?select=id&status=eq.QUEUED&order=created_at.asc&limit=1")
           DISCOVERY=$(curl --fail --silent --show-error "${AUTH[@]}" "$SUPABASE_URL/rest/v1/discovery_jobs?select=id&status=eq.QUEUED&order=created_at.asc&limit=1")
+          STALE=$(curl --fail --silent --show-error "${AUTH[@]}" "$SUPABASE_URL/rest/v1/discovery_jobs?select=id&status=eq.RUNNING&updated_at=lt.$(date -u -d '90 minutes ago' +%Y-%m-%dT%H:%M:%SZ)&limit=1")
           if [ "$RECHECK" != "[]" ]; then
             echo "has_job=true" >> "$GITHUB_OUTPUT"
             echo "kind=recheck" >> "$GITHUB_OUTPUT"
-          elif [ "$DISCOVERY" != "[]" ]; then
+          elif [ "$DISCOVERY" != "[]" ] || [ "$STALE" != "[]" ]; then
             if [ -z "$SCIMED_AI_API_KEY" ] && [ -z "$GEMINI_API_KEY" ] && [ -z "$GROQ_API_KEY" ]; then
               echo "has_job=false" >> "$GITHUB_OUTPUT"
               echo "No AI provider key configured for the discovery queue."

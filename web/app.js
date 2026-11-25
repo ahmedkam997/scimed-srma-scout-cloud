@@ -24,6 +24,9 @@ const els = {
 
 let supabase = null;
 let jobs = [];
+let jobsRefresh = null;
+const JOB_STATUS_FIELDS = 'id,specialty,question_type,status,stage,progress,message,candidate_count,final_options,min_verify,max_verify,limit_per_query,revisit_days,created_at,updated_at,completed_at';
+const openedReports = new Map();
 let pollTimer = null;
 let connecting = false;
 let createCloudClient = null;
@@ -145,7 +148,7 @@ async function init() {
         // A transient polling failure must not produce unhandled rejections.
         backendState('error', 'Cloud sync interrupted', error.message || String(error));
       });
-    }, 5000);
+    }, 15000);
   } catch (error) {
     supabase = null;
     backendState('error', 'Backend connection failed', error.message || String(error));
@@ -184,7 +187,7 @@ async function startDiscovery() {
         limit_per_query: 12,
         revisit_days: Number(els.revisitDays.value),
       })
-      .select()
+      .select(JOB_STATUS_FIELDS)
       .single();
 
     if (error) throw error;
@@ -401,16 +404,37 @@ async function requestTargetedRecheck(job, topic) {
 
 async function loadJobs() {
   if (!supabase) return;
-  const { data, error } = await supabase
-    .from('discovery_jobs')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(20);
+  if (jobsRefresh) return jobsRefresh;
+  jobsRefresh = (async () => {
+    const { data, error } = await supabase.from('discovery_jobs')
+      .select(JOB_STATUS_FIELDS)
+      .order('created_at', { ascending: false }).limit(20);
+    if (error) throw error;
+    jobs = (data || []).map(row => {
+      const saved = openedReports.get(row.id);
+      return saved ? { ...row, result_json: saved.result_json,
+        error_text: saved.error_text, reportLoadedAt: saved.updated_at } : row;
+    });
+    renderJobs();
+    if (!connecting && els.backend.className.includes('status-error')) {
+      backendState('ok', 'Cloud queue connected', 'Job status updated. Open saved reports on demand.');
+    }
+  })();
+  try { return await jobsRefresh; } finally { jobsRefresh = null; }
+}
 
+async function loadJobReport(jobId) {
+  const job = jobs.find(row => row.id === jobId);
+  if (!job || !supabase) return;
+  const { data, error } = await supabase.from('discovery_jobs')
+    .select('id,updated_at,result_json,error_text').eq('id', jobId).single();
   if (error) throw error;
-  jobs = data || [];
-  await loadGapEvents();
-  await loadSourceRechecks();
+  openedReports.set(jobId, data);
+  Object.assign(job, {result_json:data.result_json, error_text:data.error_text,
+                     reportLoadedAt:data.updated_at});
+  renderJobs();
+  await loadGapEvents(true);
+  await loadSourceRechecks(true);
   renderJobs();
 }
 
@@ -1039,6 +1063,8 @@ function renderJobs() {
         <div class="progress"><span style="width:${Math.max(0,Math.min(100,progress))}%"></span></div>
         <div class="job-meta"><span>${progress}%</span><span>${escapeHtml(job.stage || '')}</span></div>
         <p class="job-message">${escapeHtml(job.message || '')}</p>
+        <div class="topic-quick-actions"><button class="secondary small" data-load-report="${escapeHtml(job.id)}">${job.reportLoadedAt ? 'Refresh saved report' : 'Open saved report / evidence'}</button></div>
+        ${job.reportLoadedAt && job.reportLoadedAt !== job.updated_at ? '<p class="help">Saved report is an earlier snapshot. Refresh it when needed.</p>' : ''}
         ${summaryHtml}
         ${recentHtml}
         ${optionHtml}
@@ -1397,6 +1423,17 @@ els.refresh.addEventListener('click', async () => {
   }
 });
 els.jobs.addEventListener('click', async event => {
+  const reportButton = event.target.closest('[data-load-report]');
+  if (reportButton) {
+    reportButton.disabled = true;
+    try {
+      await loadJobReport(reportButton.dataset.loadReport);
+      backendState('ok', 'Saved report loaded', 'Detailed evidence is retrieved only when requested.');
+    } catch (error) {
+      backendState('error', 'Could not load saved report', error.message || String(error));
+    } finally { reportButton.disabled = false; }
+    return;
+  }
   const finalAuditExport = event.target.closest('[data-final-audit-export]');
   if (finalAuditExport) {
     const job = jobs.find(row => row.id === finalAuditExport.dataset.finalAuditExport);

@@ -39,6 +39,7 @@ class ReviewDiscoveryOrchestrator:
         progress_callback: Callable[[int, str, str], None] | None = None,
         cancellation_check: Callable[[], None] | None = None,
         evidence_preflight: FocusedEvidencePreflight | None = None,
+        candidate_checkpoint: Callable[[DiscoveryCandidateResult], None] | None = None,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
@@ -47,6 +48,7 @@ class ReviewDiscoveryOrchestrator:
         self.progress_callback = progress_callback
         self.cancellation_check = cancellation_check
         self.evidence_preflight = evidence_preflight
+        self.candidate_checkpoint = candidate_checkpoint
 
     def run(
         self,
@@ -118,6 +120,8 @@ class ReviewDiscoveryOrchestrator:
             self._progress(candidate_progress, "REVIEW_DISCOVERY", candidate_message)
             result = self.verify_candidate(candidate.candidate_id, ranking_score=ranked_item.score, limit_per_query=limit_per_query)
             results.append(result)
+            if self.candidate_checkpoint:
+                self.candidate_checkpoint(result)
             if result.candidate_status == CandidateStatus.QUALIFIED:
                 qualified.append(result.candidate_id)
             if index >= min_verify and len(qualified) >= final_options:
@@ -153,6 +157,8 @@ class ReviewDiscoveryOrchestrator:
                     limit_per_query=limit_per_query, recover_only=True,
                 )
                 results[i] = recovered
+                if self.candidate_checkpoint:
+                    self.candidate_checkpoint(recovered)
                 if recovered.candidate_status == CandidateStatus.QUALIFIED:
                     qualified.append(recovered.candidate_id)
 

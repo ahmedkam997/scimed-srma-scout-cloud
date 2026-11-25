@@ -25,8 +25,8 @@ test('startup does not depend on an eager CDN import', () => {
   assert.ok(app.includes('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.2/+esm'));
   assert.ok(app.includes('data-reconnect'), 'Failed connection must show retry');
   assert.ok(html.includes('reloadCloudApp'), 'Independent HTML startup watchdog must be active');
-  assert.ok(html.includes('ctffr-lm-ledger'));
-  assert.ok(sw.includes('scimed-review-scout-v32'));
+  assert.ok(html.includes('lightweight-sync'));
+  assert.ok(sw.includes('scimed-review-scout-v33'));
 });
 
 test('startup timeout produces a recoverable error instead of waiting forever', async () => {
@@ -52,4 +52,12 @@ test('a successful cloud response passes through unchanged', async () => {
   const response = { status: 200, ok: true };
   const { cloudFetch } = isolated(async () => response);
   assert.equal(await cloudFetch('https://example.test'), response);
+});
+
+test('queue polling excludes large reports and deduplicates requests', () => {
+  const load = app.slice(app.indexOf('async function loadJobs()'), app.indexOf('function safeEvidenceLink('));
+  assert.ok(load.includes('.select(JOB_STATUS_FIELDS)'));
+  assert.ok(load.includes('if (jobsRefresh) return jobsRefresh'));
+  assert.ok(load.includes(".select('id,updated_at,result_json,error_text').eq('id', jobId).single()"));
+  assert.ok(!load.includes(".select('*')"));
 });

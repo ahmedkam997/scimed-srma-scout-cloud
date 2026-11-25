@@ -144,3 +144,32 @@ def test_history_timeout_reduces_page_size_and_does_not_stop_discovery():
     assert store.recent_completed_jobs(client_token_hash="a" * 64) == []
     assert calls == ["5", "2", "1"]
     assert "duplicate prevention" in store.history_warning
+
+
+def test_progress_update_returns_only_id_and_retries_statement_cancellation(monkeypatch):
+    from urllib.parse import parse_qs, urlsplit
+    from scimed_scout.cloud import supabase
+    calls = []
+    monkeypatch.setattr(supabase.time, "sleep", lambda _: None)
+    def responder(req, timeout):
+        calls.append(parse_qs(urlsplit(req.full_url).query))
+        if len(calls) == 1:
+            raise RuntimeError("Supabase HTTP 500: 57014 statement timeout")
+        return b'[{"id":"J1"}]'
+    store = SupabaseJobStore("https://example.supabase.co", "anon", "worker", requester=responder)
+    store.update_job("J1", progress=41)
+    assert len(calls) == 2
+    assert all(row["select"] == ["id"] for row in calls)
+
+
+def test_cardio_scope_guard_excludes_pulmonary_only_questions():
+    from types import SimpleNamespace
+    from scimed_scout.cloud.worker import _within_specialty
+    candidate = SimpleNamespace(specialty="Cardiology",
+        title="Dual Bronchodilator Treatment Effects on Regional Ventilation in COPD",
+        review_question="Effects on ventilation", population="Adults with COPD",
+        intervention_exposure_index_test="Dual bronchodilators", outcomes=["Ventilation"])
+    assert not _within_specialty(candidate, "Cardiology")
+    assert _within_specialty(candidate, "ALL")
+    candidate.outcomes = ["Cardiovascular mortality"]
+    assert _within_specialty(candidate, "Cardiology")
