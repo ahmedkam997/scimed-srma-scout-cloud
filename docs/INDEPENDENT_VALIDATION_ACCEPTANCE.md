@@ -22,8 +22,12 @@ External corpora pinned to source commits:
   only; off-corpus hits remain unknown. Precision is within labelled corpus,
   not global. No report-level labels establish independent eligible RCTs.
 - Smalheiser and Holt https://doi.org/10.5061/dryad.sqv9s4n5f multi-report
-  linkage corpus is a stronger next-stage clustering reference; not yet
-  imported. Dual independent full-text adjudication remains required.
+  linkage corpus adds a 100-trial bounded deterministic clustering sample
+  (up to four linked PMIDs per trial), with published file MD5 verification
+  and a separate up-to-100 silver-only results-reference sample. Fetch exact
+  PubMed metadata independently; never inject reference NCT IDs. Pairwise
+  specificity is dominated by between-trial negatives and does not prove
+  independence. Dual independent full-text adjudication remains required.
 
 Health probe uses actual configured free providers once each (tiny synthetic
 JSON request), reports status and only reported quota; no key output.

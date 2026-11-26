@@ -27,6 +27,23 @@ jobs:
         with:
           name: independent-reference
           path: independent-reference.json
+  family-linkage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e .
+      - run: python scripts/external_family_linkage.py --output family-linkage.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: external-family-linkage
+          path: family-linkage.json
   health:
     runs-on: ubuntu-latest
     timeout-minutes: 15

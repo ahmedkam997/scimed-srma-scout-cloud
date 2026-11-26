@@ -24,3 +24,17 @@ def test_off_corpus_hits_not_false_positives():
     out=retrieval(labels,[SearchRecord("PubMed","1","A"),SearchRecord("PubMed","2","B"),SearchRecord("PubMed","999","Outside")])
     assert (out["tp"],out["fp"],out["fn"],out["tn"])==(1,1,1,0)
     assert out["retrieved_distinct_records"]==3
+
+
+def test_external_pairwise_clustering_does_not_count_unlinked_as_confirmed():
+    import sys
+    from pathlib import Path
+    sys.path.insert(0,str(Path("scripts").resolve()))
+    try:
+        from external_family_linkage import pair_score
+    finally:sys.path.pop(0)
+    truth={"1":"NCT00000001","2":"NCT00000001","3":"NCT00000002","4":"NCT00000002"}
+    rows=[{"source_record_id":i,"payload":{"metadata":{"trial_registration_id":n}}} for i,n in [("1","NCT00000001"),("2","NCT00000001"),("3","NCT00000002")]]
+    result=pair_score(truth,rows)
+    assert (result["tp"],result["fp"],result["fn"],result["tn"])==(1,0,1,4)
+    assert result["reference_trials"]==2 and result["observed_reports"]==3
