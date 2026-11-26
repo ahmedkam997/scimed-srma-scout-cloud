@@ -55,3 +55,14 @@ def test_policy_transfer_uses_separate_case_cache():
     b=RetrievalGym(None,HF_REFERENCE,{"dual_ids":(frozenset({"31535829"}),[],True)},HF_STRATEGIES)
     assert asyncio.run(episode(a,"dual_ids"))["relative_recall"]==1
     assert asyncio.run(episode(b,"dual_ids"))["relative_recall"]==.25
+
+def test_top_k_id_only_is_complete_only_for_bounded_budget():
+    from scripts.v2_aviary_gym import bounded_ids
+    class Client:
+        base="https://example.invalid/"
+        def _params(self,p):return p
+        http=SimpleNamespace(get_json=lambda *a:{"esearchresult":{"count":"533","idlist":["101","102"]}})
+    ids, rows=bounded_ids(Client(),[("q",2)])
+    assert ids=={"101","102"} and rows[0]["complete_bounded"]
+    _,rows=bounded_ids(Client(),[("q",3)])
+    assert not rows[0]["complete_bounded"]
