@@ -111,3 +111,19 @@ sacubitril/valsartan, separate chronic HFrEF, hospitalized
 decompensation, pediatric and Chagas studies and verify the comparator
 review's Methods before claiming novelty. The [evidence ledger](EVIDENCE.md)
 records the reports and cutoff caveats.
+
+Narrow HF recovery `45894434834` completed. The follow-up report
+trace `45894544804` targets CAMERA-MRI II and the named Chagas trial
+families. Read its exact PMID and registration links before assigning
+independence. For any candidate that survives, verify actual review
+cutoffs, original primary endpoint data, clinical importance and
+independent signed adjudication.
+
+The hosted trace `45894544804` distinguished ANSWER-HF
+(`NCT04853758`) from PARACHUTE-HF (`NCT04023227`) but left
+CAMERA-MRI II PMID `42246906` unlinked. Keep both candidates
+provisional. Next, trace CAMERA-MRI II against its original primary
+paper using title terms without relying on a hyphenated acronym
+alone. Check the recent Chagas reviews before considering a separate
+update, and rotate if that scope does not approach seven independent
+eligible trials. No change to adjudication or qualification gates.

@@ -88,3 +88,10 @@ families and an economic evaluation. The close HF-subgroup ablation
 review searched through February 2026. Any plausible update requires
 a fixed HF phenotype and verification of new primary RCT evidence.
 [Alternate comparison evidence](EVIDENCE.md)
+
+The narrower HF recovery preserved two distinct Chagas study
+registrations, ANSWER-HF and PARACHUTE-HF. The scope has recent
+competing reviews and no demonstrated seven-trial evidence set.
+For AF with HF, CAMERA-MRI II remains an unresolved report-family
+lead. Neither recovery established a new eligible comparison
+or synthesis-ready outcomes. [HF follow-up evidence](EVIDENCE.md)

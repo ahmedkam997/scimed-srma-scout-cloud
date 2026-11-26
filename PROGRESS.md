@@ -40,3 +40,8 @@
   and replay exposed repeated publications, population mismatch and
   recent competing reviews. Thirty targeted tests passed. No candidate
   reached confirmed independent usable RCT or adjudication requirements.
+
+- Completed the narrower AF/HF and adult HFrEF retrieval. Recovered
+  two distinct Chagas registrations and an unresolved CAMERA-MRI II
+  report lead. Thirty targeted tests passed. No candidate met the
+  scientific qualification threshold.

@@ -205,3 +205,35 @@ registration, HF phenotype and comparator. Repeated reports do not
 increase the independent trial count.
 [CABANA primary report](https://pubmed.ncbi.nlm.nih.gov/30874766/)
 [Artifact replay](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45894258451)
+
+### Narrow heart-failure recovery
+
+The bounded AF-with-heart-failure retrieval returned 14 recent trial
+query hits and displayed eight. It included a CASTLE-HTx analysis
+(42531097), an economic evaluation from the same family (42162774),
+a PRAISE-AF protocol (42860163) and the CAMERA-MRI II report
+(42246906). None was verified as a new independent, eligible,
+post-cutoff trial from the query alone. The review by PMID 42769399
+reports a February 2026 search month, and the long-term AF/HF review
+(PMID 42119914) requires at least two years of follow-up. Its abstract
+does not state a cutoff.
+
+The adult HFrEF query returned 18 trial-route hits and displayed eight.
+It identified primary ANSWER-HF results (41396086), PARACHUTE-HF
+baseline characteristics (40916703) and analyses of existing
+EVALUATE-HF, PANORAMA-HF and PARADIGM-HF populations. The directly titled
+HFrEF review (PMID 41773097) reports an abstract search cutoff of
+23 December 2024. The 2026 Chagas-specific reviews require their own
+Methods and overlap audit before claiming a new Chagas update.
+[Narrow hosted search](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45894434834)
+
+EFetch linked the primary ANSWER-HF report (PMID 41396086) to
+NCT04853758 and linked the PARACHUTE-HF protocol and outcome report
+(PMIDs 39111953 and 41335448) to NCT04023227. PARACHUTE-HF baseline
+PMID 40916703 is a same-family bibliographic lead and does not add
+another trial. The two study registrations are distinct. Participant
+independence and a compatible, usable endpoint comparison remain
+unverified. CAMERA-MRI II PMID 42246906 had no explicit registry
+link in the retrieved metadata. The hosted trace exited nonzero and
+did not establish that this report was a new independent primary trial.
+[Hosted report trace](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45894544804)

@@ -56,3 +56,11 @@
   the artifact and exited nonzero. GitHub's public annotation limit
   hid the trial-family rows, so recovery run `45894258451` reads the
   preserved artifact without repeating source requests.
+
+- Narrowed the alternate comparison recovery to AF with heart failure
+  and sacubitril/valsartan versus enalapril with reduced EF. The AF
+  publication date window starts on 1 February 2026 to cover the
+  ambiguity within the comparator review's reported search month.
+  The search is a bounded screen, so any date or comparator match
+  requires verification against original trial methods.
+  [Narrow follow-up](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45894434834)
