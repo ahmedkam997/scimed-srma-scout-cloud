@@ -13,6 +13,22 @@ from aviary.core import Environment, Message, Tool, ToolCall, ToolRequestMessage
 from scimed_scout.sources.pubmed import PubMedSource
 from scripts.v2_historical_replay_dev import REFERENCE, STRATEGIES, retrieve, full_id_diagnostic
 
+# Second development case: Pandey et al., ESC Heart Failure 2022, PMID 35112512.
+# Search reported through September 2021; last day of month is a declared approximation.
+# Four primary reports, NOT a seven-trial qualification candidate.
+HF_REFERENCE={"review_pmid":"35112512","linked_reports":{
+    "31535829":"DAPA-HF","32865377":"EMPEROR-Reduced",
+    "34449189":"EMPEROR-Preserved","33200892":"SOLOIST-WHF"},
+    "excluded_from_rct_oriented_report_metric":[]}
+HF_DATE='("1800/01/01"[dp] : "2021/09/30"[dp])'
+HF_DRUG='(SGLT2[tiab] OR "Sodium-Glucose Transporter 2 Inhibitors"[Mesh] OR dapagliflozin[tiab] OR empagliflozin[tiab] OR sotagliflozin[tiab] OR canagliflozin[tiab] OR ertugliflozin[tiab])'
+HF_RCT='(randomized controlled trial[pt] OR random*[tiab] OR placebo[tiab])'
+HF_NARROW='("heart failure"[tiab] OR "Heart Failure"[Mesh])'
+HF_BROAD='(cardiovascular[tiab] OR ventricular[tiab] OR cardiac[tiab])'
+HF_STRATEGIES={"narrow":[(f"{HF_DRUG} AND {HF_NARROW} AND {HF_RCT} AND {HF_DATE}",100)],
+               "dual_route":[(f"{HF_DRUG} AND {HF_NARROW} AND {HF_RCT} AND {HF_DATE}",50),
+                             (f"{HF_DRUG} AND {HF_BROAD} AND {HF_RCT} AND {HF_DATE}",50)]}
+
 ACTIONS = ("narrow_top", "dual_top", "narrow_ids", "dual_ids")
 @dataclass
 class State:
@@ -23,25 +39,27 @@ class State:
     trace: list = field(default_factory=list)
 
 class RetrievalGym(Environment[State]):
-    def __init__(self, client, reference, cache):
+    def __init__(self, client, reference, cache, strategies=STRATEGIES, task="statins in primary coronary prevention, publication cutoff 2017-10-31"):
         self.client = client
         self._target = frozenset(reference["linked_reports"]) - set(reference["excluded_from_rct_oriented_report_metric"])
         if not self._target:
             raise ValueError("empty reference subset")
         self.cache = cache
+        self.strategies = strategies
+        self.task = task
 
     async def reset(self):
         self.state = State()
         self.tools = [Tool.from_function(self.narrow_top), Tool.from_function(self.dual_top),
                       Tool.from_function(self.narrow_ids), Tool.from_function(self.dual_ids)]
-        return [Message(content="Development exercise: retrieve reports for statins in primary coronary prevention, publication cutoff 2017-10-31. Choose one strategy. IDs-only enumeration is not full-text screening. Reference labels withheld.")], self.tools
+        return [Message(content=f"Development exercise: retrieve reports for {self.task}. Choose one strategy. IDs-only enumeration is not full-text screening. Reference labels withheld.")], self.tools
 
     def _execute(self, action):
         if self.state.tried:
             return "Episode already attempted."
         self.state.tried = True
         strategy, mode = action.rsplit("_", 1)
-        routes = STRATEGIES[strategy]
+        routes = self.strategies[strategy]
         if action not in self.cache:
             if mode == "top":
                 ids, audit = retrieve(self.client, routes)
@@ -69,7 +87,7 @@ class RetrievalGym(Environment[State]):
         return json.dumps({"retrieved":len(ids),"source_resolved":valid,"mode":mode})
 
     def narrow_top(self) -> str:
-        """Retrieve up to 100 PubMed records using a narrow prevention query."""
+        """Retrieve up to 100 PubMed records using a narrow clinical query."""
         return self._execute("narrow_top")
     def dual_top(self) -> str:
         """Retrieve up to 100 PubMed records across two search routes."""
@@ -121,13 +139,18 @@ async def train(client):
         counts[action]+=1
         values[action]+=(result["reward"]-values[action])/counts[action]
     preferred = max(ACTIONS,key=values.get)
+    # Freeze policy before observing any reward from the second review.
+    transfer_env=RetrievalGym(client,HF_REFERENCE,{},HF_STRATEGIES,"SGLT2 inhibitors in heart failure, publication cutoff 2021-09-30")
+    transfer=await episode(transfer_env,preferred)
+    transfer_baseline=await episode(transfer_env,"narrow_top")
     return {"aviary_version":version("fhaviary"),"reference_review":REFERENCE["review_pmid"],
             "reference_scope":"incomplete report-level development subset",
             "policy":"epsilon-greedy sample-average action values","seed":42,
             "episodes":history,"learned_values":values,"action_counts":counts,
             "preferred_action":preferred,"baseline_reward":history[0]["reward"],
             "preferred_reward":values[preferred],"distinct_live_actions":len(cache),
-            "all_sources_resolved":all(not h["truncated"] for h in history),
+            "all_sources_resolved":all(not h["truncated"] for h in [*history,transfer,transfer_baseline]),
+            "transfer_development_case":{"review_pmid":"35112512","cutoff":"2021-09-30 (month-end approximation)","frozen_policy":True,"policy_result":transfer,"baseline_result":transfer_baseline,"independent_final_test":False,"qualification_granted":False},
             "held_out":False,"historical_index_snapshot":False,
             "llm_weights_changed":False,"qualification_granted":False}
 
