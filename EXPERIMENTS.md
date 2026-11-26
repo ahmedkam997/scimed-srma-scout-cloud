@@ -12,3 +12,12 @@
   replays were triggered by the development push. [Historical replay](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45891090776)
   [Aviary/LDP](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45891090634)
   [External data](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45891090998)
+
+- Hosted broad follow-up run `45891785512` recovered all six bounded
+  routes but included reviews and unrelated interventions in trial hits.
+  The first title-focused run `45891962418` retained those artifacts and
+  failed because both TAVR routes were partial. A premature commit queued
+  one repeat of the broad search before the title-filter code was applied.
+  The corrected title-focused and search-method run `45892078476`
+  succeeded with six positive bounded routes and no translation warning.
+  [Corrected hosted run](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892078476)

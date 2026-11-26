@@ -37,3 +37,15 @@ The date-sorted broad searches mixed published reviews and unrelated
 interventions into the recent-RCT route. A title-focused supplementary
 route checks whether that noise can be reduced. It cannot establish
 comprehensive competitor coverage. [Initial live retrieval](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45891785512)
+
+The corrected title-focused retest resolved all six bounded PubMed routes.
+The abstract of the pediatric uncomplicated appendicitis review reports
+15 July 2026 for four databases and 13 October 2026 for CENTRAL and
+ClinicalTrials.gov. The direct STEMI post-PCI mixed-design review reports
+July 2025; the randomized three-agent PCI synthesis reports 15 November
+2025. These are source-linked cutoff statements awaiting exact PICO and
+full Methods comparison. No date was recovered from the short-term TAVR
+stroke review abstract. The newer TAVR health-status record identifies
+itself as a NOTION-2 analysis, so it provides a follow-up cue within an
+existing family. [Corrected hosted run](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892078476)
+[NOTION-2 follow-up, PMID 43053874](https://pubmed.ncbi.nlm.nih.gov/43053874/)

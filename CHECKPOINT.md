@@ -26,3 +26,12 @@ retrieval leads in [EVIDENCE.md](EVIDENCE.md). The next hosted run applies
 title-focused comparison queries and excludes review publications from the
 recent-RCT route. Inspect direct competitors' Methods and link primary trial
 families before constructing any update dossier.
+
+The corrected hosted run `45892078476` passed with abstract search-method
+excerpts. The actionable next unit is a focused full-text Methods audit of
+the three source-linked review comparisons and an RCT-vs-secondary-report
+ledger for the two cardiology leads. The source identifiers and abstract
+cutoff statements are in [EVIDENCE.md](EVIDENCE.md). If these exact PICOs
+fail, rotate to a new cardiology comparison and a fixed-anchor surgery
+sample to address the observed out-of-specialty drift. The independent
+adjudication gate remains unmet.
