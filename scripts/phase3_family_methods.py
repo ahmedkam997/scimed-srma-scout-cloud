@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+from scimed_scout.discovery.competitor_records import identifiers
 from scimed_scout.discovery.open_access_dates import OpenAccessSearchDateResolver
 from scimed_scout.discovery.structured_extraction_v2 import report_role_cues
 from scimed_scout.discovery.trial_family import audit_trial_families
@@ -13,11 +14,23 @@ TARGETS = {"RCT-15364278DD7EDB7B", "RCT-2E9103FF7C89F52D"}
 REVIEWS = ("42985463", "42499063", "42201709", "43090943")
 
 
-def pubmed_ids(rows):
+def comparison_identities(rows):
+    identities = []
+    for row in rows:
+        ids = identifiers(row)
+        identities.append({
+            "source": row["source"],
+            "source_record_id": str(row["source_record_id"]),
+            "pmids": sorted(ids["pmid"]),
+            "dois": sorted(ids["doi"]),
+        })
+    return identities
+
+
+def pubmed_ids(identities):
     return list(dict.fromkeys(
-        str(row["source_record_id"]) for row in rows
-        if row["source"] == "PubMed" and str(row["source_record_id"]).isascii()
-        and str(row["source_record_id"]).isdigit()
+        row["pmids"][0] for row in identities
+        if len(row["pmids"]) == 1 and len(row["dois"]) <= 1 and row["pmids"][0].isascii()
     ))
 
 
@@ -31,8 +44,11 @@ def as_row(pmid, metadata):
 
 def audit(client, candidates, *, fetch=_fetch, resolver=None):
     resolver = resolver or OpenAccessSearchDateResolver()
-    selected = {row["candidate_id"]: pubmed_ids(row["metadata"]["rct_first"]["comparison_records"])[:30]
-                for row in candidates if row["candidate_id"] in TARGETS}
+    identities = {
+        row["candidate_id"]: comparison_identities(row["metadata"]["rct_first"]["comparison_records"])
+        for row in candidates if row["candidate_id"] in TARGETS
+    }
+    selected = {cid: pubmed_ids(records)[:30] for cid, records in identities.items()}
     ids = list(dict.fromkeys([*REVIEWS, *(pmid for group in selected.values() for pmid in group)]))
     try:
         found, diagnostics = parse_efetch(fetch(client, ids), ids)
@@ -47,6 +63,7 @@ def audit(client, candidates, *, fetch=_fetch, resolver=None):
                                for pmid in REVIEWS},
         "candidates": {
             cid: {
+                "source_identities": identities[cid],
                 "families": audit_trial_families([rows[pmid] for pmid in group if pmid in rows]),
                 "role_cues": {pmid: report_role_cues(rows[pmid])["cues"] for pmid in group if pmid in rows},
                 "usable_independent_trial_count": None,
@@ -74,6 +91,7 @@ def main():
             "unlinked": [report["report_id"] for report in families["unlinked_reports"]],
             "ambiguous": [report["report_id"] for report in families["ambiguous_reports"]],
             "role_cues": row["role_cues"],
+            "non_pubmed_identities": [item for item in row["source_identities"] if item["source"] != "PubMed"],
         })
     if result["missing_pubmed_ids"] or set(result["candidates"]) != TARGETS or not all(result["competitor_methods"].values()):
         raise SystemExit("Family or full-text Methods audit remains incomplete")
