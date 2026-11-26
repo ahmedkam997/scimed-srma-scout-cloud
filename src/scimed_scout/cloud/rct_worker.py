@@ -166,7 +166,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     provider.begin(c.candidate_id)
                     provider.reserved=1
                 novelty=DiscoveryNoveltyService(ledger,SemanticCompetitorAssessor(provider),max_reviews=12,max_registrations=8,batch_size=5,
-                    search_date_resolver=OpenAccessSearchDateResolver(),max_fulltext_reviews=2,enrichment_client=EuropePMCSource(),max_enrichment_lookups=1) if provider else None
+                    search_date_resolver=OpenAccessSearchDateResolver(),max_fulltext_reviews=2,enrichment_client=EuropePMCSource(),max_enrichment_lookups=1,bounded_recovery=True) if provider else None
                 scoring=ReservedScoring(provider) if provider else None
                 engine=ReviewDiscoveryOrchestrator(ledger,clients,novelty_service=novelty,scoring_service=scoring,
                     cancellation_check=check,require_pico_signals=True,optimize_literature_queries=True,adaptive_search=True,

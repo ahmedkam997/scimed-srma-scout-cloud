@@ -29,3 +29,16 @@ No new AI requests in this citation recovery layer; logical network call
 budget is at most six at seed stage (two cells, each two directions plus
 one hydration) and four per deep supplement including optional refinement.
 No claim of completeness or automatic qualification.
+
+## Recovery fairness and source recovery
+The RCT worker retains its 18 logical-call per run and 6 per-topic limits.
+The previous recovery expansion to 30 reviews and 24 registrations could
+consume all five non-scoring slots in the review queue alone. Bounded RCT
+recovery now uses the normal 12/8 caps with five-record batches, retaining
+resolved cached assessments and all unassessed blockers. The general service
+keeps its previous behavior unless explicitly opted in. Individual repairs
+are deferred in this bounded mode; this may leave difficult cases unresolved.
+Failed full-text search-date lookups rotate behind unattempted records; a bare
+date without a source quotation cannot mark a date resolved. The deep
+supplementary search can run after a previously failed Europe PMC query is
+recovered, using latest status rather than stale historical failures.

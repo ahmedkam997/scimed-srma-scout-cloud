@@ -267,7 +267,9 @@ class ReviewDiscoveryOrchestrator:
         if self.adaptive_retrieval and (recover_only or not self.adaptive_recovery_only) and not (candidate.metadata or {}).get("adaptive_retrieval_audit"):
             self._adaptive_pubmed_retrieval(candidate,plan,limit_per_query)
             candidate=self.ledger.get_candidate(candidate_id) or candidate
-        if self.adaptive_search and not (candidate.metadata or {}).get("adaptive_search_audit"):
+        previous_supplement=(candidate.metadata or {}).get("adaptive_search_audit") or {}
+        if self.adaptive_search and (not previous_supplement or
+                (recover_only and previous_supplement.get("status")=="DEFERRED_BASE_SOURCE_FAILURE")):
             self._supplementary_search(candidate)
             candidate=self.ledger.get_candidate(candidate_id) or candidate
         if self.adaptive_search and not (candidate.metadata or {}).get("registration_enrichment_audit"):
@@ -667,7 +669,8 @@ class ReviewDiscoveryOrchestrator:
         if client is None or not hasattr(client,"http"):
             return
         logs=self.ledger.list_search_log(candidate.candidate_id)
-        if any(log.source=="Europe PMC" and log.status==SourceStatus.ACCESS_FAILED for log in logs):
+        latest={(log.source,log.query):log.status for log in logs}
+        if any(source=="Europe PMC" and status==SourceStatus.ACCESS_FAILED for (source,_),status in latest.items()):
             candidate.metadata={**(candidate.metadata or {}),"adaptive_search_audit":{
                 "version":"ADAPTIVE_SEARCH_V1","status":"DEFERRED_BASE_SOURCE_FAILURE","coverage_clearance_allowed":False}}
             self.ledger.upsert_candidate(candidate)
