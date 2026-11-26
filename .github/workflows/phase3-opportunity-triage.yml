@@ -10,6 +10,7 @@ on:
     branches: [scientific-verification-v2-phase3-replay]
     paths:
       - '.github/workflows/phase3-opportunity-triage.yml'
+      - 'scripts/phase3_competitor_recovery.py'
 permissions:
   actions: read
   contents: read

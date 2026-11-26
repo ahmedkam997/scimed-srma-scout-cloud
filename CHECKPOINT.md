@@ -20,3 +20,9 @@ ticagrelor vs clopidogrel are next for trial and competitor verification.
 Use the subsequent Phase 3 triage run's `competitor-recovery` job to recover
 published report identifiers. Check original reviews' Methods before using
 any publication-year signal as an actual search cutoff.
+
+Initial competitor recovery run `45891785512` completed. See the cited
+retrieval leads in [EVIDENCE.md](EVIDENCE.md). The next hosted run applies
+title-focused comparison queries and excludes review publications from the
+recent-RCT route. Inspect direct competitors' Methods and link primary trial
+families before constructing any update dossier.
