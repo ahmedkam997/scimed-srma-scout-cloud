@@ -22,6 +22,8 @@ jobs:
     env:
       DISCOVERY_RUN: ${{ inputs.discovery_run || '45891271291' }}
     steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
       - name: Wait for and verify the Phase 3 discovery run
         env:
           GH_TOKEN: ${{ github.token }}
@@ -84,8 +86,6 @@ jobs:
           name: phase3-opportunity-triage
           path: phase3-triage.json
           retention-days: 14
-      - uses: actions/checkout@v6
-        with: {persist-credentials: false}
       - uses: actions/setup-python@v6
         with: {python-version: '3.12'}
       - run: python -m pip install -e .
