@@ -90,11 +90,55 @@ def retrieve_cutoff_cues(client, reviews=REVIEW_CONTROLS):
     }
 
 
+def trace_trial_reports(client):
+    from scimed_scout.discovery.structured_extraction_v2 import report_role_cues
+    from scimed_scout.discovery.trial_family import registration_signals
+    from scripts.phase3_family_methods import as_row, notice
+
+    queries = {
+        "camera-mri-ii": '("CAMERA-MRI II"[tiab] OR "CAMERA MRI II"[tiab]) AND ablation[tiab]',
+        "chagas-trial-reports": '("ANSWER-HF"[tiab] OR "PARACHUTE-HF"[tiab]) AND chagas[tiab]',
+    }
+    matches = {}
+    ids = ["42246906", "41396086", "40916703", "41335448"]
+    for label, query in queries.items():
+        route = client.search(query, limit=10)
+        matches[label] = {
+            "query": query, "status": route.status.value, "reported_total": route.total_count,
+            "pmids": [str(record.record_id) for record in route.records],
+        }
+        ids.extend(matches[label]["pmids"])
+    ids = list(dict.fromkeys(ids))
+    try:
+        found, diagnostics = parse_efetch(_fetch(client, ids), ids)
+    except (OSError, ValueError, ParseError) as exc:
+        found, diagnostics = {}, {"error_type": type(exc).__name__}
+    reports = {}
+    for pmid, metadata in found.items():
+        row = as_row(pmid, metadata)
+        reports[pmid] = {
+            "title": row["title"],
+            "registration_signals": registration_signals(row),
+            "role_cues": report_role_cues(row)["cues"],
+        }
+        notice(f"HF trial report PMID {pmid}", reports[pmid])
+    missing = sorted(set(ids) - set(found))
+    output = {"searches": matches, "reports": reports, "diagnostics": diagnostics,
+              "missing_pmids": missing, "qualification_granted": False}
+    Path("phase3-competitor-recovery.json").write_text(json.dumps(output, indent=2) + "\n")
+    if missing or any(item["status"] not in {"SEARCHED_POSITIVE", "SEARCHED_NEGATIVE"}
+                      for item in matches.values()):
+        raise SystemExit("HF trial-report retrieval remains unresolved")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--heart-failure", action="store_true")
+    parser.add_argument("--trace-trial-reports", action="store_true")
     args = parser.parse_args()
     client = PubMedSource(sort="pub_date")
+    if args.trace_trial_reports:
+        return trace_trial_reports(client)
     if args.heart_failure:
         report = run(client, questions=HEART_FAILURE_QUESTIONS, post_february=True)
         cutoffs = retrieve_cutoff_cues(client, ("42769399", "42119914", "41773097"))
