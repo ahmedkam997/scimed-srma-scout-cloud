@@ -40,7 +40,7 @@ def wait(job,seconds):
 def main():
     save()
     try:
-        rows=api("/rest/v1/discovery_jobs?select=id,status",{"specialty":"Cardiology","question_type":"ALL","candidate_count":4,"final_options":1,"min_verify":3,"max_verify":3,"limit_per_query":12,"revisit_days":30},True)
+        rows=api("/rest/v1/discovery_jobs?select=id,status",{"specialty":"Cardiology","question_type":"ALL","candidate_count":4,"final_options":2,"min_verify":3,"max_verify":3,"limit_per_query":12,"revisit_days":30},True)
         job=rows[0]["id"];save(job_id=job,status="QUEUED");wake(job)
         initial=wait(job,1500)
         if initial["status"]!="COMPLETED":save(status="INITIAL_JOB_NOT_COMPLETED",initial_status=initial["status"]);return
