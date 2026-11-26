@@ -1,0 +1,30 @@
+# V2 Phase 3 — Evidence synthesis research and reuse decisions (2026-11-26)
+
+Scope: discovery of defensible RCT-only SRMA opportunities, not autonomous conduct of a published systematic review. No scientific qualification threshold or production path is changed by these experiments.
+
+## Evidence-backed architecture decisions
+- Search: use Cochrane Handbook Ch.4, Cochrane HSSS, PRESS (PMID 27005575), PRISMA-S and TARCiS (https://doi.org/10.1136/bmj-2023-078384). Treat top-K ranking as prioritization, not exhaustive retrieval. PubMed ESearch limits documented by NCBI (https://www.ncbi.nlm.nih.gov/books/NBK25499/); EDirect or partitioned retrieval is required beyond 10,000 IDs. Do not infer completeness from API success alone.
+- Citation search: evaluate published BibliZap (https://doi.org/10.1017/rsm.2026.10079; https://github.com/BibliZap/biblizap-server) and citationchaser (https://github.com/nealhaddaway/citationchaser) as supplementary routes. Lens access and licensing require separate verification. Seed only with records genuinely discovered at the replay cutoff; never seed with future gold labels.
+- Query development: litsearchr (https://doi.org/10.1111/2041-210X.13268), Cochrane filters and LEADS query generation are candidates; compare recall and workload before adoption.
+- Screening: reuse ASReview (https://github.com/asreview/asreview), not a new active learning implementation. Simulation labels represent an oracle; they do not establish autonomous screening or safe stopping. SAFE stopping heuristic (PMCID PMC10908130) is a candidate, not a guarantee. Preserve unreviewed records.
+- Domain model: LEADS (https://doi.org/10.1038/s41467-025-62058-5), MIT model card and dataset card on Hugging Face. Model is BF16 7.25B; no hosted inference provider listed at verification. Evaluate quantized or available GPU execution before production. TrialMind (https://doi.org/10.1038/s41746-025-01840-7) is a second reference architecture.
+- Linkage: Trials to Publications (PMID 35020887, PMID 40585158), combining metadata and full-text registry mentions. Treat matches as leads until verified.
+- Extraction: SRDR published projects (PMID 31862012), EBM-NLP, EvidenceOutcomes (PMID 40775953), LEADSInstruct. Distinguish extracted source text, numeric values, arm/timepoint/outcome semantics and human adjudication. Use validated statistical libraries for pooling, not generated arithmetic.
+- Opportunity discovery: Cochrane Handbook Ch.21, PUGs update checklist (https://doi.org/10.1136/bmj.i3507), Ottawa/RAND signals, RobotReviewer LIVE (PMID/DOI search by title "In a pilot study, automated real-time systematic review updates were feasible, accurate, and work-saving"), living evidence maps (PMID 41796756). New evidence is not sufficient on its own to justify an update.
+- Model development: optimize task-specific prompts only on development cases with DSPy after baseline, then use parameter-efficient tuning if it materially improves independent results. Keep the final test set separate by review, PICO family, primary report/trial, and time.
+- Scientific governance: ICASR principles (https://doi.org/10.1186/s13643-018-0740-7), Cochrane/JBI/Campbell/CEE AI position (https://doi.org/10.1002/cl2.70074); evidence map PMID 42847473 shows variable reliability. Final signed human adjudication remains unchanged.
+
+## External benchmark integration
+- TrialReviewBench pinned revision 6dfc322004341212eb905a6874ccfae416b9f9f5, Apache-2.0 dataset card. CI validated 100 review rows and 100 search/screening JSONL rows; keys PMID, Title, Abstract, PICO, Topic, Involved_Citations. The four topics are Immunotherapy (32), Radiation/Chemotherapy (24), Hormone Therapy (22), Hyperthermia (22). Oncology-biased and not RCT-only by default: useful for task-level evaluation, not SciMed cardiology/surgery opportunity qualification. Do not train on this test split. Individual extraction CSVs have heterogeneous schemas (dataset viewer cast failure).
+- ASReview upstream published release 3.0.8, Cohen_2006_Statins dataset from the SYNERGY index (https://github.com/asreview/synergy-dataset). CI simulation seeded with one positive and one negative from historical labels, fixed seed 42; WSS@95 = 0.95 - fraction screened at 95% observed reference recall. Report only after logs confirm completion. This is an oracle-assisted closed-corpus screening benchmark, not retrieval or RCT independence validation.
+- SYNERGY+ upstream README reports 114 reviews and 168,948 open records. CSMeD-all reports 325 reviews (https://github.com/WojciechKusa/systematic-review-datasets). Check license, overlap, inclusion unit and domain fit before any data integration.
+
+## Release gates for next stage
+1. Freeze dataset manifests and label definitions; use held-out review families and temporal split; avoid treating unknowns as exclusions.
+2. Build high-recall retrieval using NCBI ID-first enumeration and bounded batch metadata; compare full corpus recall with top-K; track incomplete and unavailable sources.
+3. Evaluate ASReview on multiple relevant labeled reviews with multiple seeds, actual screening burden, WSS@95, recall at fixed budgets, missed-study audit; compare simple baselines. Retain oracle-assisted vs autonomous distinction.
+4. Evaluate LEADS on task-specific held-out PICO/extraction examples and compute latency/cost; verify licensing of upstream source data. No uncontrolled automatic weight updates.
+5. Evaluate review-first discovery on historical review pairs and negative controls, blinded to later updates; report candidate recall, false-qualified cases, overlap, outcome-level added evidence, and adjudication.
+6. Only integrate validated components into production after regression tests, scientific audit and review.
+
+Results in workflow v2-external-evidence-benchmarks run 45882669406; initial full suite import failure was diagnosed and corrected by adding repo root to pytest pythonpath; retest required. No claims of model training, end-to-end success or production deployment.
