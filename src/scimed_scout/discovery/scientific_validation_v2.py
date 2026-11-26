@@ -1,7 +1,7 @@
 """Reference retrieval pilot. IDs are only used for evaluation, not discovery."""
 from pathlib import Path
 import argparse,json
-from .rct_first import query_pair,comparison_rows,family_summary,own_rct,_search,_query,control_terms,review_title_query
+from .rct_first import query_pair,comparison_rows,family_summary,own_rct,_search,_query,review_control_terms,review_title_query
 from .evidence_first import _record
 from .evidence_classification import classify_review_search_hit
 from scimed_scout.sources.pubmed import PubMedSource
@@ -40,7 +40,7 @@ def main():
         metrics=evaluate(case,primary,reviews)
         # Apply the same predetermined supplement to every case. Reference
         # IDs are used only after retrieval to score the result.
-        supplemental=_search(client,query_pair(case["pair"],review=True)+" AND "+_query(control_terms(case["comparator"])),30,"REVIEW_COMPARISON_REFERENCE_RECOVERY",audits,None)
+        supplemental=_search(client,query_pair(case["pair"],review=True)+" AND "+_query(review_control_terms(case["comparator"])),30,"REVIEW_COMPARISON_REFERENCE_RECOVERY",audits,None)
         metrics["review_references_after_supplement"]=sorted(set(case["reviews"])&{str(r["source_record_id"]) for r in [*reviews,*supplemental]})
         matched,buckets=comparison_rows(case["pair"],primary,comparator=case["comparator"])
         seeds=[_pmid(r) for r in [*buckets.get(case["comparator"],[]),*matched] if _pmid(r)]

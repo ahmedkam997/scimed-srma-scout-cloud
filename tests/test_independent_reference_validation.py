@@ -44,3 +44,15 @@ def test_external_pairwise_clustering_does_not_count_unlinked_as_confirmed():
     result=pair_score(truth,rows)
     assert (result["tp"],result["fp"],result["fn"],result["tn"])==(1,0,1,4)
     assert result["reference_trials"]==2 and result["observed_reports"]==3
+
+
+def test_conventional_thermal_alias_uses_review_only_group():
+    from scimed_scout.discovery.rct_first import review_control_terms,control_terms,comparison_query
+    pair=("atrial fibrillation","pulsed field ablation",(),())
+    terms=review_control_terms("conventional thermal ablation")
+    assert "thermal ablation" in terms and "thermal techniques" in terms
+    q=review_title_query(pair,"conventional thermal ablation")
+    assert '"thermal ablation"[tiab]' in q and '"thermal techniques"[tiab]' in q
+    assert "thermal techniques" not in control_terms("conventional thermal ablation")
+    assert '"thermal techniques"' not in comparison_query(pair,"conventional thermal ablation")
+    assert review_control_terms("unrelated comparator")==("unrelated comparator",)
