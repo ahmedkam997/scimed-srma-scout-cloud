@@ -212,7 +212,7 @@ def family_summary(rows):
 
 # Context and arm-composition markers: a treatment received by all
 # participants is not the randomized intervention. Fail closed on unclear arms.
-CONTEXT=re.compile(r"\b(?:in patients|in adults|in children|among|after|following|before|during|undergoing|admitted for|on background|in addition to|each in combination with|both receiving|with concomitant|regardless of)\b",re.I)
+CONTEXT=re.compile(r"\b(?:in patients|in adults|in children|among|after|following|before|during|undergoing|admitted for|beyond|on background|as an add-on to|in addition to|each in combination with|both receiving|with concomitant|regardless of)\b",re.I)
 PAIR_SPLIT=re.compile(r"\b(?:versus|vs\.?|compared (?:with|to))\b",re.I)
 def clean_passage(text):
     from html import unescape
