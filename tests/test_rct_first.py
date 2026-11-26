@@ -145,3 +145,18 @@ def test_review_comparison_recovery_is_bounded_and_source_linked():
     profile=r["candidates"][0]["metadata"]["opportunity_mcda"]
     assert "REVIEW_GAP_SIGNAL" in profile["routes"]
     assert profile["assessment"]["publication_oriented_score"] is None
+
+
+def test_real_production_false_arm_regressions():
+    from scimed_scout.discovery.rct_first import explicit_comparison
+    tavr=("transcatheter aortic valve replacement","TAVR","TAVI","transcatheter aortic valve implantation")
+    assert not explicit_comparison("In this single-centre, double-blind, placebo-controlled, randomized trial we investigated the efficacy of colchicine to reduce a composite of new-onset atrial fibrillation at 30 days after TAVR.",tavr,"placebo")
+    assert not explicit_comparison("<h4>Aims</h4>The aim of this trial was to evaluate whether intravenous sodium ferric gluconate could provide benefit beyond transcatheter aortic valve implantation (TAVI) in patients with severe aortic stenosis.<h4>Methods and results</h4>We conducted a randomized, single-blind, placebo-controlled trial enrolling patients electively admitted for TAVI.",tavr,"placebo")
+    assert not explicit_comparison("Ticagrelor alone versus ticagrelor plus aspirin from month 1 after percutaneous coronary intervention: a randomised placebo-controlled trial.",("ticagrelor",),"aspirin")
+    assert not explicit_comparison("Patients undergoing percutaneous coronary intervention were randomized to receive either ticagrelor or prasugrel, each in combination with low-dose aspirin.",("ticagrelor",),"aspirin")
+    assert not explicit_comparison("Patients randomized to aspirin or placebo in addition to ticagrelor.",("ticagrelor",),"placebo")
+    assert explicit_comparison("Ticagrelor monotherapy versus aspirin after coronary artery bypass grafting: randomized trial.",("ticagrelor",),"aspirin")
+    assert explicit_comparison("TAVR versus SAVR in patients with aortic stenosis: randomized trial.",tavr,"surgical aortic valve replacement")
+    assert explicit_comparison("Endoscopic vein harvesting versus OVH in CABG: randomized trial.",("endoscopic vein harvesting",),"open vein harvesting")
+    assert explicit_comparison("Renal denervation versus sham in hypertension: randomized trial.",("renal denervation",),"sham")
+    assert explicit_comparison("Empagliflozin in heart failure: a placebo-controlled randomized trial.",("empagliflozin",),"placebo")

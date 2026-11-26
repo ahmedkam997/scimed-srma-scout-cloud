@@ -18,3 +18,6 @@ Limits: no validated independent study or gap classifier; no automated clinical 
 Local manual assessment supports candidate interval comparisons across four prespecified weighting scenarios and report/topic exports. Each unresolved domain gets a concrete proposed recovery action (not a claim of execution).
 
 A bounded exact-comparison review search (up to two additional searches plus abstract enrichment) recovers direct review cues missed by the broad population/intervention sample. Failure or absence remains uncertainty. No extra AI requests.
+
+## Production comparator audit (2026-11-26)
+Job 8e9ea8e7-21c0-4b76-85a6-c9ab25c10820 exposed treatment-context false matches: PMIDs 40659682, 41870899 (drug trials in TAVR), 38599220 and 41671005 (shared/concomitant antiplatelet arms). Added conservative arm composition guards and clinically relevant SAVR/OVH synonyms; evidence cues remain unverified. Methods: Cochrane Handbook chapter 3 https://www.cochrane.org/authors/handbooks-and-manuals/handbook/current/chapter-03 and CONSORT 2025 https://doi.org/10.1136/bmj-2024-081124. Regression replay includes rotation 2 as well as rotation 0. This does not constitute a validated arm classifier.

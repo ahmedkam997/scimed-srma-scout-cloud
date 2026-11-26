@@ -119,7 +119,8 @@ CONTROLS=("placebo","sham","usual care","standard care","open surgery","open rep
           "self monitoring of blood glucose","fingerstick glucose monitoring","insulin","mammography","conventional mammography","usual glucose monitoring",
           "aspirin","clopidogrel","warfarin","enalapril","metoprolol",
           "radiofrequency ablation","cryoballoon ablation","early treatment","delayed treatment",
-          "appendectomy","appendicectomy","saline","no treatment")
+          "appendectomy","appendicectomy","saline","no treatment",
+          "surgical aortic valve replacement","open saphenous vein harvesting")
 OUTCOMES=("all cause mortality","mortality","cardiovascular death","hospitalization","heart failure hospitalization",
           "blood pressure","stroke","myocardial infarction","major adverse cardiovascular events",
           "bleeding","quality of life","exercise capacity","pain","infection","wound infection",
@@ -130,7 +131,7 @@ RCT_FILTER='(randomized controlled trial[pt] OR controlled clinical trial[pt] OR
 REVIEW_FILTER='(systematic[sb] OR meta-analysis[pt] OR systematic review[tiab])'
 ALLOCATION=r"(?:randomi[sz]ed|randomly (?:assigned|allocated))(?:\s+(?:(?:\d+[\s,]+)?(?:patients|participants|subjects|individuals|adults|children|women|men|people|infants)|\d+)(?:\s+[\w-]+){0,12}?)?\s+(?:to|into)\s+"
 OWN_ASSIGN=re.compile(r"\b(?:randomi[sz]ed (?:controlled )?(?:trial|study)|placebo.controlled|sham.controlled|"+ALLOCATION+r")",re.I)
-SECONDARY=re.compile(r"\b(?:secondary analysis|post.hoc|subgroup analysis|pooled analysis|individual patient data|rationale and design|trial protocol|study protocol|retracted publication)\b",re.I)
+SECONDARY=re.compile(r"\b(?:secondary analysis|post.hoc|subgroup analysis|sub.study|pooled analysis|individual patient data|insights from|rationale and design|trial protocol|study protocol|retracted publication)\b",re.I)
 COMPARE=re.compile(r"\b(?:versus|vs\.?|compared (?:with|to)|randomi[sz]ed (?:to|into)|randomly (?:assigned|allocated)|placebo.controlled|sham.controlled)\b",re.I)
 BACKGROUND=re.compile(r"^(?:background|introduction|rationale|objective|aim)\s*[:：]",re.I)
 
@@ -151,9 +152,18 @@ def _query(terms,field="[tiab]"):
 def query_pair(pair,review=False):
     pop,inter,pa,ia=pair
     return _query(phrases(pop,pa))+" AND "+_query(phrases(inter,ia))+" AND "+(REVIEW_FILTER if review else RCT_FILTER)
+CONTROL_ALIASES={"surgical aortic valve replacement":("SAVR","surgical valve replacement"),
+                 "open vein harvesting":("OVH","open saphenous vein harvesting","traditional vein harvesting"),
+                 "open saphenous vein harvesting":("OVH","open vein harvesting"),
+                 "medical therapy":("medical treatment","drug therapy"),
+                 "usual care":("routine care",)}
+
+def control_terms(control):
+    return phrases(control,CONTROL_ALIASES.get(control,()))
+
 def comparison_query(pair, comparator):
     # Supplemental only: preserve the broader P+I sample.
-    return query_pair(pair)+" AND "+_query((comparator,))
+    return query_pair(pair)+" AND "+_query(control_terms(comparator))
 
 def ep_query(pair):
     pop,inter,pa,ia=pair
@@ -188,7 +198,7 @@ def eligible_groups(pair,rows,year=None):
         if not valid_year:continue
         # Both concepts must appear in the title or in own-study Methods/
         # allocation text, not merely in unrelated background sentences.
-        eligible=[p[3] for p in passages if p[0]=="title" or (OWN_ASSIGN.search(p[3]) and not BACKGROUND.search(p[3]) and not re.search(r"\b(?:previous|prior|secondary analysis|post hoc)\b",p[3],re.I))]
+        eligible=[clean_passage(p[3]) for p in passages if p[0]=="title" or (OWN_ASSIGN.search(clean_passage(p[3])) and not BACKGROUND.search(clean_passage(p[3])) and not SECONDARY.search(clean_passage(p[3])) and not re.search(r"\b(?:previous|prior)\b",p[3],re.I))]
         # The condition may be stated in the title or another own-method
         # passage, while randomization arms are described separately.
         if not (any(any_term(t,phrases(pop,pa)) for t in eligible) and any(any_term(t,phrases(inter,ia)) for t in eligible)):continue
@@ -200,33 +210,54 @@ def family_summary(rows):
             "registry_linked_families":a["registry_linked_families"],"unlinked_reports":len(a["unlinked_reports"]),
             "ambiguous_reports":len(a["ambiguous_reports"]),"confirmed_independent_eligible_trials":None}
 
+# Context and arm-composition markers: a treatment received by all
+# participants is not the randomized intervention. Fail closed on unclear arms.
+CONTEXT=re.compile(r"\b(?:in patients|in adults|in children|among|after|following|before|during|undergoing|admitted for|on background|in addition to|each in combination with|both receiving|with concomitant|regardless of)\b",re.I)
+PAIR_SPLIT=re.compile(r"\b(?:versus|vs\.?|compared (?:with|to))\b",re.I)
+def clean_passage(text):
+    from html import unescape
+    return re.sub(r"\s+"," ",unescape(re.sub(r"<[^>]*>"," ",str(text or "")))).strip()
+
+def arm_segment(text):
+    # Strip contextual population/procedure tail and shared concomitant care.
+    return CONTEXT.split(text,maxsplit=1)[0].strip()
+
+def exact_arms(left,right,interventions,control):
+    left,right=arm_segment(left),arm_segment(right)
+    ct=control_terms(control)
+    li,ri=any_term(left,interventions),any_term(right,interventions)
+    lc,rc=any_term(left,ct),any_term(right,ct)
+    # A vs A+B, or A+B vs C, is not A vs B. Other arm components still
+    # need screening; this guard only rejects explicit same-agent crossover.
+    return (li and not lc and rc and not ri) or (lc and not li and ri and not rc)
+
 def explicit_comparison(text,interventions,control):
-    """Only bounded direct-comparison or control-design phrases count.
-    These are prioritization signals, never evidence of exact randomization arms.
-    """
-    text=str(text or "")
-    if not any_term(text,interventions) or not has(text,control):return False
-    # E.g. named intervention in a placebo-controlled randomized trial.
-    if control in ("placebo","sham") and re.search(r"\b"+control+r"[- ]controlled\b",text,re.I):
-        # Do not infer a comparator if multiple explicit "versus" arms exist.
-        return not re.search(r"\b(?:versus|vs\.?|compared with|compared to)\b",text,re.I) or any(
-            explicit_side(text,m,interventions,control) for m in re.finditer(r"\b(?:versus|vs\.?|compared with|compared to)\b",text,re.I))
-    for m in re.finditer(r"\b(?:versus|vs\.?|compared with|compared to)\b",text,re.I):
-        if explicit_side(text,m,interventions,control):return True
-    # Explicit allocation X or Y only (not general co-mentions).
+    """Conservative direct-arm clues, not confirmed randomization or eligibility."""
+    text=clean_passage(text)
+    if not any_term(text,interventions) or not any_term(text,control_terms(control)):return False
+    # Prefer explicit allocation. The initial population/procedure cannot
+    # leak into either arm. Shared-agent/composition ambiguity is withheld.
     m=re.search(r"\b"+ALLOCATION,text,re.I)
     if m:
-        arms=re.split(r"\b(?:or|and)\b",text[m.end():],maxsplit=1,flags=re.I)
+        arms=re.split(r"\b(?:or|and|versus|vs\.?)\b",text[m.end():],maxsplit=1,flags=re.I)
         if len(arms)==2:
-            left=" ".join(arms[0].split()[-12:]);right=" ".join(arms[1].split()[:12])
-            return (any_term(left,interventions) and has(right,control)) or (has(left,control) and any_term(right,interventions))
+            return exact_arms(" ".join(arms[0].split()[:16])," ".join(arms[1].split()[:16]),interventions,control)
+    for m in PAIR_SPLIT.finditer(text):
+        left=" ".join(text[:m.start()].split()[-12:])
+        right=" ".join(text[m.end():].split()[:12])
+        if exact_arms(left,right,interventions,control):return True
+    if PAIR_SPLIT.search(text):return False
+    # Implicit placebo/sham-controlled title cues are accepted only if
+    # the intervention is in the pre-context subject of the passage and
+    # not merely a procedure in which an unrelated drug is tested.
+    if control in ("placebo","sham") and re.search(r"\b"+control+r"[- ]controlled\b",text,re.I):
+        subject=arm_segment(text)
+        if not any_term(subject,interventions):return False
+        if re.search(r"\b(?:evaluat(?:e|ed|ing)|investigat(?:e|ed|ing)|assess(?:ed|ing)?|efficacy of|effect of)\b",text,re.I):
+            focus=re.split(r"\b(?:efficacy of|effect of|effects of|evaluate|evaluated|investigate|investigated|assess|assessed)\b",text,maxsplit=1,flags=re.I)
+            if len(focus)==2 and not any_term(arm_segment(focus[1]),interventions):return False
+        return True
     return False
-
-def explicit_side(text,m,interventions,control):
-    left=" ".join(text[:m.start()].split()[-10:]);right=" ".join(text[m.end():].split()[:6])
-    # "X versus Y in patients receiving aspirin" is not an aspirin arm.
-    right=re.split(r"\b(?:in patients|in adults|among|with concomitant|receiving|undergoing|treated with|on background)\b",right,maxsplit=1,flags=re.I)[0]
-    return (any_term(left,interventions) and has(right,control)) or (has(left,control) and any_term(right,interventions))
 
 def comparison_rows(pair,rows,comparator=None,year=None):
     buckets=defaultdict(list);all_rows=[]
@@ -235,7 +266,8 @@ def comparison_rows(pair,rows,comparator=None,year=None):
         r=representative(variants);all_rows.append(r)
         # Require observed intervention + comparator in same comparison title/
         # allocation passage. This is an explicit cue, not proof of exact arms.
-        for control in ((comparator,) if comparator else CONTROLS):
+        # Equivalent vocabulary must not create duplicate candidate questions.
+        for control in ((comparator,) if comparator else tuple(c for c in CONTROLS if c!="open saphenous vein harvesting")):
             if any_term(control,phrases(inter,ia)):continue
             matches=[t for t in eligible if explicit_comparison(t,phrases(inter,ia),control)]
             if matches:
@@ -376,7 +408,7 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
         if p["source_linked_gap_cues"] or p["post_cutoff_report_cues"] or p["correction_method_cues"]:continue
         if review_recoveries>=MAX_REVIEW_COMPARISON_RECOVERIES:break
         pair=info["pair"];control=row["comparator_reference"];before=len(p["direct_comparison_review_sample"])
-        query=query_pair(pair,review=True)+" AND "+_query((control,))
+        query=query_pair(pair,review=True)+" AND "+_query(control_terms(control))
         extra=_search(pubmed,query,15,"REVIEW_COMPARISON_RECOVERY",report["queries"],check)
         supplement_status=report["queries"][-1]["status"]
         if extra and abstract_enricher:
