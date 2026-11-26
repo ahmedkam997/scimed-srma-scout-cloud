@@ -366,7 +366,7 @@
         (start+pageSize<items.length?pageButton(start+pageSize,'Next'):'')+'</div>';
       const inventory = itemInventory(kind);
       const sourceGap = inventory.unrepresented_hit_difference;
-      return '<details class="gap-queue"><summary>' + esc(label) + ' (' +
+      return '<details class="gap-queue" data-gap-queue-kind="'+esc(kind)+'"><summary>' + esc(label) + ' (' +
         items.length + ' saved citations; ' + shown.length + ' shown)</summary>' + navigation +
         '<p class="help">' + Math.max(0, items.length - shown.length) +
         ' additional saved citations are included in the JSON export. ' +

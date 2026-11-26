@@ -1,6 +1,6 @@
 // Network first: phone users receive newly deployed JS even after PWA installation.
 const CACHE='scimed-review-scout-v43';
-const ASSETS=['./','./index.html','./styles.css?v=20261126-adjudication-recovery-v1','./app.js?v=20261126-adjudication-recovery-v1','./gap-verification.js?v=20261126-adjudication-recovery-v1','./final-audit-evidence.js?v=20261126-adjudication-recovery-v1','./final-evidence-audit.js?v=20261126-adjudication-recovery-v1','./opportunity-assessment.js?v=20261126-adjudication-recovery-v1','./manifest.webmanifest','./config.js?v=20261126-adjudication-recovery-v1'];
+const ASSETS=['./','./index.html','./styles.css?v=20261126-durable-resume-adjudication-v1','./app.js?v=20261126-durable-resume-adjudication-v1','./gap-verification.js?v=20261126-durable-resume-adjudication-v1','./final-audit-evidence.js?v=20261126-durable-resume-adjudication-v1','./final-evidence-audit.js?v=20261126-durable-resume-adjudication-v1','./opportunity-assessment.js?v=20261126-durable-resume-adjudication-v1','./manifest.webmanifest','./config.js?v=20261126-durable-resume-adjudication-v1'];
 self.addEventListener('install',e=>e.waitUntil(
   caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())
 ));

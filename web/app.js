@@ -1508,7 +1508,7 @@ els.jobs.addEventListener('click', async event => {
     offsets[kind]=Number(pageButton.dataset.gapPage)||0;
     const holder=document.createElement('div');holder.innerHTML=window.SCIMED_GAP.render(job,topic,offsets);
     const updated=holder.firstElementChild;
-    if(updated){updated.open=true;const queues=updated.querySelectorAll('.gap-queue');if(queues[kind==='review'?0:1])queues[kind==='review'?0:1].open=true;panel.replaceWith(updated);}
+    if(updated){updated.open=true;const queue=updated.querySelector('[data-gap-queue-kind="'+kind+'"]');if(queue)queue.open=true;panel.replaceWith(updated);}
     return;
   }
   const mcdaButton=event.target.closest('[data-mcda-save],[data-mcda-export]');
