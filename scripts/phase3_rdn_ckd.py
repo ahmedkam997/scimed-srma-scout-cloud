@@ -16,6 +16,7 @@ PRIOR_REGISTRATIONS = {
     "NCT02649426", "NCT02918305", "NCT03614260",
 }
 CTG = "https://clinicaltrials.gov/api/v2/studies"
+RECOVERED_REGISTRATIONS = ("NCT04264403", "NCT07742787")
 
 
 def describe_registry(study, expected):
@@ -26,10 +27,22 @@ def describe_registry(study, expected):
     design = protocol.get("designModule") or {}
     arms = protocol.get("armsInterventionsModule") or {}
     outcomes = protocol.get("outcomesModule") or {}
+    references = protocol.get("referencesModule", {}).get("references", [])
     return {
         "status": "EXACT_IDENTIFIER",
         "registration": expected,
         "title": identity.get("briefTitle"),
+        "acronym": identity.get("acronym"),
+        "protocol_id": (identity.get("orgStudyIdInfo") or {}).get("id"),
+        "status_and_dates": {
+            key: (protocol.get("statusModule") or {}).get(key)
+            for key in ("overallStatus", "startDateStruct", "primaryCompletionDateStruct")
+        },
+        "exact_report_citations": [row for row in references if str(row.get("pmid")) == PMID],
+        "locations": [
+            {key: row.get(key) for key in ("facility", "city", "country")}
+            for row in (protocol.get("contactsLocationsModule") or {}).get("locations", [])
+        ],
         "design": design,
         "arms": [
             {"label": arm.get("label"), "type": arm.get("type"), "interventions": arm.get("interventionNames")}
@@ -107,8 +120,16 @@ def main():
     report = audit(client, registry)
     if report.get("registry", {}).get("status") == "UNRESOLVED_REGISTRATION":
         report["identity_recovery"] = recover_identity(client, registry)
+    core = {key: value for key, value in report.items() if key != "identity_recovery"}
+    notice("RDN-CKD registration and outcome cues", core)
+    for nct in RECOVERED_REGISTRATIONS:
+        try:
+            lead = describe_registry(registry.get_json(f"{CTG}/{nct}"), nct)
+        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            lead = {"status": "ACCESS_OR_FORMAT_UNRESOLVED", "error_type": type(exc).__name__}
+        report.setdefault("recovered_registry_details", {})[nct] = lead
+        notice(f"RDN-CKD registry lead {nct}", lead)
     Path("phase3-rdn-ckd.json").write_text(json.dumps(report, indent=2) + "\n")
-    notice("RDN-CKD registration and outcome cues", report)
     if report.get("registry", {}).get("status") != "EXACT_IDENTIFIER":
         raise SystemExit("RDN-CKD registry identity remains unresolved")
 
