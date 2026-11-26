@@ -87,6 +87,7 @@ def refinement(candidate,rows,pico_audit):
 def direct_links(client,pmid,direction,*,limit=MAX_LINKS):
     if not re.fullmatch(r"[0-9]{1,12}",str(pmid)) or direction not in ("references","citations"):
         raise ValueError("invalid citation lookup")
+    pmid=str(pmid)
     limit=max(1,min(MAX_LINKS,int(limit)))
     endpoint="https://www.ebi.ac.uk/europepmc/webservices/rest/MED/"+pmid+"/"+direction
     out={"direction":"BACKWARD" if direction=="references" else "FORWARD","seed_pmid":pmid,
@@ -105,11 +106,76 @@ def direct_links(client,pmid,direction,*,limit=MAX_LINKS):
                        "title":str(r.get("title") or "")[:300]} for r in records[:limit] if isinstance(r,dict)]
         out["status"]="BOUNDED_LINK_SAMPLE" if out["links"] else "ZERO_INDEXED_LINKS" if count==0 else "LINK_METADATA_INCOMPLETE"
         out["sample_truncated"]=count>len(out["links"])
-    except Exception:
-        pass
+    except Exception as exc:
+        out["error_type"]=type(exc).__name__
+        out["rate_limited"]="429" in str(exc)
     return out
 
-def collect(candidate,primary,reviews,client,*,existing_queries=()):
+def citation_neighbors(client, seeds, known_rows=(), *, max_seeds=1, check=None):
+    """One bounded hop, exact MED hydration, no evidence or novelty clearance."""
+    seeds=list(dict.fromkeys(str(s) for s in seeds if re.fullmatch(r"[0-9]{1,12}",str(s))))[:max(0,min(2,int(max_seeds)))]
+    known={_pmid(r) for r in known_rows}|set(seeds)
+    audit={"status":"NO_SOURCE_LINKED_SEED","source_calls":0,"citation_search":[],"hydration":{},
+           "eligibility_verified":False,"coverage_clearance_allowed":False,"new_ai_requests":0}
+    if not seeds:return audit,[]
+    novel={}
+    streams=[]
+    stopped=False
+    for seed in seeds:
+        for direction in ("references","citations"):
+            if check:check()
+            entry=direct_links(client,seed,direction)
+            audit["source_calls"]+=1
+            audit["citation_search"].append(entry)
+            stream=[]
+            for link in entry["links"]:
+                pmid=link["pmid"]
+                if re.fullmatch(r"[0-9]{1,12}",pmid) and pmid not in known:
+                    edge={"seed_pmid":seed,"direction":entry["direction"]}
+                    if edge not in novel.setdefault(pmid,[]):novel[pmid].append(edge)
+                    if pmid not in stream:stream.append(pmid)
+            streams.append(stream)
+            if entry.get("rate_limited"):
+                stopped=True
+                break
+        if stopped:break
+    # Interleave directions/seed streams so references cannot exhaust the
+    # hydration budget before citing articles (and vice versa).
+    ids=[]
+    for index in range(max(map(len,streams),default=0)):
+        for stream in streams:
+            if index<len(stream) and stream[index] not in ids:ids.append(stream[index])
+    ids=ids[:MAX_LINKS]
+    audit["status"]="PARTIAL_LINK_SAMPLE" if any(e["status"] not in ("BOUNDED_LINK_SAMPLE","ZERO_INDEXED_LINKS") for e in audit["citation_search"]) or any(e.get("sample_truncated") for e in audit["citation_search"]) or len(novel)>len(ids) else "BOUNDED_LINK_SAMPLE"
+    audit["unique_linked_pmids"]=len(novel)
+    if not ids or stopped:return audit,[]
+    q="("+" OR ".join("EXT_ID:"+x for x in ids)+") AND SRC:MED"
+    if check:check()
+    audit["source_calls"]+=1
+    try:
+        retrieved=client.search(q,limit=len(ids))
+        exact=[]
+        seen=set()
+        for r in retrieved.records:
+            rid=str(r.record_id);m=r.metadata or {}
+            if rid not in ids or rid in seen or not r.title.strip():continue
+            if m.get("source") not in (None,"","MED") or (m.get("pmid") and str(m["pmid"])!=rid):continue
+            if m.get("source")!="MED" and str(m.get("pmid") or "")!=rid:continue
+            seen.add(rid)
+            edges=novel[rid]
+            r.metadata={**m,"supplementary_citation_link":{"seed_pmid":edges[0]["seed_pmid"],
+                "directions":list(dict.fromkeys(e["direction"] for e in edges)),"edges":edges,"eligibility_verified":False}}
+            exact.append(r)
+        audit["hydration"]={"query":q,"status":retrieved.status.value,"requested_pmids":ids,
+                            "retrieved_pmids":[str(r.record_id) for r in exact],"unresolved_pmids":[x for x in ids if x not in seen]}
+        if len(seen)!=len(ids) or retrieved.status!=SourceStatus.SEARCHED_POSITIVE:audit["status"]="PARTIAL_LINK_SAMPLE"
+        return audit,exact
+    except Exception as exc:
+        audit["status"]="PARTIAL_LINK_SAMPLE"
+        audit["hydration"]={"query":q,"status":"ACCESS_FAILED","requested_pmids":ids,"error_type":type(exc).__name__}
+        return audit,[]
+
+def collect(candidate,primary,reviews,client,*,existing_queries=(),check=None):
     """Maximum four additional logical source calls; no recursive expansion.
     Returns source records separately for normal citation classification.
     """
@@ -119,13 +185,11 @@ def collect(candidate,primary,reviews,client,*,existing_queries=()):
             "citation_search":[],"hydration":{},"eligibility_verified":False,
             "coverage_clearance_allowed":False}
     results=[]
-    if pico["pico_design_family_leads"]>=MIN_DISCOVERY_STUDIES:
-        report["status"]="NOT_NEEDED_MINIMUM_LEAD_SIGNAL"
-        return report,results
     q,reason,terms=refinement(candidate,primary+reviews,pico)
     report["refinement"]={"reason":reason,"term_audit":terms,"query":q,"status":"NOT_RUN"}
     if q and q not in existing_queries:
         report["source_calls"]+=1
+        if check:check()
         try:
             r=client.search(q,limit=12)
             report["refinement"].update(status=r.status.value,reported_count=r.total_count,retrieved=len(r.records))
@@ -145,31 +209,10 @@ def collect(candidate,primary,reviews,client,*,existing_queries=()):
     if not seed:
         report["citation_status"]="NO_SOURCE_LINKED_SEED"
         return report,results
-    known={_pmid(r) for r in primary+reviews}
-    novel={}
-    for direction in ("references","citations"):
-        report["source_calls"]+=1
-        entry=direct_links(client,seed,direction)
-        report["citation_search"].append(entry)
-        for link in entry["links"]:
-            pmid=link["pmid"]
-            if re.fullmatch(r"[0-9]{1,12}",pmid) and pmid not in known and pmid!=seed:
-                novel.setdefault(pmid,[]).append(entry["direction"])
-        if entry["status"]=="ACCESS_UNRESOLVED":
-            # Avoid repeated requests against an unavailable service.
-            break
-    ids=list(novel)[:MAX_LINKS]
-    if not ids:return report,results
-    q="("+" OR ".join("EXT_ID:"+x for x in ids)+") AND SRC:MED"
-    report["source_calls"]+=1
-    try:
-        retrieved=client.search(q,limit=len(ids))
-        exact=[r for r in retrieved.records if str(r.record_id) in ids and
-            ((r.metadata or {}).get("source")=="MED" or str((r.metadata or {}).get("pmid") or "")==str(r.record_id))]
-        for r in exact:
-            r.metadata["supplementary_citation_link"]={"seed_pmid":seed,"directions":novel[str(r.record_id)],"eligibility_verified":False}
-        report["hydration"]={"query":q,"status":retrieved.status.value,"requested_pmids":ids,"retrieved_pmids":[str(r.record_id) for r in exact]}
-        results.append(("CITATION_MINING",q,exact))
-    except Exception:
-        report["hydration"]={"query":q,"status":"ACCESS_FAILED","requested_pmids":ids}
+    graph,exact=citation_neighbors(client,[seed],primary+reviews,check=check)
+    report["source_calls"]+=graph["source_calls"]
+    report["citation_search"]=graph["citation_search"]
+    report["hydration"]=graph["hydration"]
+    report["citation_status"]=graph["status"]
+    if exact:results.append(("CITATION_MINING",graph["hydration"]["query"],exact))
     return report,results

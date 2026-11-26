@@ -676,7 +676,7 @@ class ReviewDiscoveryOrchestrator:
             report,rows=collect_supplementary(candidate,
                 self.ledger.list_external_evidence(candidate.candidate_id,"PRIMARY_STUDY"),
                 self.ledger.list_external_evidence(candidate.candidate_id,"PUBLISHED_REVIEW"),
-                client,existing_queries={log.query for log in logs if log.source=="Europe PMC"})
+                client,existing_queries={log.query for log in logs if log.source=="Europe PMC"},check=self._check_cancellation)
             # Supplementary attempts are deliberately separate from the
             # mandatory database coverage ledger. Preserve all returned hits;
             # only confirmed review cues are tagged as competing reviews.
