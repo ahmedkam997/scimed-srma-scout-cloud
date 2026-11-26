@@ -35,4 +35,9 @@ def focused_review_query(candidate):
         return '"'+value+'"[ti]'
     p,i=phrase(candidate.population),phrase(candidate.intervention_exposure_index_test)
     if not p or not i:return ""
+    # Explicit, limited aliases, not arbitrary deletion of terms. Keep the
+    # original expression in every expanded query.
+    aliases={"robotic surgery":("robotic","robot-assisted","robot assisted")}
+    extra=aliases.get(str(candidate.intervention_exposure_index_test).strip().casefold(),())
+    if extra:i="("+ " OR ".join([i,*[phrase(t) for t in extra]])+")"
     return p+" AND "+i+' AND (meta-analysis[pt] OR systematic review[pt] OR meta-analysis[tiab] OR pooled[ti])'

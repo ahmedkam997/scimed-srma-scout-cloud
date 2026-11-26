@@ -16,7 +16,7 @@ def main():
         try:
             study=http.get_json("https://clinicaltrials.gov/api/v2/studies/"+nct)
             r=registry_leads(study,nct)["reported_ratio_estimates"]
-            item={"registry":nct,"ratio_leads":len(r),"matches":[x for x in r if (x["ratio"],*x["ci95"])==ref],"analysis_field_examples":[{k:a.get(k) for k in ("paramType","ciNumSides","ciPctValue")} for o in study.get("resultsSection",{}).get("outcomeMeasuresModule",{}).get("outcomeMeasures",[])[:1] for a in o.get("analyses",[])[:2]]}
+            item={"registry":nct,"ratio_leads":len(r),"matches":[x for x in r if (x["ratio"],*x["reported_ci"])==ref],"analysis_field_examples":[{k:a.get(k) for k in ("paramType","ciNumSides","ciPctValue")} for o in study.get("resultsSection",{}).get("outcomeMeasuresModule",{}).get("outcomeMeasures",[])[:1] for a in o.get("analyses",[])[:2]]}
         except Exception as ex:item={"registry":nct,"status":"ACCESS_UNRESOLVED","error_type":type(ex).__name__}
         report["ratio_checks"].append(item);print(json.dumps(item),flush=True)
     for name,pop,inter,control,positive in [("cardiology","heart failure","dapagliflozin","placebo",{"36030328","42547169"}),("surgery","rectal cancer","robotic surgery","laparoscopic surgery",{"42581199","40022103","40770525","42223567"})]:

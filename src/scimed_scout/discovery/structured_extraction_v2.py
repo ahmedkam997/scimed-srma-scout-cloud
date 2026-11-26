@@ -154,7 +154,7 @@ def recover_pubmed_abstracts(ledger,candidate_id,client,*,previous=None,fetcher=
     return result
 
 def ratio_estimates(study,nct):
-    """Explicit reported ratios and two-sided 95% CIs, never infer direction."""
+    """Preserve reported ratio and interval, never assume level, sides or direction."""
     p=study.get("protocolSection") or {}
     if (p.get("identificationModule") or {}).get("nctId")!=nct:return []
     out=[]
@@ -171,10 +171,13 @@ def ratio_estimates(study,nct):
             try:
                 value,lo,hi,pct=(float(a[k]) for k in ("paramValue","ciLowerLimit","ciUpperLimit","ciPctValue"))
             except (KeyError,TypeError,ValueError):continue
-            if not all(math.isfinite(x) for x in (value,lo,hi,pct)) or pct!=95 or not 0<lo<=value<=hi or lo==hi:continue
-            if str(a.get("ciNumSides") or "").upper() not in ("2-SIDED","TWO_SIDED","TWO-SIDED","2"):continue
+            if not all(math.isfinite(x) for x in (value,lo,hi,pct)) or not 0<pct<100 or not 0<lo<=value<=hi or lo==hi:continue
+            sides=str(a.get("ciNumSides") or "").upper()
+            if sides and sides not in ("2-SIDED","TWO_SIDED","TWO-SIDED","2"):continue
+            two_sided=bool(sides)
             out.append({"title":o.get("title"),"time_frame":o.get("timeFrame"),"measure":typ,
-                        "ratio":value,"ci95":[lo,hi],"groups":[{"id":k,"label":groups[k]} for k in ids],
+                        "ratio":value,"reported_ci":[lo,hi],"ci_percent":pct,"two_sided_verified":two_sided,
+                        "ci95":[lo,hi] if pct==95 and two_sided else None,"groups":[{"id":k,"label":groups[k]} for k in ids],
                         "comparison_description":a.get("groupDescription"),"statistical_method":a.get("statisticalMethod"),
                         "url":"https://clinicaltrials.gov/study/"+nct+"?tab=results",
                         "locator":f"resultsSection.outcomeMeasuresModule.outcomeMeasures[{i}].analyses[{j}]",

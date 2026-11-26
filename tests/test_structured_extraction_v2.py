@@ -80,3 +80,19 @@ def test_focused_query_does_not_replace_broad_scope():
     assert '"heart failure"[ti]' in focused_review_query(c) and '"dapagliflozin"[ti]' in focused_review_query(c)
     c.population="heart failure or kidney disease"
     assert focused_review_query(c)==""
+
+def test_nonstandard_interval_level_preserved_without_false_ci95():
+    s=registry();o=s["resultsSection"]["outcomeMeasuresModule"]["outcomeMeasures"][0]
+    a={"paramType":"Hazard Ratio (HR)","paramValue":"0.75","ciLowerLimit":"0.65","ciUpperLimit":"0.86","ciPctValue":"95.04","ciNumSides":"TWO_SIDED","groupIds":["A","B"]}
+    o["analyses"]=[a]
+    r=registry_leads(s,"NCT00000001")["reported_ratio_estimates"][0]
+    assert r["ci_percent"]==95.04 and r["reported_ci"]==[.65,.86] and r["ci95"] is None
+    a["ciPctValue"]="95";a.pop("ciNumSides")
+    r=registry_leads(s,"NCT00000001")["reported_ratio_estimates"][0]
+    assert r["ci95"] is None and not r["two_sided_verified"] and not r["pooling_allowed"]
+
+def test_surgical_query_preserves_aliases():
+    from scimed_scout.discovery.competitor_priority_v2 import focused_review_query
+    c=CandidateRecord("c","p","Q","General Surgery",population="rectal cancer",intervention_exposure_index_test="robotic surgery")
+    q=focused_review_query(c)
+    assert all(x in q for x in ('"rectal cancer"[ti]','"robotic surgery"[ti]','"robotic"[ti]','"robot-assisted"[ti]'))
