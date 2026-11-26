@@ -1,0 +1,37 @@
+name: v2-adaptive-research-gym
+on:
+  workflow_dispatch:
+  push:
+    branches: [scientific-verification-v2-phase3-replay]
+    paths:
+      - 'scripts/v2_adaptive_gym.py'
+      - 'tests/test_adaptive_gym.py'
+      - '.github/workflows/v2-adaptive-research-gym.yml'
+  pull_request:
+    branches: [scientific-verification-v2-phase1]
+    paths:
+      - 'scripts/v2_adaptive_gym.py'
+      - 'tests/test_adaptive_gym.py'
+      - '.github/workflows/v2-adaptive-research-gym.yml'
+permissions:
+  contents: read
+jobs:
+  adaptive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e '.[dev]' 'fhaviary==0.37.0' 'ldp[scg]==1.10.1'
+      - run: python -m pytest -q tests/test_adaptive_gym.py tests/test_aviary_gym.py
+      - run: python -m scripts.v2_adaptive_gym
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: adaptive-gym-report
+          path: |
+            adaptive-policy.json
+            adaptive-gym-report.json
