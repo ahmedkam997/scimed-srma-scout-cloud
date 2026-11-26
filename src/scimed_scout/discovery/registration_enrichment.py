@@ -63,8 +63,9 @@ def extract_registration(row,raw,*,source_url=None):
         for para in sec.findall("./p"):
             text=" ".join("".join(para.itertext()).split())
             all_ids.update(_ids(text))
-            for m in OWN.finditer(text):
-                hits.append((m.group(1).upper(),m.group(0)))
+            for pattern in (OWN,OWN_AS):
+                for m in pattern.finditer(text):
+                    hits.append((m.group(1).upper(),m.group(0)))
     # An explicitly attributed registration statement can appear before
     # Methods (e.g. the DAPA-HF design article). Only initial/direct body
     # or Introduction paragraphs are eligible, not Discussion/references.
@@ -104,7 +105,7 @@ def extract_bioc_registration(row,raw,*,source_url):
         if not isinstance(passages,list):return None
         doc_id=str(doc.get("id") or "").upper()
         expected_pmc=pmcid.upper().removeprefix("PMC")
-        seen_pmid=set();seen_pmc=set();methods=[]
+        seen_pmid=set();seen_pmc=set();methods=[];early=[]
         for p in passages:
             if not isinstance(p,dict):return None
             info=p.get("infons") or {}
@@ -113,20 +114,25 @@ def extract_bioc_registration(row,raw,*,source_url):
                 if info.get(key):seen_pmid.add(str(info[key]).strip())
             for key in ("article-id_pmc","article-id_pmcid","pmcid"):
                 if info.get(key):seen_pmc.add(str(info[key]).strip().upper().removeprefix("PMC"))
-            if str(info.get("section_type") or "").upper() in ("METHODS","METHOD","MATERIALS AND METHODS"):
+            section=str(info.get("section_type") or "").upper()
+            if section in ("METHODS","METHOD","MATERIALS AND METHODS"):
                 methods.append(str(p.get("text") or ""))
+            elif section in ("INTRO","INTRODUCTION","BACKGROUND"):
+                early.append(str(p.get("text") or ""))
         if seen_pmid and seen_pmid!={pmid}:return None
         if seen_pmc and seen_pmc!={expected_pmc}:return None
         # Accept exact PMCID document identity (the PMCID-PMID mapping was
         # already obtained from the bibliographic source); otherwise demand
         # both explicit identifiers. An arbitrary ID or PMID alone is not enough.
         if doc_id not in (pmcid.upper(),expected_pmc) and not (seen_pmid=={pmid} and seen_pmc=={expected_pmc}):return None
-        hits=[m for text in methods for m in OWN.finditer(text)]
+        hits=[m for text in methods for pattern in (OWN,OWN_AS) for m in pattern.finditer(text)]
+        early_hits=[m for text in early for m in OWN_AS.finditer(text) if _ids(text)=={m.group(1).upper()}]
+        hits.extend(early_hits)
         unique={m.group(1).upper() for m in hits}
-        if len(unique)!=1 or _ids(" ".join(methods))!=unique:return None
+        if len(unique)!=1 or (_ids(" ".join(methods))|{m.group(1).upper() for m in early_hits})!=unique:return None
         return {"registration_id":next(iter(unique)),"quote":hits[0].group(0)[:200],
                 "source_url":source_url,"pmid":pmid,"pmcid":pmcid,
-                "scope":"OWN_TRIAL_REGISTRATION_IN_BIOC_METHODS","independence_confirmed":False}
+                "scope":"OWN_TRIAL_REGISTRATION_IN_BIOC_EARLY_BODY" if early_hits else "OWN_TRIAL_REGISTRATION_IN_BIOC_METHODS","independence_confirmed":False}
     except (ValueError,TypeError,AttributeError,KeyError,UnicodeError):return None
 
 def enrich_records(rows,*,fetcher=None,max_lookups=3):

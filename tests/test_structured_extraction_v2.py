@@ -144,3 +144,13 @@ def test_explicit_early_body_trial_registration_excludes_discussion_and_conflict
     assert v["registration_id"]=="NCT00000001" and not v["independence_confirmed"]
     assert extract_registration(r,x.replace(b"Introduction",b"Discussion")) is None
     assert extract_registration(r,x.replace(b"NCT00000001.",b"NCT00000001. Another study NCT00000002.")) is None
+
+def test_bioc_early_registration_preserves_exact_document_identity():
+    import json
+    from scimed_scout.discovery.registration_enrichment import extract_bioc_registration
+    r=report();r["payload"]["metadata"]["abstractText"]=""
+    x=[{"documents":[{"id":"PMC5818805","passages":[{"infons":{"section_type":"INTRO","article-id_pmid":"29067426"},"text":"The trial is registered as ClinicalTrials.gov Identifier: NCT00000001."}]}]}]
+    value=extract_bioc_registration(r,json.dumps(x).encode(),source_url="https://example.org/bioc")
+    assert value["registration_id"]=="NCT00000001" and not value["independence_confirmed"]
+    x[0]["documents"][0]["passages"][0]["infons"]["section_type"]="DISCUSS"
+    assert extract_bioc_registration(r,json.dumps(x).encode(),source_url="https://example.org/bioc") is None
