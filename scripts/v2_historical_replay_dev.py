@@ -54,12 +54,45 @@ def evaluate(ids, audit, reference):
             "unlabelled_retrieved": len(ids - linked),
             "qualification_granted": False}
 
+def full_id_diagnostic(client, query, cap=10000):
+    """Fetch only IDs, not full metadata, to distinguish matching from top-K ranking.
+    A bounded or invalid response is unresolved, never used to infer nonmatching.
+    """
+    try:
+        data = client.http.get_json(client.base + "esearch.fcgi", client._params({
+            "db":"pubmed", "term":query, "retmode":"json", "retmax":cap,
+            "sort":"relevance"}))
+        block = data.get("esearchresult") or {}
+        total = int(block["count"])
+        ids = [str(x) for x in block.get("idlist", [])]
+        warnings = block.get("warninglist") or {}
+        valid = not (block.get("errorlist") or data.get("error") or data.get("ERROR")
+                     or (isinstance(warnings,dict) and warnings.get("quotedphrasesnotfound")))
+        complete = valid and 0 <= total <= cap and len(ids) == total and len(set(ids)) == total
+        return set(ids), {"total":total,"retrieved_ids":len(ids),"complete":complete}
+    except Exception as exc:
+        return set(), {"complete":False,"error_type":type(exc).__name__}
+
+def diagnose(top_ids, full_ids, full_audit, reference):
+    target = set(reference["linked_reports"]) - set(reference["excluded_from_rct_oriented_report_metric"])
+    complete = all(a["complete"] for a in full_audit)
+    return {"all_matching_reference_reports": sorted(full_ids & target),
+            "matched_but_outside_top_k": sorted((full_ids & target) - top_ids),
+            "not_matching_any_query": sorted(target - full_ids) if complete else None,
+            "full_id_diagnostic_complete": complete,
+            "full_unique_ids":len(full_ids), "routes":full_audit,
+            "full_relative_recall": len(full_ids & target)/len(target) if complete else None}
+
 def main():
     client = PubMedSource(sort="relevance")
     retrieved = {name: retrieve(client, routes) for name, routes in STRATEGIES.items()}
+    full_by_query = {q: full_id_diagnostic(client,q) for q in dict.fromkeys(q for routes in STRATEGIES.values() for q,_ in routes)}
     # Reveal reference labels only after retrieval has completed.
     results = {name: evaluate(ids, audit, REFERENCE) for name, (ids, audit) in retrieved.items()}
-    report = {"version": "V2_PHASE3_REPLAY_DEV_V1", "reference": REFERENCE,
+    for name, routes in STRATEGIES.items():
+        ids = set().union(*(full_by_query[q][0] for q,_ in routes))
+        results[name]["diagnostic"] = diagnose(retrieved[name][0],ids,[full_by_query[q][1] for q,_ in routes],REFERENCE)
+    report = {"version": "V2_PHASE3_REPLAY_DEV_V2", "reference": REFERENCE,
               "results": results, "historical_index_snapshot": False,
               "held_out": False, "training_weights_changed": False,
               "qualification_granted": False,
