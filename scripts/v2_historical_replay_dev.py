@@ -47,7 +47,7 @@ def evaluate(ids, audit, reference):
     target = linked - set(reference["excluded_from_rct_oriented_report_metric"])
     complete_sample = all(x["status"] in {"SEARCHED_POSITIVE", "SEARCHED_NEGATIVE"} for x in audit)
     return {"retrieved_unique": len(ids), "reference_reports": len(target),
-            "matched": sorted(ids & target), "missing": sorted(target - ids),
+            "matched": sorted(ids & target), "missing": sorted(target - ids) if complete_sample else None,
             "relative_recall": len(ids & target) / len(target) if target and complete_sample else None,
             "all_routes_definitive_bounded": complete_sample, "routes": audit,
             "all_cited_report_matches": sorted(ids & linked),
@@ -68,7 +68,7 @@ def full_id_diagnostic(client, query, cap=10000):
         warnings = block.get("warninglist") or {}
         valid = not (block.get("errorlist") or data.get("error") or data.get("ERROR")
                      or (isinstance(warnings,dict) and warnings.get("quotedphrasesnotfound")))
-        complete = valid and 0 <= total <= cap and len(ids) == total and len(set(ids)) == total
+        complete = valid and 0 <= total <= cap and len(ids) == total and len(set(ids)) == total and all(i.isascii() and i.isdigit() for i in ids)
         return set(ids), {"total":total,"retrieved_ids":len(ids),"complete":complete}
     except Exception as exc:
         return set(), {"complete":False,"error_type":type(exc).__name__}
@@ -92,7 +92,11 @@ def main():
     for name, routes in STRATEGIES.items():
         ids = set().union(*(full_by_query[q][0] for q,_ in routes))
         results[name]["diagnostic"] = diagnose(retrieved[name][0],ids,[full_by_query[q][1] for q,_ in routes],REFERENCE)
-    report = {"version": "V2_PHASE3_REPLAY_DEV_V2", "reference": REFERENCE,
+    resolved = all(
+        row["all_routes_definitive_bounded"] and row["diagnostic"]["full_id_diagnostic_complete"]
+        for row in results.values()
+    )
+    report = {"all_resolved": resolved, "version": "V2_PHASE3_REPLAY_DEV_V2", "reference": REFERENCE,
               "results": results, "historical_index_snapshot": False,
               "held_out": False, "training_weights_changed": False,
               "qualification_granted": False,
@@ -102,6 +106,8 @@ def main():
                               "No automatic production query changes or human adjudication"]}
     Path("v2-replay-dev.json").write_text(json.dumps(report, indent=2) + "\n")
     print("V2_REPLAY_DEV " + json.dumps(report), flush=True)
+    if not resolved:
+        raise SystemExit("historical PubMed replay unresolved")
 
 if __name__ == "__main__":
     main()

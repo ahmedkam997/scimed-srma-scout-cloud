@@ -28,7 +28,7 @@ def test_relative_recall_excludes_secondary_review_and_unlabelled_not_false_posi
 
 def test_access_failure_is_unresolved_not_zero_recall():
     r=evaluate(set(),audit("ACCESS_FAILED"),REFERENCE)
-    assert r["relative_recall"] is None
+    assert r["relative_recall"] is None and r["missing"] is None
     assert not r["qualification_granted"]
 
 def test_diagnostic_separates_ranking_from_query_gap():
@@ -48,3 +48,25 @@ def test_full_diagnostic_rejects_truncated_response():
         http=SimpleNamespace(get_json=lambda *args: {"esearchresult":{"count":"2","idlist":["1"]}})
     ids,audit=full_id_diagnostic(Fake(),"test")
     assert ids=={"1"} and not audit["complete"]
+
+
+def test_live_entry_point_persists_unresolved_replay(tmp_path, monkeypatch):
+    import json
+
+    import pytest
+
+    from scripts import v2_historical_replay_dev as replay
+
+    class Unavailable:
+        def search(self, query, limit):
+            return SimpleNamespace(
+                records=[], status=SimpleNamespace(value="ACCESS_FAILED"), total_count=None
+            )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(replay, "PubMedSource", lambda **kwargs: Unavailable())
+    with pytest.raises(SystemExit, match="replay unresolved"):
+        replay.main()
+    report = json.loads((tmp_path / "v2-replay-dev.json").read_text())
+    assert not report["all_resolved"]
+    assert not report["qualification_granted"]

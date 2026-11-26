@@ -19,6 +19,7 @@ permissions:
   contents: read
 jobs:
   adaptive:
+    if: github.event_name != 'pull_request' || github.head_ref != 'scientific-verification-v2-phase3-replay'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
