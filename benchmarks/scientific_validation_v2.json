@@ -1,0 +1,87 @@
+{
+  "version": "SCIMED_REFERENCE_PILOT_V2",
+  "scope": "Manually selected published references for retrieval and classification smoke test; not an independent exhaustive gold standard or confirmed novel review opportunities.",
+  "cases": [
+    {
+      "id": "DIGITAL_CONSULTS",
+      "pair": [
+        "heart failure",
+        "digital consults",
+        [
+          "heart failure with reduced ejection fraction",
+          "HFrEF"
+        ],
+        []
+      ],
+      "comparator": "usual care",
+      "primary": [
+        "39217271"
+      ],
+      "nonprimary": [
+        "38146630",
+        "39367252"
+      ],
+      "reviews": [],
+      "source_note": "ADMINISTER primary trial, design paper and author correction; not a full set of digital GDMT trials."
+    },
+    {
+      "id": "PFA_THERMAL",
+      "pair": [
+        "atrial fibrillation",
+        "pulsed field ablation",
+        [
+          "paroxysmal atrial fibrillation"
+        ],
+        []
+      ],
+      "comparator": "conventional thermal ablation",
+      "primary": [
+        "37634148"
+      ],
+      "nonprimary": [
+        "37323994"
+      ],
+      "followups": [
+        "41652117",
+        "38864538",
+        "38869507"
+      ],
+      "reviews": [
+        "42626009",
+        "41651311",
+        "41714974"
+      ],
+      "source_note": "ADVENT main report and related reports; competing reviews are bibliographic references, not adjudicated redundancy."
+    },
+    {
+      "id": "TRICUSPID_TEER",
+      "pair": [
+        "tricuspid regurgitation",
+        "transcatheter edge-to-edge repair",
+        [
+          "severe tricuspid regurgitation"
+        ],
+        [
+          "TEER",
+          "T-TEER",
+          "transcatheter repair"
+        ]
+      ],
+      "comparator": "medical therapy",
+      "primary": [
+        "36876753",
+        "39602173"
+      ],
+      "nonprimary": [],
+      "followups": [
+        "39471883",
+        "40159089",
+        "39903153"
+      ],
+      "reviews": [
+        "40735794"
+      ],
+      "source_note": "TRILUMINATE and Tri.Fr primary trials; follow-ups and subgroup reports are not additional independent trials."
+    }
+  ]
+}
