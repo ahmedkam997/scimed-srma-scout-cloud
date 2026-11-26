@@ -36,3 +36,20 @@ def test_pubmed_exact_pmc_identity():
     from scimed_scout.sources.pubmed_abstracts import parse_efetch
     raw=b'<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><ArticleTitle>A</ArticleTitle></Article></MedlineCitation><PubmedData><ArticleIdList><ArticleId IdType="pmc">PMC123456</ArticleId></ArticleIdList></PubmedData></PubmedArticle></PubmedArticleSet>'
     assert parse_efetch(raw,["1"])[0]["1"]["pmcid"]=="PMC123456"
+
+
+def test_review_small_set_completion_preserves_first_and_bounds_second():
+    from scimed_scout.discovery.rct_first import review_title_recovery
+    class Client:
+        name="PubMed"
+        def __init__(self,total):self.total=total;self.calls=[]
+        def search(self,q,*,limit):
+            self.calls.append(limit)
+            return SearchResult(self.name,q,SourceStatus.SEARCHED_POSITIVE,[SearchRecord(self.name,str(i+1),"Review") for i in range(min(self.total,limit))],self.total)
+    pair=("atrial fibrillation","pulsed field ablation",(),())
+    client=Client(43);audits=[]
+    rows=review_title_recovery(client,pair,"thermal ablation",audits,None)
+    assert client.calls==[30,43] and len(rows)==43
+    client=Client(100)
+    assert len(review_title_recovery(client,pair,"thermal ablation",[],None))==30
+    assert client.calls==[30]

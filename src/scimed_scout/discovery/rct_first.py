@@ -323,6 +323,19 @@ def _search(client,query,cap,stage,audits,check):
     audits.append({"source":client.name,"query":query,"stage":stage,"status":r.status.value,"total":r.total_count,"retrieved":len(r.records),"message":str(r.message or "")[:240]})
     return [_record(x) for x in r.records if x.title.strip()]
 
+def review_title_recovery(client,pair,control,audits,check):
+    """Finish modest scoped result sets without repeatedly fetching large sets."""
+    query=review_title_query(pair,control)
+    first=_search(client,query,30,"REVIEW_TITLE_RECOVERY",audits,check)
+    latest=audits[-1]
+    total=latest.get("total")
+    if latest["status"]=="SEARCHED_POSITIVE" and isinstance(total,int) and 30<total<=60:
+        second=_search(client,query,total,"REVIEW_TITLE_SMALL_SET_COMPLETION",audits,check)
+        # Never replace the first sample, even when the second access fails.
+        seen={str(x["source_record_id"]) for x in first}
+        first.extend(x for x in second if str(x["source_record_id"]) not in seen)
+    return first
+
 def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),year=None,max_pairs=MAX_PAIRS,abstract_enricher=None,dynamic=None,registry_lookup=None,citation=None):
     key=str(specialty).strip().casefold()
     year=year or datetime.now(timezone.utc).year
@@ -538,7 +551,7 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
             if key2 in recovered:continue
             if len(recovered)>=MAX_REVIEW_TITLE_RECOVERIES:break
             recovered.add(key2)
-            extra=_search(pubmed,review_title_query(pair,control),30,"REVIEW_TITLE_RECOVERY",report["queries"],check)
+            extra=review_title_recovery(pubmed,pair,control,report["queries"],check)
             status=report["queries"][-1]["status"]
             if extra and abstract_enricher:
                 if check:check()
