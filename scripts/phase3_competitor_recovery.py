@@ -6,9 +6,9 @@ from pathlib import Path
 from scimed_scout.sources.pubmed import PubMedSource
 
 QUESTIONS = {
-    "tavr-savr": '("transcatheter aortic valve"[tiab] OR TAVR[tiab] OR TAVI[tiab]) AND ("surgical aortic valve"[tiab] OR SAVR[tiab])',
-    "ticagrelor-clopidogrel": 'ticagrelor[tiab] AND clopidogrel[tiab] AND (coronary[tiab] OR PCI[tiab])',
-    "appendicitis-antibiotics": 'appendicitis[tiab] AND (antibiotic*[tiab] OR nonoperative[tiab]) AND appendectom*[tiab]',
+    "tavr-savr": '("transcatheter aortic valve"[ti] OR TAVR[ti] OR TAVI[ti]) AND ("surgical aortic valve"[ti] OR SAVR[ti] OR "transcatheter versus surgical"[ti])',
+    "ticagrelor-clopidogrel": 'ticagrelor[ti] AND clopidogrel[ti] AND (coronary[tiab] OR PCI[tiab] OR myocardial[tiab])',
+    "appendicitis-antibiotics": 'appendicitis[ti] AND (antibiotic*[ti] OR nonoperative[ti]) AND appendectom*[ti]',
 }
 ROUTES = {
     "competing_reviews": '(systematic review[pt] OR meta-analysis[pt] OR "systematic review"[tiab] OR meta-analysis[tiab])',
@@ -22,6 +22,8 @@ def run(client):
         routes = {}
         for name, filter_query in ROUTES.items():
             query = f"({pico}) AND ({filter_query})"
+            if name == "recent_randomized_reports":
+                query += ' NOT (systematic review[pt] OR meta-analysis[pt] OR "meta-analysis"[ti] OR "systematic review"[ti])'
             result = client.search(query, limit=8)
             records = [
                 {"pmid": str(row.record_id), "title": row.title, "year": row.year}
