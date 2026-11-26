@@ -1,0 +1,85 @@
+name: v2-external-evidence-benchmarks
+on:
+  workflow_dispatch:
+  push:
+    branches: [scientific-verification-v2-phase3-replay]
+    paths: ['.github/workflows/v2-external-evidence-benchmarks.yml']
+  pull_request:
+    branches: [scientific-verification-v2-phase1]
+    paths: ['.github/workflows/v2-external-evidence-benchmarks.yml']
+permissions:
+  contents: read
+jobs:
+  trialreviewbench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - name: Download pinned external benchmark
+        run: |
+          base=https://huggingface.co/datasets/zifeng-ai/TrialReviewBench/resolve/6dfc322004341212eb905a6874ccfae416b9f9f5
+          curl --fail --location --retry 2 --max-time 60 "$base/TrialReviewBench-reviews.csv" -o reviews.csv
+          curl --fail --location --retry 2 --max-time 60 "$base/TrialReviewBench-study-search-screening.jsonl" -o screening.jsonl
+      - name: Verify external dataset structure without using test labels for training
+        run: |
+          python - <<'PY'
+          import csv, json, hashlib
+          from pathlib import Path
+          rows=list(csv.DictReader(open("reviews.csv", encoding="utf-8-sig")))
+          records=[json.loads(s) for s in Path("screening.jsonl").read_text().splitlines() if s.strip()]
+          ids=[str(r["PMID"]).strip() for r in rows]
+          assert rows and len(ids)==len(set(ids)) and all(x.isdigit() for x in ids)
+          assert all(r.get("PICO") and r.get("Title") for r in rows)
+          assert records and all(isinstance(r,dict) for r in records)
+          report={"revision":"6dfc322004341212eb905a6874ccfae416b9f9f5","role":"external evaluation only; not training","review_rows":len(rows),"screening_jsonl_rows":len(records),"screening_key_sets":sorted({tuple(sorted(r)) for r in records}),"first_row_types":{k:type(v).__name__ for k,v in records[0].items()},"topic_counts":dict(__import__("collections").Counter(r["Topic"] for r in rows)),"sha256":{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in ("reviews.csv","screening.jsonl")},"rct_only_eligibility_verified":False,"qualification_granted":False}
+          print("EXTERNAL_DATASET_AUDIT "+json.dumps(report))
+          Path("external-dataset-audit.json").write_text(json.dumps(report,indent=2))
+          PY
+      - uses: actions/upload-artifact@v6
+        with:
+          name: external-dataset-audit
+          path: external-dataset-audit.json
+  asreview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - name: Install published ASReview release
+        run: python -m pip install 'asreview==3.0.8'
+      - name: Download published clinical screening data
+        run: |
+          curl --fail --location --retry 2 --max-time 60 'https://raw.githubusercontent.com/asreview/systematic-review-datasets/metadata-v1-final/datasets/Cohen_2006/output/online/Statins.csv' -o statins.csv
+          sha256sum statins.csv
+      - name: Run upstream simulation without altering SciMed production
+        run: |
+          asreview simulate statins.csv -o statins.asreview --seed 42 --prior-seed 42 --n-prior-included 1 --n-prior-excluded 1
+      - name: Measure workload against published screening labels
+        run: |
+          python - <<'PY'
+          import json, math, csv
+          import asreview as asr
+          from pathlib import Path
+          rows=list(csv.DictReader(open("statins.csv",encoding="utf-8-sig")))
+          key=next(k for k in rows[0] if k.lower() in ("included","label","label_included"))
+          total=len(rows); positives=sum(int(r[key]) for r in rows)
+          with asr.open_state("statins.asreview") as state:
+              df=state.get_results_table()
+          labels=[int(x) for x in df["label"]]
+          assert set(labels)<={0,1} and len(labels)<=total
+          target=math.ceil(.95*positives); cumulative=0; at95=None
+          for i,label in enumerate(labels,1):
+              cumulative+=label
+              if at95 is None and cumulative>=target:at95=i
+          report={"dataset":"Cohen_2006_Statins","total":total,"reference_positive":positives,"simulated_labels":len(labels),"found_positive":cumulative,"recall":cumulative/positives,"records_at_95_recall":at95,"fraction_screened_at_95":at95/total if at95 is not None else None,"wss95":.95-at95/total if at95 is not None else None,"prior_positive":1,"prior_negative":1,"seed":42,"simulation_only":True,"qualification_granted":False}
+          print("ASREVIEW_EXTERNAL_BENCHMARK "+json.dumps(report))
+          Path("asreview-external-benchmark.json").write_text(json.dumps(report,indent=2))
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: asreview-external-benchmark
+          path: |
+            asreview-external-benchmark.json
+            statins.asreview
