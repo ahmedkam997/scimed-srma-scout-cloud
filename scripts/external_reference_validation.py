@@ -50,7 +50,9 @@ def linkage(rows):
 
 def identity_set(row):
     doi=str(row.get("doi") or "").strip().lower().removeprefix("https://doi.org/").removeprefix("http://doi.org/")
-    pmid=str(row.get("pmid") or "").split(".")[0]
+    raw_pmid=str(row.get("pmid") or "").strip()
+    match=re.fullmatch(r"https?://pubmed\.ncbi\.nlm\.nih\.gov/(\d+)/?",raw_pmid,re.I)
+    pmid=match.group(1) if match else raw_pmid.split(".")[0]
     return ({("doi",doi)} if doi.startswith("10.") else set())|({("pmid",pmid)} if pmid.isdigit() else set())
 
 def retrieval(rows,hits):

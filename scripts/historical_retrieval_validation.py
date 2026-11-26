@@ -1,5 +1,5 @@
 """Historical-corpus paired test: same query, date ceiling and budgets.
-Frozen reference labels never shape retrieval queries. Publication date is
+Frozen reference labels never shape retrieval queries. PubMed URL IDs are normalized. Publication date is
 a historical proxy for searchable availability; current indexing can differ.
 """
 import argparse,json
