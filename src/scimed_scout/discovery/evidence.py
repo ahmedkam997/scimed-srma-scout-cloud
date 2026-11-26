@@ -13,37 +13,20 @@ def discovery_evidence_snapshot(
     candidate_id: str,
 ) -> DiscoveryEvidenceSnapshot:
     records = ledger.list_external_evidence(candidate_id, "PRIMARY_STUDY")
-    seen_doi: set[str] = set()
-    seen_title: set[str] = set()
-    distinct = []
-    positive_sources: set[str] = set()
-
-    for record in records:
-        source = str(record.get("source") or "").strip()
-        if source:
-            positive_sources.add(source)
-
-        payload = record.get("payload") or {}
-        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
-        doi = _normalize_doi(
-            payload.get("doi")
-            or metadata.get("doi")
-            or _external_doi(metadata)
-        )
-        title = _normalize_title(record.get("title"))
-
-        duplicate = bool(
-            (doi and doi in seen_doi)
-            or (title and title in seen_title)
-        )
-        if duplicate:
-            continue
-
-        distinct.append(record)
-        if doi:
-            seen_doi.add(doi)
-        if title:
-            seen_title.add(title)
+    from .pico_matching import _groups
+    from .trial_family import registration_signals
+    from .competitor_records import abstract
+    positive_sources={str(r.get("source") or "").strip() for r in records if str(r.get("source") or "").strip()}
+    distinct=[]
+    for group in _groups(records):
+        variants=group["records"]
+        preferred=max(variants,key=lambda r:len(abstract(r)))
+        payload=dict(preferred.get("payload") or {})
+        metadata=dict(payload.get("metadata") or {})
+        # Conflicting registry cues remain ambiguous rather than silently
+        # disappearing when a thinner database record is encountered first.
+        metadata["trial_registration_ids"]=sorted({identifier for r in variants for identifier in registration_signals(r)})
+        distinct.append({**preferred,"payload":{**payload,"metadata":metadata}})
 
     family_audit = audit_trial_families(distinct)
     return DiscoveryEvidenceSnapshot(

@@ -24,3 +24,5 @@ Job 8e9ea8e7-21c0-4b76-85a6-c9ab25c10820 exposed treatment-context false matches
 
 ## Dynamic exploration
 MeSH and substance names from exact PMID EFetch, title corroboration in two distinct family cues, at most two additional focused cells per run. Broad specialty query spans current year and two preceding years; no assumption of completeness, no additional AI calls. Missing indexing is a limitation, especially recent articles. Sources: https://www.nlm.nih.gov/mesh/intro_trees.html ; https://pubmed.ncbi.nlm.nih.gov/help/ ; https://www.ncbi.nlm.nih.gov/books/NBK62478/ . The comparison-recovery budget is increased to three bounded searches; no change to seven-family shortlist threshold. Independent evidence confirmation remains manual.
+
+Report aggregation now reuses conflict-aware bibliographic grouping; exact DOI/PMID identity is required for metadata transfer. Search-date source evidence stays atomic, and conflicting semantic judgments are unresolved. Counts are still report/family cues, not verified independent RCTs.

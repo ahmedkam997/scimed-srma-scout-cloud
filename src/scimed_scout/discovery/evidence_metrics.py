@@ -66,72 +66,38 @@ def _key(record: dict) -> str:
 
 
 def _unique_records(records: list[dict]) -> list[dict]:
-    # Match discovery evidence's DOI-or-title deduplication. Records are only
-    # bibliographic candidates, not confirmed independent study populations.
-    unique: list[dict] = []
-    seen_doi: dict[str, int] = {}
-    seen_title: dict[str, int] = {}
-    for record in records:
-        payload = record.get("payload") or {}
-        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
-        external = metadata.get("externalIds") if isinstance(metadata.get("externalIds"), dict) else {}
-        article_ids = metadata.get("articleids") or metadata.get("articleIds") or []
-        article_doi = ""
-        if isinstance(article_ids, list):
-            for item in article_ids:
-                if isinstance(item, dict) and str(item.get("idtype") or item.get("idType") or "").casefold() == "doi":
-                    article_doi = str(item.get("value") or item.get("id") or "")
-                    break
-        doi = str(
-            payload.get("doi") or metadata.get("doi")
-            or external.get("DOI") or external.get("doi") or article_doi or ""
-        ).strip().casefold().removeprefix("https://doi.org/").removeprefix("http://doi.org/").rstrip(".")
-        title = " ".join(re.findall(r"[a-z0-9]+", str(record.get("title") or "").casefold()))
-        idx = seen_doi.get(doi) if doi else None
-        if idx is None and title:
-            idx = seen_title.get(title)
-        if idx is None:
-            idx = len(unique)
-            unique.append(record)
-        else:
-            # PubMed and Europe PMC often provide complementary data:
-            # one has semantic overlap assessment and another has a sourced
-            # full-text search date. Merge only provenance-bearing fields.
-            # Never infer eligibility, independence, or publication status.
-            previous = unique[idx]
-            old_payload = previous.get("payload") or {}
-            old_meta = old_payload.get("metadata") if isinstance(old_payload.get("metadata"), dict) else {}
-            new_meta = metadata
-            old_abstract = str(old_meta.get("abstract") or old_meta.get("summary") or "")
-            new_abstract = str(new_meta.get("abstract") or new_meta.get("summary") or "")
-            preferred = record if len(new_abstract) > len(old_abstract) else previous
-            alternate = previous if preferred is record else record
-            preferred_payload = dict(preferred.get("payload") or {})
-            alternate_payload = alternate.get("payload") or {}
-            preferred_meta = dict(preferred_payload.get("metadata") or {})
-            alternate_meta = alternate_payload.get("metadata") or {}
-            for field in (
-                "last_search_date", "date_last_searched", "search_end_date",
-                "date_of_last_search", "search_cutoff",
-                "search_date_evidence_quote", "search_date_evidence_url",
-                "search_date_evidence_level",
-            ):
-                if not preferred_meta.get(field) and alternate_meta.get(field):
-                    preferred_meta[field] = alternate_meta[field]
-            if not preferred_payload.get("discovery_semantic_assessment"):
-                assessment = alternate_payload.get("discovery_semantic_assessment")
-                if isinstance(assessment, dict):
-                    preferred_payload["discovery_semantic_assessment"] = assessment
-            if not preferred_payload.get("doi") and alternate_payload.get("doi"):
-                preferred_payload["doi"] = alternate_payload["doi"]
-            if not preferred_payload.get("year") and alternate_payload.get("year"):
-                preferred_payload["year"] = alternate_payload["year"]
-            preferred_payload["metadata"] = preferred_meta
-            unique[idx] = {**preferred, "payload": preferred_payload}
-        if doi:
-            seen_doi[doi] = idx
-        if title:
-            seen_title[title] = idx
+    from .pico_matching import _groups, _doi, _pmid
+    from .review_opportunity import CUTOFF_FIELDS, _cutoff
+    from .competitor_records import abstract
+    unique=[]
+    date_fields=(*CUTOFF_FIELDS,"search_date_evidence_quote","search_date_evidence_url","search_date_evidence_level")
+    for group in _groups(records):
+        variants=group["records"]
+        preferred=max(variants,key=lambda r:(bool((r.get("payload") or {}).get("discovery_semantic_assessment")),len(abstract(r))))
+        payload=dict(preferred.get("payload") or {})
+        meta=dict(payload.get("metadata") or {})
+        # Only exact bibliographic identity allows metadata transfer.
+        exact=[r for r in variants if r is preferred or (_doi(preferred) and _doi(r)==_doi(preferred)) or (_pmid(preferred) and _pmid(r)==_pmid(preferred))]
+        # Search-date provenance is atomic: never join a bare date with an
+        # unrelated quote, URL or evidence level from a different variant.
+        verified=[(r,_cutoff(r)) for r in exact if _cutoff(r)]
+        if verified:
+            best=max(verified,key=lambda x:x[1]["end"])[0]
+            other=(best.get("payload") or {}).get("metadata") or {}
+            for field in date_fields:meta.pop(field,None)
+            for field in date_fields:
+                if other.get(field):meta[field]=other[field]
+        # Preserve earliest reported publication year when exact variants
+        # disagree, so print publication cannot masquerade as new evidence.
+        years=[_year((r.get("payload") or {}).get("year")) for r in exact]
+        years=[v for v in years if v is not None]
+        if years:payload["year"]=min(years)
+        assessments=[(r.get("payload") or {}).get("discovery_semantic_assessment") for r in exact]
+        assessments=[v for v in assessments if isinstance(v,dict)]
+        if len({str(v.get("overall_overlap")) for v in assessments})>1 or any(v.get("unresolved") for v in assessments):
+            assessment=dict(payload.get("discovery_semantic_assessment") or assessments[0]);assessment["unresolved"]=True;payload["discovery_semantic_assessment"]=assessment
+        payload["metadata"]=meta
+        unique.append({**preferred,"payload":payload})
     return unique
 
 

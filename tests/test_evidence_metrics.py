@@ -221,3 +221,23 @@ def test_unresolved_novelty_displays_unknown_without_changing_gate_safety():
     assert result["scoring_trace"]["confirmed_independent_study_count"] is None
     assert result["scoring_trace"]["bibliographic_lead_count"] == 90
     assert "withheld" in result["rationale"]
+
+
+def test_conflicting_doi_same_title_retains_both_reports():
+    from scimed_scout.discovery.evidence_metrics import _unique_records
+    a=study("same title",2023)
+    b={**a,"source_record_id":"different","payload":{"year":2024,"doi":"10.1234/different"}}
+    assert len(_unique_records([a,b]))==2
+
+def test_exact_review_identity_keeps_search_provenance_atomic():
+    from scimed_scout.discovery.evidence_metrics import _unique_records
+    from scimed_scout.discovery.review_opportunity import _cutoff
+    a=reviewed(search_date="2021-01-01")
+    a["payload"]["doi"]="10.1234/review"
+    b={**a,"source":"Europe PMC","payload":{"doi":"10.1234/review","year":2021,"metadata":{
+        "last_search_date":"2020-11-30","search_date_evidence_quote":"We searched through 2020-11-30.","search_date_evidence_url":"https://example.org/review","search_date_evidence_level":"METHODS"}}}
+    row=_unique_records([a,b])[0]
+    assert _cutoff(row)["reported_date"]=="2020-11-30"
+    # A title-only match must not create a source-backed cutoff.
+    b["payload"].pop("doi")
+    assert _cutoff(_unique_records([a,b])[0]) is None

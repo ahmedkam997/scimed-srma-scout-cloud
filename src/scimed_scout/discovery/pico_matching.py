@@ -75,6 +75,11 @@ def _doi(record):
     external = meta.get("externalIds")
     if not doi and isinstance(external, dict):
         doi = external.get("DOI") or external.get("doi") or ""
+    if not doi:
+        for item in meta.get("articleids") or meta.get("articleIds") or []:
+            if isinstance(item,dict) and str(item.get("idtype") or item.get("idType") or "").casefold()=="doi":
+                doi=item.get("value") or item.get("id") or ""
+                if doi:break
     return str(doi).strip().casefold().removeprefix("https://doi.org/").removeprefix("http://doi.org/").removeprefix("doi:").rstrip(".")
 
 
@@ -82,7 +87,7 @@ def _pmid(record):
     meta = _metadata(record)
     payload = record.get("payload") or {}
     value = meta.get("pmid") or payload.get("pmid") or ""
-    if not value and str(record.get("source")) == "PubMed":
+    if not value and (str(record.get("source")) == "PubMed" or (record.get("source")=="Europe PMC" and meta.get("source")=="MED")):
         value = record.get("source_record_id") or ""
     if not value and isinstance(meta.get("externalIds"), dict):
         value = meta["externalIds"].get("PubMed") or ""
