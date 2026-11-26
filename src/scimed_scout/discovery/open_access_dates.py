@@ -130,6 +130,10 @@ class OpenAccessSearchDateResolver:
                         heading=" ".join(sec.find("title").itertext()) if sec.find("title") is not None else ""
                         if re.search(r"\b(?:methods?|search strategy|literature search|information sources|study selection|search methods)\b",heading,re.I):
                             passages.extend(" ".join(p.itertext()) for p in sec.findall("./p"))
+                            for sub in sec.findall("./sec"):
+                                label=" ".join(sub.find("title").itertext()) if sub.find("title") is not None else ""
+                                if not re.search(r"\b(?:results?|discussion|conclusion|background)\b",label,re.I):
+                                    passages.extend(" ".join(p.itertext()) for p in sub.findall("./p"))
                 else:
                     data=json.loads(raw)
                     collections=data if isinstance(data,list) else [data]

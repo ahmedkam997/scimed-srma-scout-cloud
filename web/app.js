@@ -651,6 +651,10 @@ function topicDetailHtml(job, topic) {
       <button class="secondary small" data-download-topic="${escapeHtml(job.id)}"
         data-topic-id="${escapeHtml(topic.candidate_id || '')}">Download detailed brief (.md)</button>
     </div>
+    ${dossier.study_centric_adjudication ? `<details><summary>Study-centric adjudication packet</summary>
+      <p class="help">${escapeHtml(dossier.study_centric_adjudication.primary_report_count)} primary reports and ${escapeHtml(dossier.study_centric_adjudication.competitor_count)} competitor leads. Download the source index and structured reviewer template. No study is automatically eligible and no GO is issued.</p>
+      <button class="secondary small" data-adjudication-download="${escapeHtml(job.id)}" data-topic-id="${escapeHtml(topic.candidate_id)}">Download adjudication packet (.json)</button>
+      </details>` : ''}
     ${opportunityAssessmentHtml(dossier.opportunity_mcda || topic.opportunity_mcda)}
     ${(dossier.opportunity_mcda || topic.opportunity_mcda) && window.SCIMED_MCDA ? window.SCIMED_MCDA.render(job,topic) : ''}
     ${field('Research question', q.review_question)}
@@ -1485,6 +1489,28 @@ els.refresh.addEventListener('click', async () => {
   }
 });
 els.jobs.addEventListener('click', async event => {
+  const packetButton=event.target.closest('[data-adjudication-download]');
+  if(packetButton){
+    const job=jobs.find(j=>j.id===packetButton.dataset.adjudicationDownload);
+    const topic=job&&findTransferTopic(job,packetButton.dataset.topicId);
+    const packet=topic?.research_dossier?.study_centric_adjudication;
+    if(packet)saveTextFile(topicFileName(topic).replace(/\.md$/i,'_Study_Adjudication.json'),JSON.stringify(packet,null,2),'application/json;charset=utf-8');
+    return;
+  }
+  const pageButton=event.target.closest('[data-gap-page]');
+  if(pageButton){
+    const job=jobs.find(j=>j.id===pageButton.dataset.gapJob);
+    const topic=job&&findTransferTopic(job,pageButton.dataset.gapTopic);
+    const panel=pageButton.closest('.gap-review');
+    const kind=pageButton.dataset.gapKind;
+    if(!topic||!panel||!window.SCIMED_GAP||!['review','registration'].includes(kind))return;
+    const offsets={review:Number(panel.dataset.gapReviewOffset)||0,registration:Number(panel.dataset.gapRegistrationOffset)||0};
+    offsets[kind]=Number(pageButton.dataset.gapPage)||0;
+    const holder=document.createElement('div');holder.innerHTML=window.SCIMED_GAP.render(job,topic,offsets);
+    const updated=holder.firstElementChild;
+    if(updated){updated.open=true;const queue=updated.querySelector('[data-gap-queue-kind="'+kind+'"]');if(queue)queue.open=true;panel.replaceWith(updated);}
+    return;
+  }
   const mcdaButton=event.target.closest('[data-mcda-save],[data-mcda-export]');
   if(mcdaButton){
     const job=jobs.find(j=>j.id===(mcdaButton.dataset.mcdaSave||mcdaButton.dataset.mcdaExport));

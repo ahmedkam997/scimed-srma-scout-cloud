@@ -72,7 +72,8 @@ def compare_assessments(items):
         rows=[]
         for cid,a in items:
             lo,hi=a["scenarios"][scenario]["documented_bounds"]
-            rows.append({"candidate_id":cid,"lower":lo,"upper":hi})
+            exploratory=a["scenarios"][scenario].get("exploratory_bounds",[lo,hi])
+            rows.append({"candidate_id":cid,"lower":lo,"upper":hi,"exploratory_lower":exploratory[0],"exploratory_upper":exploratory[1]})
         winners=[r["candidate_id"] for r in rows if len(rows)>1 and all(r["lower"]>s["upper"] for s in rows if s["candidate_id"]!=r["candidate_id"])]
         out[scenario]={"intervals":rows,"strict_dominance_winner":winners[0] if len(winners)==1 else None}
     winners=[x["strict_dominance_winner"] for x in out.values()]
@@ -92,7 +93,7 @@ def profile(candidate, reviews=None, *, opportunity=None, scorecard=None, primar
         records=buckets.get(candidate.comparator_reference,[])
     seed=info.get("competing_review_preflight") or {}
     review_rows=seed.get("records",[]) if reviews is None else reviews
-    findings=[];related=[];cutoffs=[];outcome_hypotheses=[];direct_review_records=[]
+    findings=[];related=[];cutoffs=[];outcome_hypotheses=[];outcome_gap_candidates=[];direct_review_records=[]
     if len(pair)==4:
         pop,inter,pa,ia=pair
         for group in _groups(review_rows):
@@ -115,10 +116,20 @@ def profile(candidate, reviews=None, *, opportunity=None, scorecard=None, primar
                             findings.append({**citation,"kind":code,"excerpt":sentence[:400],
                                 "status":"PRIMARY_RESEARCH_NEED_CUE_NOT_SYNTHESIS_OPPORTUNITY" if code=="PRIMARY_RESEARCH_NEED" else "REVIEW_ABSTRACT_GAP_CUE_NOT_SYNTHESIS_GAP_CONFIRMED",
                                 "next_action":"Check whether eligible RCTs and existing synthesis answer this specific uncertainty, or new primary research is required."})
-                            for outcome in candidate.outcomes if code!="PRIMARY_RESEARCH_NEED" else []:
+                            # A source-linked endpoint need not already be in the broad seed PICO.
+                            # Restrict to a finite clinical vocabulary; no model-generated gaps.
+                            from .rct_first import OUTCOMES
+                            endpoint_terms=tuple(dict.fromkeys([*(candidate.outcomes or []),*OUTCOMES,
+                                "cognitive function","cognition","functional capacity","frailty","patient reported outcomes"]))
+                            for outcome in endpoint_terms if code!="PRIMARY_RESEARCH_NEED" else []:
                                 if has(sentence,outcome):
                                     matched=[r for r in records if has(str(r.get("title") or "")+" "+str((r.get("payload") or {}).get("metadata",{}).get("abstractText") or ""),outcome)]
                                     n=family_summary(matched)["family_leads"]
+                                    if not any(x["outcome"]==outcome for x in outcome_gap_candidates):
+                                        outcome_gap_candidates.append({"outcome":outcome,"comparison_family_cues":n,
+                                            "review":citation,"excerpt":sentence[:400],
+                                            "status":"OUTCOME_GAP_CUE_REQUIRES_FOCUSED_RETRIEVAL_AND_VERIFICATION",
+                                            "next_action":"Search the exact comparison for this outcome; verify independent eligibility and extractable data."})
                                     if n>=MIN_FAMILIES:
                                         outcome_hypotheses.append({"outcome":outcome,"proposed_title":f"{candidate.intervention_exposure_index_test} versus {candidate.comparator_reference} for {outcome} in {candidate.population}: systematic review of randomized trials","comparison_family_cues":n,"review":citation,
                                             "status":"OUTCOME_SPECIFIC_PICO_HYPOTHESIS_NOT_ELIGIBILITY_OR_NOVELTY_VERIFIED",
@@ -151,7 +162,7 @@ def profile(candidate, reviews=None, *, opportunity=None, scorecard=None, primar
     n=family_summary(records)["family_leads"] if primary_records is not None else int(info.get("family_leads") or 0)
     # Operational priority only: evidence floor, source-linked actionable gaps,
     # and capped count rather than reward for the largest saturated topic.
-    priority=(int(n>=MIN_FAMILIES),int(bool(post or correction)),int(bool(synthesis_cues)),min(n,14))
+    priority=(int(n>=MIN_FAMILIES),int(bool(post or correction)),int(bool(synthesis_cues)),int(bool(outcome_hypotheses)),min(n,14))
     ratings={}
     if n:
         ratings["evidence_readiness"]={"rating":min(5,round(n/MIN_FAMILIES*3,2)),"status":"PRELIMINARY",
@@ -177,7 +188,7 @@ def profile(candidate, reviews=None, *, opportunity=None, scorecard=None, primar
     return {"version":VERSION,"routes":routes,"priority_key":list(priority),
             "source_linked_gap_cues":findings[:12],"direct_comparison_review_sample":related[:15],
             "abstract_search_date_cues":cutoffs[:15],"post_cutoff_report_cues":post[:15],
-            "outcome_specific_hypotheses":outcome_hypotheses[:8],"correction_method_cues":correction[:12],"verified_review_opportunity":opportunity,
+            "outcome_gap_candidates":outcome_gap_candidates[:8],"outcome_specific_hypotheses":outcome_hypotheses[:8],"correction_method_cues":correction[:12],"verified_review_opportunity":opportunity,
             "comparison_family_cues":n,"comparison_count_stage":"DEEP_RETRIEVAL_CUES" if primary_records is not None else "SEED_CUES",
             "review_preflight_status":seed.get("status","NOT_SEARCHED"),"confirmed_independent_eligible_trials":None,
             "assessment":assessment,"domain_recovery_actions":[{"domain":k,"action":actions[k],"status":"PROPOSED_NOT_EXECUTED"} for k,d in assessment["domains"].items() if d["status"]!="ADJUDICATED_INPUT"],

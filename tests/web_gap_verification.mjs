@@ -246,3 +246,25 @@ test('Saved citation shortlist never masquerades as complete source inventory', 
   assert.equal(ledger.bibliographic_export_inventory.registrations.unrepresented_hit_difference,73);
   assert.equal(ledger.qualification_automatically_modified,false);
 });
+
+test('Full competitor packet is paginated and remains available in JSON export',()=>{
+  const {gap}=setup();
+  const t=structuredClone(topic);
+  t.research_dossier.study_centric_adjudication={competitor_index:[
+    ...Array.from({length:45},(_,i)=>({kind:'REVIEW',source:'PubMed',record_id:'FULL'+i,title:'Full review '+String(i).padStart(2,'0'),url:'https://pubmed.ncbi.nlm.nih.gov/'+(1000+i)+'/',doi:[]})),
+    ...Array.from({length:18},(_,i)=>({kind:'REGISTRATION',source:'PROSPERO',record_id:'REGFULL'+i,title:'Protocol '+String(i).padStart(2,'0'),url:'https://www.crd.york.ac.uk/PROSPERO/view/CRD'+(1000+i),doi:[]})),
+    {kind:'UNCLASSIFIED',source:'Other',record_id:'UNKNOWN',title:'Unknown record',doi:[]}
+  ]};
+  const records=gap.evidenceOf(t);
+  assert.equal(records.filter(x=>x.kind==='review').length,47);
+  assert.equal(records.filter(x=>x.kind==='registration').length,19);
+  const first=gap.render(job,t),next=gap.render(job,t,{review:14,registration:14});
+  assert.match(first,/data-gap-queue-kind="review"/);
+  assert.match(next,/15–28 of 47/);
+  assert.match(next,/15–19 of 19/);
+  assert.match(next,/data-gap-page="0"/);
+  const ledger=gap.exportLedger(job,t);
+  assert.equal(ledger.bibliographic_candidates_ordered_for_manual_review.length,66);
+  assert.equal(ledger.qualification_automatically_modified,false);
+  assert.equal(t.qualification_status,'PROVISIONAL_BACKUP');
+});

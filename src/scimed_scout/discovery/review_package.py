@@ -345,6 +345,7 @@ def _build_research_dossier(
     logs = ledger.list_search_log(candidate.candidate_id)
     scorecard = dict(meta.get("discovery_gate_inputs") or {})
     latest = ledger.list_decisions(candidate.candidate_id)
+    from .adjudication import build as build_adjudication
     return {
         "schema_version": 1,
         "candidate_id": candidate.candidate_id,
@@ -480,9 +481,14 @@ def _build_research_dossier(
         "adaptive_search_audit": dict(meta.get("adaptive_search_audit") or {}),
         "adaptive_retrieval_audit": list(meta.get("adaptive_retrieval_audit") or []),
         "opportunity_mcda": dict(meta.get("opportunity_mcda") or {}),
-        "rct_first_seed": dict(meta.get("rct_first") or {}),
+        "rct_first_seed": {k:v for k,v in (meta.get("rct_first") or {}).items() if k!="comparison_records" and k!="competing_review_preflight"},
+        "rct_first_seed_competitor_summary": {k:v for k,v in ((meta.get("rct_first") or {}).get("competing_review_preflight") or {}).items() if k!="records"},
+        "seed_payload_note": "Raw seed comparison and review records retained in durable worker checkpoint; full report/competitor identifiers exported in study_centric_adjudication.",
         "rct_first_final_audit": dict(meta.get("rct_first_final_audit") or {}),
         "registration_enrichment_audit": dict(meta.get("registration_enrichment_audit") or {}),
+        "registry_result_reference_audit": dict(meta.get("registry_result_reference_audit") or {}),
+        "study_centric_adjudication": build_adjudication(candidate,primary,review_records,registrations,ambiguous=unclassified_review_leads+other_preregistrations,opportunity=meta.get("discovery_review_opportunity")),
+
         "fulltext_search_date_resolutions": list(
             meta.get("discovery_fulltext_search_date_resolutions") or []
         ),

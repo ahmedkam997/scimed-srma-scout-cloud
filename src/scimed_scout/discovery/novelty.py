@@ -91,10 +91,8 @@ class DiscoveryNoveltyService:
             # No amount of AI scoring repairs incomplete mandatory registry
             # searches. Preserve dated competitor evidence but defer expensive
             # semantic inference until source coverage is available.
-            review_assessments = [_deferred_competitor(item) for item in review_records]
-            registration_assessments = [
-                _deferred_competitor(item) for item in registration_records
-            ]
+            review_assessments = [(item.get("payload") or {}).get("discovery_semantic_assessment") if _valid_cached(candidate,item) else _deferred_competitor(item) for item in review_records]
+            registration_assessments = [(item.get("payload") or {}).get("discovery_semantic_assessment") if _valid_cached(candidate,item) else _deferred_competitor(item) for item in registration_records]
         primary_records = self.ledger.list_external_evidence(candidate_id, "PRIMARY_STUDY")
         registration_freshness = [
             registration_age_audit(candidate, record, primary_records)
@@ -224,9 +222,13 @@ class DiscoveryNoveltyService:
             return value if isinstance(value,int) and value>=0 else 0
         # An unsupported bare date is not a resolved cutoff. Rotate failed
         # lookups behind previously unattempted reviews on subsequent resumes.
-        for record in sorted(records,key=attempts):
+        from .review_opportunity import _material
+        for record in sorted(records,key=lambda r:(attempts(r),not _material(r))):
             meta = _metadata(record)
             if _cutoff(record):
+                continue
+            from .open_access_dates import _pmcid
+            if isinstance(self.search_date_resolver,OpenAccessSearchDateResolver) and not _pmcid(record):
                 continue
             if attempted >= self.max_fulltext_reviews:
                 break

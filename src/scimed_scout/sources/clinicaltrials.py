@@ -14,7 +14,13 @@ class ClinicalTrialsGovSource:
     def __init__(self, http: JsonHttpClient | None = None):
         self.http = http or JsonHttpClient()
 
+    def search_recovery(self, query: str, *, limit: int = 20) -> SearchResult:
+        return self._search(query,limit=limit,page_size=500)
+
     def search(self, query: str, *, limit: int = 20) -> SearchResult:
+        return self._search(query,limit=limit,page_size=100)
+
+    def _search(self, query: str, *, limit: int, page_size: int) -> SearchResult:
         # Unbalanced parentheses and truncated PICO fragments frequently cause
         # ClinicalTrials.gov search-expression HTTP 400 responses. Submit
         # plain search terms, preserving the original query in the audit log.
@@ -36,7 +42,7 @@ class ClinicalTrialsGovSource:
             for _ in range(3):
                 params = {
                     "query.term": safe_query,
-                    "pageSize": 100,
+                    "pageSize": page_size,
                 }
                 # ClinicalTrials.gov v2 includes totalCount on the first
                 # page when countTotal=true. Later pages may omit it.

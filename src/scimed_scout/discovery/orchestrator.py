@@ -272,17 +272,19 @@ class ReviewDiscoveryOrchestrator:
                 (recover_only and previous_supplement.get("status")=="DEFERRED_BASE_SOURCE_FAILURE")):
             self._supplementary_search(candidate)
             candidate=self.ledger.get_candidate(candidate_id) or candidate
-        if self.adaptive_search and not (candidate.metadata or {}).get("registration_enrichment_audit"):
+        prior_enrichment=(candidate.metadata or {}).get("registration_enrichment_audit") or {}
+        if self.adaptive_search and (not prior_enrichment or (recover_only and prior_enrichment.get("remaining_report_routes",1)>0)):
             self._check_cancellation()
-            registration_audit=enrich_ledger(self.ledger,candidate_id,max_lookups=3)
+            registration_audit=enrich_ledger(self.ledger,candidate_id,max_lookups=3,fair=True,previous=prior_enrichment,check=self._check_cancellation)
             candidate=self.ledger.get_candidate(candidate_id) or candidate
             candidate.metadata={**(candidate.metadata or {}),"registration_enrichment_audit":registration_audit}
             self.ledger.upsert_candidate(candidate)
         from scimed_scout.sources.clinicaltrials import ClinicalTrialsGovSource
         registry_client=self.clients.get("ClinicalTrials.gov")
-        if self.adaptive_search and isinstance(registry_client,ClinicalTrialsGovSource) and registry_client.http.loader is None and not (candidate.metadata or {}).get("registry_result_reference_audit"):
+        prior_registry=(candidate.metadata or {}).get("registry_result_reference_audit") or {}
+        if self.adaptive_search and isinstance(registry_client,ClinicalTrialsGovSource) and registry_client.http.loader is None and (not prior_registry or (recover_only and prior_registry.get("remaining_registry_ids",1)>0)):
             from .registry_reference_suggestions import suggest
-            registry_audit=suggest(self.ledger.list_external_evidence(candidate_id,"PRIMARY_STUDY"),max_lookups=3,check=self._check_cancellation)
+            registry_audit=suggest(self.ledger.list_external_evidence(candidate_id,"PRIMARY_STUDY"),max_lookups=3,check=self._check_cancellation,previous=prior_registry)
             candidate=self.ledger.get_candidate(candidate_id) or candidate
             candidate.metadata={**(candidate.metadata or {}),"registry_result_reference_audit":registry_audit}
             self.ledger.upsert_candidate(candidate)
@@ -507,6 +509,10 @@ class ReviewDiscoveryOrchestrator:
 
         configured: list[tuple[str, SourceClient]] = []
         source_queries: dict[str, tuple[str, ...]] = {}
+        from scimed_scout.sources.prospero import ProsperoCliSource
+        saved_pagination=dict((candidate.metadata or {}).get("source_pagination_checkpoints") or {})
+        pagination_inputs={}
+        pagination_changed=False
         latest = {(log.source, log.query): log.status
                   for log in self.ledger.list_search_log(candidate.candidate_id)} if recover_only else {}
         for source_name in source_names:
@@ -535,6 +541,14 @@ class ReviewDiscoveryOrchestrator:
                 continue
             configured.append((source_name, client))
             source_queries[source_name] = selected
+            if isinstance(client,ProsperoCliSource) and recover_only:
+                prior=[]
+                for row in self.ledger.list_external_evidence(candidate.candidate_id):
+                    if row.get("source")!=source_name:continue
+                    p=row.get("payload") or {}
+                    prior.append(SearchRecord(source_name,str(row["source_record_id"]),str(row.get("title") or ""),
+                        url=p.get("url") or "",year=p.get("year"),doi=p.get("doi") or "",metadata=p.get("metadata") or {}))
+                pagination_inputs[source_name]={q:{"checkpoint":saved_pagination.get(q),"previous_records":prior} for q in selected if saved_pagination.get(q)}
             for query in selected:
                 self.ledger.add_query(
                     candidate.project_id,
@@ -558,6 +572,8 @@ class ReviewDiscoveryOrchestrator:
                     client,
                     source_queries[source_name],
                     limit_per_query,
+                    recover_only,
+                    pagination_inputs.get(source_name),
                 )
                 for source_name, client in configured
             }
@@ -566,7 +582,8 @@ class ReviewDiscoveryOrchestrator:
             # thread so the discovery ledger remains deterministic and thread-safe.
             for source_name, _ in configured:
                 self._check_cancellation()
-                for query, result in futures[source_name].result():
+                completed_results=futures[source_name].result()
+                for query, result in completed_results:
                     self._check_cancellation()
                     message=result.message
                     if self.optimize_literature_queries and evidence_type in ("PRIMARY_STUDY","PUBLISHED_REVIEW") and source_name in ("PubMed","Europe PMC"):
@@ -588,6 +605,11 @@ class ReviewDiscoveryOrchestrator:
                             message=message,
                         )
                     )
+                    if source_name=="PROSPERO":
+                        if result.continuation is not None:
+                            saved_pagination[query]=result.continuation;pagination_changed=True
+                        elif query in saved_pagination and result.status!=SourceStatus.NOT_SEARCHED:
+                            saved_pagination.pop(query);pagination_changed=True
                     for record in result.records:
                         record_type = evidence_type
                         classification = ""
@@ -642,6 +664,12 @@ class ReviewDiscoveryOrchestrator:
                             classification=classification,
                             originally_requested=evidence_type,
                         )
+                if self.progress_callback:
+                    self.progress_callback(-1,"SOURCE_COMPLETE",f"{source_name}: {purpose}; {len(completed_results)} queries returned")
+        if pagination_changed:
+            # Refresh metadata to avoid overwriting prior evidence updates.
+            candidate.metadata={**((self.ledger.get_candidate(candidate.candidate_id) or candidate).metadata or {}),"source_pagination_checkpoints":saved_pagination}
+            self.ledger.upsert_candidate(candidate)
 
     def _adaptive_pubmed_retrieval(self,candidate,plan,limit_per_query):
         client=self.clients.get("PubMed")
@@ -767,11 +795,14 @@ def _run_source_queries(
     client: SourceClient,
     queries: tuple[str, ...],
     limit_per_query: int,
+    recover_only: bool = False,
+    pagination_inputs=None,
 ) -> list[tuple[str, SearchResult]]:
     results: list[tuple[str, SearchResult]] = []
     for index, query in enumerate(queries):
         try:
-            result = client.search(query, limit=limit_per_query)
+            search=getattr(client,"search_recovery",client.search) if recover_only else client.search
+            result = search(query, limit=limit_per_query,**((pagination_inputs or {}).get(query,{}) if recover_only else {}))
         except Exception as exc:
             result = SearchResult(
                 source=getattr(client, "name", "Unknown"),
