@@ -11,7 +11,7 @@ from importlib.metadata import version
 from pathlib import Path
 from aviary.core import Environment, Message, Tool, ToolCall, ToolRequestMessage
 from scimed_scout.sources.pubmed import PubMedSource
-from scripts.v2_historical_replay_dev import REFERENCE, STRATEGIES, retrieve, full_id_diagnostic
+from scripts.v2_historical_replay_dev import REFERENCE, STRATEGIES, full_id_diagnostic
 
 # Second development case: Pandey et al., ESC Heart Failure 2022, PMID 35112512.
 # Search reported through September 2021; last day of month is a declared approximation.
@@ -38,6 +38,28 @@ class State:
     reward: float = 0.0
     trace: list = field(default_factory=list)
 
+def bounded_ids(client, routes):
+    """Top-K ID-only comparator; no metadata fetch, same ESearch rank as enumeration."""
+    ids, audits = set(), []
+    for query, slots in routes:
+        row={"query":query,"slots":slots,"complete_bounded":False}
+        try:
+            data=client.http.get_json(client.base+"esearch.fcgi",client._params({
+                "db":"pubmed","term":query,"retmode":"json","retmax":slots,"sort":"relevance"}))
+            block=data.get("esearchresult") or {}
+            total=int(block["count"])
+            found=[str(x) for x in block.get("idlist",[])]
+            warning=block.get("warninglist") or {}
+            valid=not (block.get("errorlist") or data.get("error") or data.get("ERROR")
+                       or (isinstance(warning,dict) and warning.get("quotedphrasesnotfound")))
+            complete=valid and total>=0 and len(found)==min(total,slots) and len(set(found))==len(found) and all(x.isdigit() for x in found)
+            ids.update(found)
+            row.update(total=total,retrieved_ids=len(found),complete_bounded=complete)
+        except Exception as exc:
+            row["error_type"]=type(exc).__name__
+        audits.append(row)
+    return ids,audits
+
 class RetrievalGym(Environment[State]):
     def __init__(self, client, reference, cache, strategies=STRATEGIES, task="statins in primary coronary prevention, publication cutoff 2017-10-31"):
         self.client = client
@@ -62,8 +84,8 @@ class RetrievalGym(Environment[State]):
         routes = self.strategies["dual_route" if strategy == "dual" else strategy]
         if action not in self.cache:
             if mode == "top":
-                ids, audit = retrieve(self.client, routes)
-                valid = all(a["status"] in {"SEARCHED_POSITIVE","SEARCHED_NEGATIVE"} for a in audit)
+                ids, audit = bounded_ids(self.client, routes)
+                valid = all(a["complete_bounded"] for a in audit)
             else:
                 ids, audit = set(), []
                 for query, _ in routes:
@@ -87,7 +109,7 @@ class RetrievalGym(Environment[State]):
         return json.dumps({"retrieved":len(ids),"source_resolved":valid,"mode":mode})
 
     def narrow_top(self) -> str:
-        """Retrieve up to 100 PubMed records using a narrow clinical query."""
+        """Retrieve up to 100 ranked PubMed identifiers using a narrow clinical query."""
         return self._execute("narrow_top")
     def dual_top(self) -> str:
         """Retrieve up to 100 PubMed records across two search routes."""
