@@ -259,7 +259,7 @@ def explicit_comparison(text,interventions,control):
         return True
     return False
 
-def comparison_rows(pair,rows,comparator=None,year=None):
+def comparison_rows(pair,rows,comparator=None,year=None,extra_controls=()):
     buckets=defaultdict(list);all_rows=[]
     pop,inter,pa,ia=pair
     for variants,eligible in eligible_groups(pair,rows,year):
@@ -267,7 +267,7 @@ def comparison_rows(pair,rows,comparator=None,year=None):
         # Require observed intervention + comparator in same comparison title/
         # allocation passage. This is an explicit cue, not proof of exact arms.
         # Equivalent vocabulary must not create duplicate candidate questions.
-        for control in ((comparator,) if comparator else tuple(c for c in CONTROLS if c!="open saphenous vein harvesting")):
+        for control in ((comparator,) if comparator else tuple(dict.fromkeys(c for c in (*CONTROLS,*extra_controls) if c!="open saphenous vein harvesting"))):
             if any_term(control,phrases(inter,ia)):continue
             matches=[t for t in eligible if explicit_comparison(t,phrases(inter,ia),control)]
             if matches:
@@ -293,7 +293,7 @@ def _search(client,query,cap,stage,audits,check):
     audits.append({"source":client.name,"query":query,"stage":stage,"status":r.status.value,"total":r.total_count,"retrieved":len(r.records),"message":str(r.message or "")[:240]})
     return [_record(x) for x in r.records if x.title.strip()]
 
-def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),year=None,max_pairs=MAX_PAIRS,abstract_enricher=None,dynamic=None):
+def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),year=None,max_pairs=MAX_PAIRS,abstract_enricher=None,dynamic=None,registry_lookup=None):
     key=str(specialty).strip().casefold()
     year=year or datetime.now(timezone.utc).year
     if key=="all":key=tuple(ANCHORS)[rotation%len(ANCHORS)]
@@ -307,8 +307,10 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
     pairs=[anchors[(start+i)%len(anchors)] for i in range(min(max_pairs,len(anchors),MAX_PAIRS))]
     dynamic_enabled=bool(abstract_enricher and isinstance(pubmed,PubMedSource) and pubmed.http.loader is None) if dynamic is None else bool(dynamic)
     report["dynamic_discovery"]={"version":DYNAMIC_VERSION,"status":"NOT_SEARCHED","anchors":[],"qualification_granted":False}
+    dynamic_controls={}
     if dynamic_enabled and abstract_enricher and (dq:=dynamic_query(key,year)):
-        recent=_search(pubmed,dq,MAX_SEED_RECORDS,"DYNAMIC_SPECIALTY_SAMPLE",report["queries"],check)
+        discovery_source=PubMedSource(http=pubmed.http,sort="mixed") if isinstance(pubmed,PubMedSource) and pubmed.http.loader is None else pubmed
+        recent=_search(discovery_source,dq,MAX_SEED_RECORDS,"DYNAMIC_SPECIALTY_SAMPLE",report["queries"],check)
         status=report["queries"][-1]["status"]
         if recent:
             if check:check()
@@ -317,6 +319,16 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
         diagnostic={}
         proposed=derive(recent,anchors,year=year,allow_single=True,specialty=key,diagnostic=diagnostic)
         report["dynamic_discovery"].update(status=status,anchors=proposed,retrieved=len(recent),diagnostic=diagnostic,anchor_status="ANCHORS_RETRIEVED" if proposed else "NO_ANCHORS_IN_BOUNDED_SAMPLE")
+        from .registry_anchors import derive_registry
+        # An indexed title alone may not reveal treatment arms. Consult only
+        # exact NCTs already linked to retrieved reports, with a hard budget.
+        if len(proposed)<2 and (registry_lookup is not None or isinstance(pubmed,PubMedSource) and pubmed.http.loader is None):
+            registry_proposed,registry_audit=derive_registry(recent,[*anchors,*(x["pair"] for x in proposed)],check=check,lookup=registry_lookup,limit=2-len(proposed))
+            report["dynamic_discovery"]["registry_anchor_audit"]=registry_audit
+            proposed.extend(registry_proposed)
+            for x in registry_proposed:dynamic_controls[tuple(x["pair"][:2])]=(x["comparator"],)
+        report["dynamic_discovery"]["anchors"]=proposed
+        report["dynamic_discovery"]["anchor_status"]="ANCHORS_RETRIEVED" if proposed else "NO_ANCHORS_IN_BOUNDED_SAMPLE"
         pairs.extend(tuple(x["pair"]) for x in proposed)
     samples=[]
     for pair in pairs:
@@ -325,7 +337,7 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
             if check:check()
             rows,abstract_audit=abstract_enricher(rows)
             report["queries"].append(abstract_audit)
-        all_rows,buckets=comparison_rows(pair,rows,year=year)
+        all_rows,buckets=comparison_rows(pair,rows,year=year,extra_controls=dynamic_controls.get(tuple(pair[:2]),()))
         samples.append((pair,rows,family_summary(all_rows)["family_leads"]))
     # Recover only the strongest sampled cells; don't spend all time on a slow
     # second provider. PubMed metadata remains preserved if Europe PMC fails.
@@ -337,7 +349,7 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
     # Recover near-threshold comparisons before spending AI requests.
     recovery=[]
     for i,(pair,rows,_) in enumerate(samples):
-        matched_rows,buckets=comparison_rows(pair,rows,year=year)
+        matched_rows,buckets=comparison_rows(pair,rows,year=year,extra_controls=dynamic_controls.get(tuple(pair[:2]),()))
         for control,exact in buckets.items():
             n=family_summary(exact)["family_leads"]
             if 4<=n<MIN_FAMILIES or (2<=n<4 and family_summary(matched_rows)["family_leads"]>=MIN_FAMILIES):recovery.append((n,i,control))
@@ -353,10 +365,10 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
             additional,abstract_audit=abstract_enricher(additional)
             report["queries"].append(abstract_audit)
         rows.extend(additional)
-        _,updated=comparison_rows(pair,rows,year=year)
+        _,updated=comparison_rows(pair,rows,year=year,extra_controls=dynamic_controls.get(tuple(pair[:2]),()))
         report.setdefault("comparison_recovery",[]).append({"population":pair[0],"intervention":pair[1],"comparator":control,"before_family_cues":before,"after_family_cues":family_summary(updated.get(control,[]))["family_leads"],"confirmed_independent_eligible_trials":None})
     for pair,rows,_ in samples:
-        all_rows,buckets=comparison_rows(pair,rows,year=year)
+        all_rows,buckets=comparison_rows(pair,rows,year=year,extra_controls=dynamic_controls.get(tuple(pair[:2]),()))
         primary=family_summary(all_rows)
         report["cells"].append({"population":pair[0],"intervention":pair[1],**primary,
             "observed_comparators":{k:family_summary(v) for k,v in buckets.items()},

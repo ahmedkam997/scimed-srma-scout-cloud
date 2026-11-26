@@ -6,6 +6,8 @@ on:
     paths:
       - 'src/scimed_scout/discovery/rct_first.py'
       - 'src/scimed_scout/discovery/dynamic_anchors.py'
+      - 'src/scimed_scout/discovery/registry_anchors.py'
+      - 'tests/test_registry_anchors.py'
       - 'src/scimed_scout/cloud/rct_worker.py'
       - 'src/scimed_scout/sources/pubmed_abstracts.py'
       - '.github/workflows/rct-first.yml'
@@ -26,7 +28,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -e '.[dev]'
-      - run: pytest -q tests/test_rct_first.py tests/test_opportunity_mcda.py
+      - run: pytest -q tests/test_rct_first.py tests/test_opportunity_mcda.py tests/test_registry_anchors.py
       - run: python -m scimed_scout.discovery.rct_first --specialty Cardiology --rotation 0 --output rct-first-cardiology.json
       - run: python -m scimed_scout.discovery.rct_first --specialty Cardiology --rotation 2 --output rct-first-cardiology-rotation2.json
       - uses: actions/upload-artifact@v4
