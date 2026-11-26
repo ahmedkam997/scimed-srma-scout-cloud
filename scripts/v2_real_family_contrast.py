@@ -35,6 +35,11 @@ def main():
         leads=abstract_ratios(row);roles=report_role_cues(row)
         report["reports"].append({"pmid":pmid,"expected_family":family,"expected_role":role,"role_cues":roles["cues"],"ratio_leads":len(leads),"expected_ratio":expected,
             "exact_ratio_match":any((r["ratio"],*r["reported_ci"])==expected for r in leads) if expected else None,"eligible":False})
+    from scimed_scout.discovery.registration_enrichment import enrich_fair
+    # Actual open-access recovery only for reports lacking explicit registry IDs.
+    rows,first=enrich_fair(rows,max_lookups=3)
+    rows,second=enrich_fair(rows,max_lookups=3,previous=first)
+    report["fulltext_link_recovery"]={"first_calls":first["source_calls"],"second_calls":second["source_calls"],"attempts":second["attempts"]}
     audit=audit_trial_families(rows)
     actual={r["report_id"]:f["registration_id"] for f in audit["families"] for r in f["reports"]}
     report.update(registry_linked_families=audit["registry_linked_families"],linked_reports=audit["registry_linked_reports"],unlinked_reports=len(audit["unlinked_reports"]),ambiguous_reports=len(audit["ambiguous_reports"]),

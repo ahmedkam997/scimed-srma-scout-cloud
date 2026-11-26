@@ -122,3 +122,25 @@ def test_protocol_and_secondary_role_never_confirm_eligibility():
     r["title"]="Post-hoc analysis of a randomized trial"
     assert "SECONDARY_ANALYSIS_CUE" in report_role_cues(r)["cues"]
     assert not report_role_cues(r)["eligibility_confirmed"]
+
+
+def test_ratio_endpoint_qualifier_and_no_lowercase_conjunction():
+    from scimed_scout.discovery.structured_extraction_v2 import abstract_ratios
+    r=report();r["payload"]["metadata"]["abstractText"]="hazard ratio for cardiovascular death or hospitalization for heart failure, 0.75; 95% CI, 0.65 to 0.86"
+    assert abstract_ratios(r)[0]["ratio"]==.75
+    r["payload"]["metadata"]["abstractText"]="or 0.75; 95% CI, 0.65 to 0.86"
+    assert not abstract_ratios(r)
+def test_explicit_isrctn_registration_format_only():
+    from scimed_scout.discovery.trial_family import registration_signals
+    r=report();r["payload"]["metadata"]["abstractText"]="Trial registration: International Standard Randomised Controlled Trial Number (ISRCTN) registry, ID: ISRCTN80500123."
+    assert set(registration_signals(r))=={"ISRCTN80500123"}
+    r["payload"]["metadata"]["abstractText"]="Previous study cited ISRCTN80500123."
+    assert not registration_signals(r)
+def test_explicit_early_body_trial_registration_excludes_discussion_and_conflicts():
+    from scimed_scout.discovery.registration_enrichment import extract_registration
+    r=report();r["payload"]["metadata"]["abstractText"]=""
+    x=b'<article><front><article-meta><article-id pub-id-type="pmid">29067426</article-id><article-id pub-id-type="pmc">5818805</article-id></article-meta></front><body><sec><title>Introduction</title><p>The trial is registered as ClinicalTrials.gov Identifier: NCT00000001.</p></sec></body></article>'
+    v=extract_registration(r,x)
+    assert v["registration_id"]=="NCT00000001" and not v["independence_confirmed"]
+    assert extract_registration(r,x.replace(b"Introduction",b"Discussion")) is None
+    assert extract_registration(r,x.replace(b"NCT00000001.",b"NCT00000001. Another study NCT00000002.")) is None

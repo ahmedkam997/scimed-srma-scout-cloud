@@ -18,7 +18,8 @@ FIELDS = ("trial_registration_id", "trial_registration_ids", "registration_numbe
 REGISTRATION_CONTEXT = re.compile(
     r"(?:trial registration(?: number)?|clinicaltrials\.gov(?: identifier| number)?|"
     r"registered (?:at|with|in)|registration number|trial identifier|"
-    r"this (?:study|trial) (?:is|was) registered)\s*[:;,()\s]*(?:https?://clinicaltrials\.gov/(?:study/|ct2/show/))?"
+    r"this (?:study|trial) (?:is|was) registered|"
+    r"trial registration:\s*International Standard Randomi[sz]ed Controlled Trial Number\s*\(ISRCTN\)\s*registry,?\s*ID)\s*[:;,()\s]*(?:https?://clinicaltrials\.gov/(?:study/|ct2/show/))?"
     r"((?:NCT\s*\d{8}|ISRCTN\s*\d{8}|ACTRN\s*\d{14}|DRKS\s*\d{8}|UMIN\s*\d{9}))", re.I)
 
 

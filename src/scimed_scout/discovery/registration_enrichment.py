@@ -15,6 +15,7 @@ from .pico_matching import _pmid
 
 # Own-trial statements; generic mentions of past trials are not evidence.
 OWN=re.compile(r"\b(?:the|this|our)\s+trial\s+(?:is|was)\s+registered\s+(?:at|with|in|on)\s+ClinicalTrials\.gov\s*[:;(,\s]*(?:identifier\s*[:;\s]*)?(NCT\d{8})\b",re.I)
+OWN_AS=re.compile(r"\b(?:the|this|our)\s+trial\s+(?:is|was)\s+registered\s+as\s+ClinicalTrials\.gov\s+Identifier\s*:\s*(NCT\d{8})\b",re.I)
 LIMIT=1_500_000
 OAI_NS="http://www.openarchives.org/OAI/2.0/"
 
@@ -64,12 +65,26 @@ def extract_registration(row,raw,*,source_url=None):
             all_ids.update(_ids(text))
             for m in OWN.finditer(text):
                 hits.append((m.group(1).upper(),m.group(0)))
+    # An explicitly attributed registration statement can appear before
+    # Methods (e.g. the DAPA-HF design article). Only initial/direct body
+    # or Introduction paragraphs are eligible, not Discussion/references.
+    body=root.find("body")
+    if body is not None:
+        early=list(body.findall("./p"))
+        for sec in body.findall("./sec"):
+            heading=" ".join(sec.find("title").itertext()) if sec.find("title") is not None else ""
+            if re.fullmatch(r"\s*(?:introduction|background)\s*",heading,re.I):early.extend(sec.findall("./p"))
+        for para in early:
+            text=" ".join("".join(para.itertext()).split())
+            for m in OWN_AS.finditer(text):
+                if _ids(text)=={m.group(1).upper()}:
+                    hits.append((m.group(1).upper(),m.group(0)));all_ids.update(_ids(text))
     unique={x[0] for x in hits}
     if len(unique)!=1 or all_ids!=unique:return None
     trial,quote=hits[0]
     return {"registration_id":trial,"quote":quote[:200],
         "source_url":source_url or f"https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML",
-        "pmid":pmid,"pmcid":pmcid,"scope":"OWN_TRIAL_REGISTRATION_IN_METHODS",
+        "pmid":pmid,"pmcid":pmcid,"scope":"OWN_TRIAL_REGISTRATION_EARLY_BODY" if OWN_AS.search(quote) else "OWN_TRIAL_REGISTRATION_IN_METHODS",
         "independence_confirmed":False}
 
 def extract_bioc_registration(row,raw,*,source_url):

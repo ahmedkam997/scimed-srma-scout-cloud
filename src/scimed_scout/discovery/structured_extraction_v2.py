@@ -24,8 +24,8 @@ def abstract_ratios(row):
     """Explicitly reported contrast estimates; never infer direction or pooling."""
     raw=abstract(row)
     num=r"(?:\d+(?:[.·]\d+)?|[.·]\d+)"
-    measure=r"hazard ratio(?:\s*\[HR\])?|risk ratio(?:\s*\[RR\])?|relative risk|odds ratio(?:\s*\[OR\])?|HR|RR|OR"
-    pat=rf"\b(?P<m>{measure})\s*(?:[,=:]\s*)?(?P<value>{num})\s*[,;]?\s*[\[(]?\s*(?P<pct>{num})\s*%\s*(?:confidence interval(?:\s*\[CI\])?|CI)\s*[,;:]?\s*(?P<lo>{num})\s*(?:to|[-–—−])\s*(?P<hi>{num})(?![\d.·])"
+    measure=r"hazard ratio(?:\s*\[HR\])?|risk ratio(?:\s*\[RR\])?|relative risk|odds ratio(?:\s*\[OR\])?|(?-i:HR|RR|OR)"
+    pat=rf"\b(?P<m>{measure})(?:\s+for\s+[A-Za-z][A-Za-z /-]{{1,100}},)?\s*(?:[,=:]\s*)?(?P<value>{num})\s*[,;]?\s*[\[(]?\s*(?P<pct>{num})\s*%\s*(?:confidence interval(?:\s*\[CI\])?|CI)\s*[,;:]?\s*(?P<lo>{num})\s*(?:to|[-–—−])\s*(?P<hi>{num})(?![\d.·])"
     norm={"hr":"hazard ratio","rr":"risk ratio","or":"odds ratio"}
     results=[]
     for m in re.finditer(pat,raw,re.I):
