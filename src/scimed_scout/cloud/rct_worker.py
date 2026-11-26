@@ -173,8 +173,8 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                 if provider:
                     provider.begin(c.candidate_id)
                     provider.reserved=1
-                novelty=DiscoveryNoveltyService(ledger,SemanticCompetitorAssessor(provider),max_reviews=12,max_registrations=8,batch_size=5,
-                    search_date_resolver=OpenAccessSearchDateResolver(),max_fulltext_reviews=2,enrichment_client=EuropePMCSource(),max_enrichment_lookups=1,bounded_recovery=True) if provider else None
+                novelty=DiscoveryNoveltyService(ledger,SemanticCompetitorAssessor(provider) if provider else None,max_reviews=12,max_registrations=8,batch_size=5,
+                    search_date_resolver=OpenAccessSearchDateResolver(),max_fulltext_reviews=2,enrichment_client=EuropePMCSource(),max_enrichment_lookups=1,bounded_recovery=True)
                 scoring=ReservedScoring(provider) if provider else None
                 engine=ReviewDiscoveryOrchestrator(ledger,clients,novelty_service=novelty,scoring_service=scoring,
                     cancellation_check=check,progress_callback=lambda pct,stage,msg:store.update_job(job.id,message=f"Topic {i}/{len(selected)}: {msg}") if pct==-1 else None,require_pico_signals=True,optimize_literature_queries=True,adaptive_search=True,
@@ -194,7 +194,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     "rct_first_final_audit":a,"review_opportunity":m.get("discovery_review_opportunity") or {},
                     "adaptive_retrieval_audit":m.get("adaptive_retrieval_audit") or [],"adaptive_search_audit":m.get("adaptive_search_audit") or {},"fulltext_search_date_resolutions":m.get("discovery_fulltext_search_date_resolutions") or [],
                     "competitor_audit":{"published_reviews_discovered":m.get("discovery_competitor_records_discovered",0),
-                    "unassessed_reviews":m.get("discovery_unassessed_review_count",0),"unassessed_registrations":m.get("discovery_unassessed_registration_count",0)},
+                    "unassessed_reviews":m.get("discovery_unassessed_review_count"),"unassessed_registrations":m.get("discovery_unassessed_registration_count"),"total_pending_reviews":m.get("discovery_pending_review_count"),"total_pending_registrations":m.get("discovery_pending_registration_count")},
                     "scorecard":m.get("discovery_gate_inputs") or {},"scoring_deferred_reason":m.get("discovery_scoring_deferred_reason",""),"registry_result_reference_audit":m.get("registry_result_reference_audit") or {},"registration_enrichment_audit":m.get("registration_enrichment_audit") or {},"opportunity_mcda":m.get("opportunity_mcda") or {}})
             recovery_queue=[{"candidate_id":x.candidate_id,"reasons":recovery_reasons(x,ledger.get_candidate(x.candidate_id).metadata or {})} for x in checked]
             recovery_queue=[x for x in recovery_queue if x["reasons"]]

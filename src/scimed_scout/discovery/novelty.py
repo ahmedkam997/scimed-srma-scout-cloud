@@ -22,7 +22,7 @@ class DiscoveryNoveltyService:
     def __init__(
         self,
         ledger: SQLiteLedger,
-        assessor: SemanticCompetitorAssessor,
+        assessor: SemanticCompetitorAssessor | None,
         *,
         max_reviews: int = 10,
         max_registrations: int = 6,
@@ -52,6 +52,7 @@ class DiscoveryNoveltyService:
         if candidate is None:
             raise ValueError(f"Candidate not found: {candidate_id}")
 
+        allow_ai = bool(allow_ai and self.assessor is not None)
         all_reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
         all_registrations = self.ledger.list_external_evidence(candidate_id, "REGISTRATION")
 
@@ -59,11 +60,13 @@ class DiscoveryNoveltyService:
         expand=recovery and not self.bounded_recovery
         review_cap = min(36, max(self.max_reviews, 30)) if expand else self.max_reviews
         registry_cap = min(30, max(self.max_registrations, 24)) if expand else self.max_registrations
-        select = _select_incremental if allow_ai else _select_records
-        review_records = select(candidate, all_reviews, review_cap, force=force) if allow_ai else select(candidate, all_reviews, review_cap)
-        registration_records = select(candidate, all_registrations, registry_cap, force=force) if allow_ai else select(candidate, all_registrations, registry_cap)
-        cached_reviews = sum(_valid_cached(candidate,r) for r in review_records) if allow_ai and not force else 0
-        cached_registrations = sum(_valid_cached(candidate,r) for r in registration_records) if allow_ai and not force else 0
+        # Retain every valid cached judgment even when inference is deferred.
+        # The same bounded uncached selection may be used for non-AI audits.
+        select = _select_incremental
+        review_records = select(candidate, all_reviews, review_cap, force=force and allow_ai)
+        registration_records = select(candidate, all_registrations, registry_cap, force=force and allow_ai)
+        cached_reviews = sum(_valid_cached(candidate,r) for r in review_records) if not (force and allow_ai) else 0
+        cached_registrations = sum(_valid_cached(candidate,r) for r in registration_records) if not (force and allow_ai) else 0
 
         enrichment = []
         if allow_ai and self.enrichment_client is not None and self.max_enrichment_lookups:
@@ -73,13 +76,15 @@ class DiscoveryNoveltyService:
                 all_reviews=self.ledger.list_external_evidence(candidate_id,"PUBLISHED_REVIEW")
                 review_records=select(candidate,all_reviews,review_cap,force=force)
                 cached_reviews=sum(_valid_cached(candidate,r) for r in review_records) if not force else 0
-        resolved_dates = self._resolve_search_dates(candidate_id, review_records)
+        # Rotate across the entire ranked review corpus rather than repeatedly
+        # spending the full-text budget on the same semantic shortlist.
+        resolved_dates = self._resolve_search_dates(candidate_id, _select_records(candidate,all_reviews,len(all_reviews)))
         if self.search_date_resolver is not None and self.max_fulltext_reviews:
             # Refresh even when no cutoff was found: attempt counters were
             # persisted and must survive later semantic-assessment writes.
             all_reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
-            review_records = select(candidate, all_reviews, review_cap, force=force) if allow_ai else select(candidate, all_reviews, review_cap)
-            cached_reviews = sum(_valid_cached(candidate,r) for r in review_records) if allow_ai and not force else 0
+            review_records = select(candidate, all_reviews, review_cap, force=force and allow_ai)
+            cached_reviews = sum(_valid_cached(candidate,r) for r in review_records) if not (force and allow_ai) else 0
         if allow_ai:
             review_assessments = self._assess_records(candidate, review_records, force=force,
                                                        repair_budget=3 if expand else 0)
@@ -160,6 +165,12 @@ class DiscoveryNoveltyService:
                 "cached_registration_assessments_reused":cached_registrations,
                 "selected_uncached_reviews":len(review_records)-cached_reviews if allow_ai else 0,
                 "selected_uncached_registrations":len(registration_records)-cached_registrations if allow_ai else 0},
+            # Keep legacy outside-shortlist counters separate from all
+            # unresolved semantic judgments. Duplicates are not extra reviews.
+            "discovery_pending_review_count": len(review_backlog)+review_unresolved,
+            "discovery_pending_registration_count": len(registration_backlog)+registration_unresolved,
+            "discovery_unique_review_count": len(_dedupe_records(all_reviews)),
+            "discovery_unique_registration_count": len(_dedupe_records(all_registrations)),
             "discovery_unassessed_review_count": len(review_backlog),
             "discovery_unassessed_registration_count": len(registration_backlog),
             "discovery_unassessed_review_queue": review_backlog[:40],
@@ -185,6 +196,8 @@ class DiscoveryNoveltyService:
             "competitor_enrichment":enrichment,
             "incremental_competitor_budget": metadata["discovery_incremental_competitor_budget"],
             "published_reviews_discovered": len(all_reviews),
+            "published_reviews_total_pending": len(review_backlog)+review_unresolved,
+            "registrations_total_pending": len(registration_backlog)+registration_unresolved,
             "published_reviews_assessed": len(review_assessments),
             "published_reviews_unresolved": review_unresolved,
             "published_reviews_prefiltered_out": len(review_backlog),

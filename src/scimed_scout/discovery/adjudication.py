@@ -5,7 +5,7 @@ consistency and provenance references, not the truth of a person's assertion.
 """
 from collections import defaultdict
 import math
-from .competitor_records import identifiers
+from .competitor_records import identifiers, groups, identity
 from .trial_family import registration_signals
 from .review_opportunity import _cutoff, date_bounds
 from .novelty import _valid_cached, _select_records
@@ -24,16 +24,21 @@ def build(candidate, primary, reviews, registrations, *, ambiguous=(), opportuni
     records=[{**citation(r),"registration_ids":sorted(registration_signals(r)),"screening_status":"AWAITING_FULL_TEXT","eligibility":None} for r in ordered]
     competitors=[]
     for kind,rows in (("REVIEW",reviews),("REGISTRATION",registrations),("UNCLASSIFIED",ambiguous)):
+        clusters={identity(g["representative"]):g for g in groups(rows)}
         for r in _select_records(candidate,list(rows),len(rows)):
+            group=clusters[identity(r)]
             payload=r.get("payload") or {}
             assessment=payload.get("discovery_semantic_assessment") or {}
             competitors.append({**citation(r),"id":kind+":"+key(r),"kind":kind,"model_overlap":assessment.get("overall_overlap") if _valid_cached(candidate,r) else None,
                 "last_search_date_cue":_cutoff(r) if kind=="REVIEW" else None,
+                "source_variants":[citation(v) for v in group["variants"]],
+                "identifier_conflict":group["identifier_conflict"],
                 "adjudication_status":"AWAITING_INDEPENDENT_REVIEW"})
     return {"schema":VERSION,"candidate_id":candidate.candidate_id,
         "pico":{"population":candidate.population,"intervention":candidate.intervention_exposure_index_test,"comparator":candidate.comparator_reference,"outcomes":list(candidate.outcomes or [])},
         "primary_report_index":records,"competitor_index":competitors,"primary_report_count":len(records),"competitor_count":len(competitors),
-        "provenance":"All current ledger records; no exclusions based on absence of keywords.",
+        "competitor_raw_record_count":sum(len(c["source_variants"]) for c in competitors),
+        "provenance":"All current ledger records and exact-identifier competitor variants; no exclusions based on absence of keywords.",
         "submission_template":{"candidate_id":candidate.candidate_id,"studies":[],"outcomes":[],"competitor_decisions":[]},
         "study_fields":["study_id","report_ids","registry_ids","design","population","intervention_arm","comparator_arm","independence_basis","eligibility_evidence","reviewers"],
         "outcome_fields":["study_id","report_id","outcome","definition","timepoint","measure","intervention_n","comparator_n","intervention_events","comparator_events","intervention_mean","comparator_mean","intervention_sd","comparator_sd","effect","se","evidence","reviewers"],
@@ -59,7 +64,7 @@ def validate(packet,submission):
     competitors={r["id"]:r for r in packet["competitor_index"]}
     for name in ("studies","outcomes","competitor_decisions"):
         if not isinstance(submission.get(name,[]),list):raise ValueError("invalid list: "+name)
-    errors=[];studies={};used_reports=set();used_registry=set();valid_outcomes=defaultdict(set);decisions=set()
+    errors=[];studies={};used_reports=set();used_registry=set();used_publication_ids=set();valid_outcomes=defaultdict(set);decisions=set()
     for s in submission.get("studies",[]):
         if not isinstance(s,dict):errors.append("invalid study row");continue
         sid=s.get("study_id");reports=s.get("report_ids");registry=s.get("registry_ids",[])
@@ -68,9 +73,10 @@ def validate(packet,submission):
         ok=ok and s.get("design")=="RCT" and all(nonempty(s.get(k)) for k in ("population","intervention_arm","comparator_arm","independence_basis")) and s.get("intervention_arm")!=s.get("comparator_arm") and evidence(s.get("eligibility_evidence")) and dual(s.get("reviewers"))
         if ok:
             observed={r for rid in reports for r in primary[rid]["registration_ids"]}
-            ok=observed.issubset({r.strip().upper() for r in registry})
+            publication_ids={(k,v) for rid in reports for k in ("doi","pmid") for v in primary[rid].get(k,[])}
+            ok=observed.issubset({r.strip().upper() for r in registry}) and not used_publication_ids.intersection(publication_ids)
         if not ok:errors.append("study row unresolved or duplicate: "+str(sid));continue
-        studies[sid]=s;used_reports.update(reports);used_registry.update(r.strip().upper() for r in registry)
+        studies[sid]=s;used_reports.update(reports);used_registry.update(r.strip().upper() for r in registry);used_publication_ids.update(publication_ids)
     for o in submission.get("outcomes",[]):
         if not isinstance(o,dict):errors.append("invalid outcome row");continue
         sid=o.get("study_id");measure=o.get("measure")

@@ -119,3 +119,46 @@ def test_prospero_continuation_reuses_validated_prefix_and_rejects_drift():
     changed=True
     drift=src.search_recovery("q",checkpoint=first.continuation,previous_records=first.records)
     assert drift.status==SourceStatus.PARTIAL and drift.continuation is None and "boundary page changed" in drift.message
+
+
+def test_no_ai_inventory_counts_selected_deferred_and_preserves_all_cached(tmp_path):
+    from scimed_scout.discovery.novelty import DiscoveryNoveltyService,_assessment_hash
+    from scimed_scout.storage import SQLiteLedger,ProjectRecord,CandidateRecord
+    with SQLiteLedger(tmp_path/"pending.sqlite") as ledger:
+        ledger.upsert_project(ProjectRecord("P","Cardiology"))
+        c=CandidateRecord("C","P","Question","Cardiology",population="hypertension",intervention_exposure_index_test="renal denervation")
+        ledger.upsert_candidate(c)
+        for kind,total in (("PUBLISHED_REVIEW",35),("REGISTRATION",25)):
+            for i in range(total):
+                ledger.upsert_external_evidence("C",kind,f"{kind}-{i}",source="PubMed" if kind=="PUBLISHED_REVIEW" else "OSF Registries",title="Review "+str(i),payload={"year":2025})
+        rows=ledger.list_external_evidence("C","PUBLISHED_REVIEW")
+        for r in rows[-15:]:
+            p=dict(r["payload"]);p["discovery_semantic_assessment"]={"unresolved":False,"overall_overlap":"LOW","record_id":r["source_record_id"]}
+            p["discovery_semantic_assessment_input_hash"]=_assessment_hash(c,r)
+            ledger.upsert_external_evidence("C","PUBLISHED_REVIEW",r["source_record_id"],source=r["source"],title=r["title"],payload=p)
+        a=DiscoveryNoveltyService(ledger,None,max_reviews=12,max_registrations=8).assess_candidate("C")
+        m=ledger.get_candidate("C").metadata
+        assert m["discovery_competitor_resolved_count"]==15
+        assert a["published_reviews_total_pending"]==20 and a["registrations_total_pending"]==25
+        assert m["discovery_ai_competitor_analysis_deferred"] and not m["discovery_competitor_assessment_complete"]
+
+def test_distinct_publication_aliases_cannot_count_as_separate_studies():
+    from scimed_scout.discovery.adjudication import build,validate
+    from scimed_scout.storage import CandidateRecord
+    a=record(1);b=record(2);b["source"]="Crossref"
+    a["payload"]["doi"]=b["payload"]["doi"]="10.1234/same"
+    e={"url":"https://doi.org/10.1234/same","locator":"Methods","excerpt":"Source evidence"}
+    s={"study_id":"s","report_ids":["PubMed:1"],"registry_ids":[],"design":"RCT","population":"P","intervention_arm":"I","comparator_arm":"C","independence_basis":"distinct cohort","eligibility_evidence":e,"reviewers":["A","B"]}
+    packet=build(CandidateRecord("c","p","Q","Cardiology"),[a,b],[],[])
+    result=validate(packet,{"candidate_id":"c","studies":[s,{**s,"study_id":"other","report_ids":["Crossref:2"]}]})
+    assert result["valid_study_rows"]==1 and not result["qualification_granted"]
+
+def test_competitor_variants_retained_in_packet():
+    from scimed_scout.discovery.adjudication import build
+    from scimed_scout.storage import CandidateRecord
+    a=record(1,"PUBLISHED_REVIEW");b=record(2,"PUBLISHED_REVIEW");b["source"]="Crossref"
+    b["payload"]["metadata"]["pmid"]="1"
+    a["payload"]["doi"]=b["payload"]["doi"]="10.1234/same"
+    packet=build(CandidateRecord("c","p","Q","Cardiology"),[],[a,b],[])
+    assert packet["competitor_count"]==1 and packet["competitor_raw_record_count"]==2
+    assert len(packet["competitor_index"][0]["source_variants"])==2

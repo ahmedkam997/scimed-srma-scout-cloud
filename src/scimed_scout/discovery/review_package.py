@@ -386,6 +386,10 @@ def _build_research_dossier(
                 "registrations_semantically_resolved": int(
                     meta.get("discovery_registration_resolved_count") or 0
                 ),
+                "unique_published_review_records": meta.get("discovery_unique_review_count"),
+                "unique_registration_records": meta.get("discovery_unique_registration_count"),
+                "total_semantically_pending_published_reviews": meta.get("discovery_pending_review_count"),
+                "total_semantically_pending_registrations": meta.get("discovery_pending_registration_count"),
                 "unassessed_published_review_count": int(
                     meta.get("discovery_unassessed_review_count") or 0
                 ),
