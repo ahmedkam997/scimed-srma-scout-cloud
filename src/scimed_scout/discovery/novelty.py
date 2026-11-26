@@ -477,10 +477,8 @@ def _select_incremental(candidate,records,limit,*,force=False):
     cached=[r for r in ranked if _valid_cached(candidate,r)]
     outstanding=[r for r in ranked if not _valid_cached(candidate,r)]
     if (candidate.metadata or {}).get("rct_first"):
-        from .competitor_priority_v2 import order
-        alt=order(candidate,outstanding)
-        position={_record_identity(r):i for i,r in enumerate(alt)}
-        outstanding=[r for _,r in sorted(enumerate(outstanding),key=lambda x:-(1/(20+x[0])+1/(20+position[_record_identity(x[1])])))]
+        from .competitor_priority_v2 import hybrid
+        outstanding=hybrid(candidate,outstanding)
     fresh=[r for r in outstanding if not _attempted_current(candidate,r)]
     retry=[r for r in outstanding if _attempted_current(candidate,r)]
     return cached+(fresh+retry)[:limit]

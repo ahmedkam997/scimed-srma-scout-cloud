@@ -48,11 +48,18 @@ def registry_leads(study,nct):
             "protocol_arms":[{"label":x.get("label"),"type":x.get("type"),"interventions":x.get("interventionNames",[])} for x in a.get("armGroups",[]) if isinstance(x,dict)],
             "numeric_outcome_leads":groups,"eligibility_confirmed":False,"independence_confirmed":False,"pooling_allowed":False}
 
-def jats_leads(row,raw):
+def jats_leads(row,raw,*,source_url=None):
     pmc=_pmcid(row);ids=identifiers(row)
     if not pmc or not isinstance(raw,bytes) or len(raw)>1500000 or b"<!ENTITY" in raw.upper() or re.search(br"<!DOCTYPE[^>]*\[",raw,re.I):return {"status":"UNRESOLVED"}
     try:root=ET.fromstring(raw)
     except (ValueError,ET.ParseError):return {"status":"UNRESOLVED"}
+    from .registration_enrichment import OAI_NS
+    if root.tag==f"{{{OAI_NS}}}OAI-PMH":
+        metadata=root.find(f"./{{{OAI_NS}}}GetRecord/{{{OAI_NS}}}record/{{{OAI_NS}}}metadata")
+        if metadata is None or len(metadata)!=1:return {"status":"BODY_UNAVAILABLE"}
+        root=metadata[0]
+        for node in root.iter():
+            if node.tag.startswith(f"{{{OAI_NS}}}"):node.tag=node.tag.split("}",1)[1]
     front=root.find("./front/article-meta")
     if root.tag!="article" or front is None:return {"status":"IDENTITY_MISMATCH"}
     actual={x.get("pub-id-type"):text(x) for x in front.findall("article-id")}
@@ -78,7 +85,7 @@ def jats_leads(row,raw):
                 methods.append({"locator":f"body/sec[{i}]/p[{j}]","excerpt":x[:250]})
                 if len(methods)>=8:break
         if len(methods)>=8:break
-    return {"status":"JATS_SOURCE_LINKED_LEADS","url":"https://www.ebi.ac.uk/europepmc/webservices/rest/"+pmc+"/fullTextXML","sha256":hashlib.sha256(raw).hexdigest(),
+    return {"status":"JATS_SOURCE_LINKED_LEADS","url":source_url or "https://www.ebi.ac.uk/europepmc/webservices/rest/"+pmc+"/fullTextXML","sha256":hashlib.sha256(raw).hexdigest(),
             "tables":tables,"methods":methods,"eligibility_confirmed":False,"pooling_allowed":False}
 
 def collect(rows,*,fetcher=None,previous=None,max_fulltexts=3,check=None):
@@ -89,13 +96,21 @@ def collect(rows,*,fetcher=None,previous=None,max_fulltexts=3,check=None):
     for r in ordered:
         k=(r["source"],r["source_record_id"]);entry={"source":k[0],"record_id":k[1],"url":(r.get("payload") or {}).get("url"),"registration_ids":sorted(registration_signals(r)),"abstract_count_leads":abstract_counts(r)}
         old=prior.get(k,{})
-        pmc=_pmcid(r);prev=old.get("fulltext") or {}
+        pmc=_pmcid(r)
+        if old.get("pmcid")!=pmc:old={}
+        entry["pmcid"]=pmc
+        prev=old.get("fulltext") or {}
         if prev.get("status")=="JATS_SOURCE_LINKED_LEADS":entry["fulltext"]=prev
-        elif pmc and calls<min(3,max(0,max_fulltexts)):
+        elif pmc and len(old.get("fulltext_attempts",[]))<2 and calls<min(3,max(0,max_fulltexts)):
+            from .registration_enrichment import _routes
+            attempts=list(old.get("fulltext_attempts",[]))
+            route,url=list(_routes(pmc))[len(attempts)]
             if check:check()
             calls+=1
-            try:entry["fulltext"]=jats_leads(r,fetcher("https://www.ebi.ac.uk/europepmc/webservices/rest/"+pmc+"/fullTextXML"))
+            try:entry["fulltext"]=jats_leads(r,fetcher(url),source_url=url)
             except Exception as ex:entry["fulltext"]={"status":"ACCESS_UNRESOLVED","error_type":type(ex).__name__}
+            entry["fulltext_attempts"]=[*attempts,{"route":route,"status":entry["fulltext"]["status"]}]
         elif prev:entry["fulltext"]=prev
+        if "fulltext_attempts" not in entry:entry["fulltext_attempts"]=old.get("fulltext_attempts",[])
         results.append(entry)
     return {"version":VERSION,"reports":results,"source_calls":calls,"eligibility_confirmed":False,"pooling_allowed":False}

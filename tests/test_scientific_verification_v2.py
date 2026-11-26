@@ -208,3 +208,11 @@ def test_disagreement_resume_once_not_infinite():
     meta={"rct_first_final_audit":{"family_leads":12,"joint_comparison_pico_family_leads":5}}
     assert recovery_reasons(r,meta)==["PICO_COMPARISON_DISAGREEMENT"]
     assert recovery_reasons(r,{**meta,"v2_disagreement_recovery_attempted":True})==[]
+
+
+def test_legacy_identity_risk_blocks_otherwise_valid_approval(tmp_path):
+    with make_ledger(tmp_path/"legacy.sqlite")[0] as ledger:
+        ledger.mark_legacy_evidence("c")
+        c=ledger.get_candidate("c");packet=snapshot(ledger,c);s=make_submission(packet)
+        result=assess(ledger,c,s)
+        assert not result["qualification_granted"] and any("legacy evidence" in x for x in result["blockers"])

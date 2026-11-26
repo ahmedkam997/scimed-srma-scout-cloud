@@ -18,3 +18,9 @@ def order(candidate,rows):
         d=docs[i];norm=1.2*(.25+.75*lengths[i]/avg)
         return sum(w*math.log(1+(len(rows)-df[t]+.5)/(df[t]+.5))*d[t]*2.2/(d[t]+norm) for t,w in query.items() if d[t])
     return [rows[i] for i in sorted(range(len(rows)),key=lambda i:(-score(i),i))]
+
+def hybrid(candidate,rows):
+    rows=list(rows)
+    alt=order(candidate,rows)
+    positions={identity(r):i for i,r in enumerate(alt)}
+    return [r for _,r in sorted(enumerate(rows),key=lambda x:-(1/(20+x[0])+1/(20+positions[identity(x[1])])))]
