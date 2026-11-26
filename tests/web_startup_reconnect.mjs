@@ -26,7 +26,10 @@ test('startup does not depend on an eager CDN import', () => {
   assert.ok(app.includes('data-reconnect'), 'Failed connection must show retry');
   assert.ok(html.includes('reloadCloudApp'), 'Independent HTML startup watchdog must be active');
   assert.ok(html.includes('durable-resume'));
-  assert.ok(sw.includes('scimed-review-scout-v42'));
+  const cacheVersion=sw.match(/scimed-review-scout-v(\d+)/);
+  assert.ok(cacheVersion && Number(cacheVersion[1])>=43, 'Changed assets require a new cache version');
+  const assetVersion=html.match(/app\.js\?v=([^"]+)/)?.[1];
+  assert.ok(assetVersion && sw.includes('app.js?v='+assetVersion), 'HTML and service worker must load the same app version');
 });
 
 test('startup timeout produces a recoverable error instead of waiting forever', async () => {

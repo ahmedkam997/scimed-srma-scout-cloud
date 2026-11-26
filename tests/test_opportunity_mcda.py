@@ -74,3 +74,13 @@ def test_primary_research_need_does_not_become_synthesis_gap():
     assert "PRIMARY_RESEARCH_NEED_CUE" in result["routes"]
     assert "REVIEW_GAP_SIGNAL" not in result["routes"]
     assert result["priority_key"][2]==0
+
+def test_gap_outcome_not_in_initial_pico_is_retained_without_eligibility_claim():
+    p=("atrial fibrillation","catheter ablation",(),())
+    review={"title":"Catheter ablation versus medical therapy in atrial fibrillation: systematic review","source":"PubMed","source_record_id":"99","payload":{"year":2025,"url":"https://pubmed.ncbi.nlm.nih.gov/99/","metadata":{"pubtype":["Systematic Review"],"abstractText":"CONCLUSIONS: Evidence is insufficient for cognitive function."}}}
+    c=CandidateRecord("c","p","Topic","Cardiology",population=p[0],intervention_exposure_index_test=p[1],comparator_reference="medical therapy",outcomes=["mortality"],metadata={"rct_first":{"pair":p,"family_leads":7}})
+    a=profile(c,[review])
+    assert any(x["outcome"]=="cognitive function" and x["comparison_family_cues"]==0 for x in a["outcome_gap_candidates"])
+    assert a["outcome_specific_hypotheses"]==[]
+    assert a["confirmed_independent_eligible_trials"] is None
+    assert a["assessment"]["publication_oriented_score"] is None
