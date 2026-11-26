@@ -12,8 +12,8 @@ def suggest(rows,*,lookup=None,max_lookups=3,check=None,previous=None):
     audit={"method":"EXACT_REGISTRY_RESULT_REFERENCE_V1","source_calls":0,"attempts":[],"suggestions":[],"automatic_merge":False,"independence_confirmed":False}
     prior=(previous or {}).get("attempts",[])
     checked={a.get("nct") for a in prior if a.get("status")=="CHECKED"}
-    audit["remaining_registry_ids"]=len(set(known)-checked) if missing else 0
-    if not known or not missing:return audit
+    audit["remaining_registry_ids"]=len(set(known)-checked)
+    if not known:return audit
     if lookup is None:
         http=JsonHttpClient(timeout=10,retries=0,service="ctgov",min_interval=.2)
         lookup=lambda n:http.get_json("https://clinicaltrials.gov/api/v2/studies/"+n)

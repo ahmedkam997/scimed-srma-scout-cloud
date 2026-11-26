@@ -31,7 +31,7 @@ def audit_snapshot(ledger, item):
     cid = item.candidate_id
     candidate = ledger.get_candidate(cid)
     return {
-        "version": 1, "candidate": asdict(candidate), "result": asdict(item),
+        "version": 1, "evidence_identity_schema": 4, "legacy_evidence_collision_risk": ledger.evidence_identity_legacy_risk(cid), "candidate": asdict(candidate), "result": asdict(item),
         "evidence": ledger.list_external_evidence(cid),
         "search_log": [asdict(x) for x in ledger.list_search_log(cid)],
         "decisions": [asdict(x) for x in ledger.list_decisions(cid)],
@@ -63,6 +63,8 @@ def restore_audit(ledger, snapshot, project_id, candidate_id):
     for record in snapshot["evidence"]:
         ledger.upsert_external_evidence(candidate_id, record["evidence_type"], record["source_record_id"],
                                        source=record["source"], title=record["title"], payload=record["payload"])
+    if snapshot.get('evidence_identity_schema')!=4 or snapshot.get('legacy_evidence_collision_risk'):
+        ledger.mark_legacy_evidence(candidate_id)
     for row in snapshot["search_log"]:
         if row["candidate_id"] != candidate_id or row["project_id"] != project_id:
             raise ValueError("Search checkpoint scope mismatch")

@@ -40,9 +40,9 @@ def snapshot(ledger,candidate):
     binding={"version":VERSION,"project_id":candidate.project_id,"candidate_id":candidate.candidate_id,
         "question":{"title":candidate.title,"question_type":candidate.question_type,"review_question":candidate.review_question,
                     "pico":packet["pico"],"eligible_designs":list(candidate.eligible_designs or [])},
-        "source_content_hashes":raw,"search_log":log_rows}
+        "source_content_hashes":raw,"search_log":log_rows,"legacy_evidence_collision_risk":ledger.evidence_identity_legacy_risk(candidate.candidate_id)}
     packet["verification_v2"]={"version":VERSION,"project_id":candidate.project_id,
-        "snapshot_sha256":digest(binding),"search_log":log_rows,"eligible_designs":binding["question"]["eligible_designs"],
+        "snapshot_sha256":digest(binding),"search_log":log_rows,"legacy_evidence_collision_risk":binding["legacy_evidence_collision_risk"],"eligible_designs":binding["question"]["eligible_designs"],
         "reviewer_submission_template":{"project_id":candidate.project_id,"candidate_id":candidate.candidate_id,
             "snapshot_sha256":digest(binding),"route":"NOVEL","studies":[],"outcomes":[],"competitor_decisions":[],
             "excluded_reports":[],"ratings":{},"ratings_evidence":{},"synthesis_group":{},
@@ -122,6 +122,7 @@ def evaluate(packet,bundle,keys,coverage,policy):
         structural=validate(packet,data)
         errors.extend(structural["errors"])
         if not coverage.complete:fail("mandatory source coverage incomplete")
+        if binding.get("legacy_evidence_collision_risk"):fail("legacy evidence could have been overwritten; fresh retrieval in a new ledger required")
         # A successful API sample is not a systematic search. Independently
         # adjudicate actual search methods and remaining material limits.
         search=data.get("search_scope_adjudication") or {}

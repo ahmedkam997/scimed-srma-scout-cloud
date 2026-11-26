@@ -69,7 +69,7 @@ def test_discovery_ledger_persists_only_active_discovery_entities(tmp_path):
         ledger.update_checkpoint("P1", stage="REVIEW_DISCOVERY", progress=60)
 
     with SQLiteLedger(db) as reopened:
-        assert SCHEMA_VERSION == 3
+        assert SCHEMA_VERSION == 4
         assert reopened.get_project("P1").stage == "REVIEW_DISCOVERY"
         assert reopened.get_candidate("C1").title.startswith("Index test")
         assert {x["evidence_type"] for x in reopened.list_external_evidence("C1")} == {
@@ -111,3 +111,36 @@ def test_external_evidence_type_is_validated(tmp_path):
             assert "Unsupported evidence type" in str(exc)
         else:
             raise AssertionError("invalid evidence type should fail")
+
+def test_source_native_id_collision_keeps_both_records_and_updates_only_same_source(tmp_path):
+    with SQLiteLedger(tmp_path/"identity.sqlite") as l:
+        l.upsert_project(ProjectRecord("p","Medicine"));l.upsert_candidate(CandidateRecord("c","p","Q","Medicine"))
+        for src in ("PubMed","Other"):
+            l.upsert_external_evidence("c","PRIMARY_STUDY","123",source=src,title=src,payload={"source":src})
+        l.upsert_external_evidence("c","PRIMARY_STUDY","123",source="PubMed",title="new",payload={"source":"updated"})
+        rows=l.list_external_evidence("c")
+        assert len(rows)==2
+        assert {r["source"]:r["title"] for r in rows}=={"PubMed":"new","Other":"Other"}
+        assert not l.evidence_identity_legacy_risk("c")
+
+def test_v3_identity_migration_preserves_rows_and_flags_unrecoverable_history(tmp_path):
+    import sqlite3
+    db=tmp_path/"old.sqlite"
+    with SQLiteLedger(db) as l:
+        l.upsert_project(ProjectRecord("p","Medicine"));l.upsert_candidate(CandidateRecord("c","p","Q","Medicine"))
+        l.upsert_external_evidence("c","PRIMARY_STUDY","123",source="PubMed",title="original",payload={"x":1})
+        before=l.list_external_evidence("c")
+    with sqlite3.connect(db) as con:
+        con.executescript("""ALTER TABLE external_evidence RENAME TO current_rows;
+          CREATE TABLE external_evidence(candidate_id TEXT NOT NULL REFERENCES candidates(candidate_id) ON DELETE CASCADE,evidence_type TEXT NOT NULL,
+            source_record_id TEXT NOT NULL,source TEXT NOT NULL DEFAULT '',title TEXT NOT NULL DEFAULT '',payload_json TEXT NOT NULL DEFAULT '{}',updated_at TEXT NOT NULL,
+            PRIMARY KEY(candidate_id,evidence_type,source_record_id));
+          INSERT INTO external_evidence SELECT * FROM current_rows; DROP TABLE current_rows;
+          UPDATE schema_meta SET value='3' WHERE key='schema_version';""")
+    with SQLiteLedger(db) as l:
+        assert l.list_external_evidence("c")==before
+        assert l.evidence_identity_legacy_risk("c")
+        l.upsert_external_evidence("c","PRIMARY_STUDY","123",source="Other",title="different")
+        assert len(l.list_external_evidence("c"))==2
+        assert l.connection.execute("PRAGMA foreign_key_check").fetchall()==[]
+    with SQLiteLedger(db) as l:assert len(l.list_external_evidence("c"))==2

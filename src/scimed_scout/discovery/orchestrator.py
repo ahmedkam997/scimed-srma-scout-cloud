@@ -798,7 +798,7 @@ class ReviewDiscoveryOrchestrator:
         query: str, purpose: str, *,
         classification: str = "", originally_requested: str = "",
     ) -> None:
-        existing = next((item for item in self.ledger.list_external_evidence(candidate_id, evidence_type) if str(item.get("source_record_id") or "") == str(record.record_id)), None)
+        existing = next((item for item in self.ledger.list_external_evidence(candidate_id, evidence_type) if item.get("source")==record.source and str(item.get("source_record_id") or "") == str(record.record_id)), None)
         previous = dict((existing or {}).get("payload") or {})
         previous_metadata = previous.get("metadata") if isinstance(previous.get("metadata"), dict) else {}
         new_metadata = dict(record.metadata) if isinstance(record.metadata, dict) else {}
