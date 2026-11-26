@@ -86,3 +86,12 @@ def test_documented_mcda_unchanged_exploratory_exposed():
     row=r["scenarios"]["balanced"]["intervals"][0]
     assert row["lower"]==0 and row["upper"]==100 and row["exploratory_lower"]==15
     assert r["robust_winner"] is None and not r["qualification_granted"]
+
+
+def test_registry_results_are_source_linked_without_automatic_arm_mapping():
+    from scimed_scout.discovery.registry_outcomes import extract
+    study={"protocolSection":{"identificationModule":{"nctId":"NCT00000001"}},"resultsSection":{"outcomeMeasuresModule":{"outcomeMeasures":[{"title":"All-cause death","timeFrame":"12 months","paramType":"COUNT_OF_PARTICIPANTS","unitOfMeasure":"participants","groups":[{"id":"OG000","title":"Group A"},{"id":"OG001","title":"Group B"}],"denoms":[{"units":"participants","counts":[{"groupId":"OG000","value":"50"},{"groupId":"OG001","value":"49"}]}],"classes":[{"categories":[{"measurements":[{"groupId":"OG000","value":"2"},{"groupId":"OG001","value":"3"},{"groupId":"UNKNOWN","value":"100"}]}]}]}]}}}
+    rows=extract(study,"NCT00000001")
+    assert rows[0]["measurements"][0]["value"]=="2" and len(rows[0]["measurements"])==2
+    assert rows[0]["denominators"][1]["value"]=="49" and not rows[0]["pooling_allowed"]
+    assert not extract(study,"NCT00000002")
