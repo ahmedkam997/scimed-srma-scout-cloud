@@ -1,0 +1,393 @@
+{
+  "baseline_revision": "b8a7236931040d1457ad729460f6ec311eeab830",
+  "scope": "development_only",
+  "qualification_granted": false,
+  "cohen_revision": "38b35218e4d0f99621cec5a8a25a0147bb88c654",
+  "cohen_statins_ace_shared_pmids": 49,
+  "synergy_plus_revision": "d6c46f32bd0e325a64eafa9da6dd3bdb9db5579f",
+  "muthu_corpus": {
+    "synergy_dataset_version": "2.2",
+    "labels_available": {
+      "0": 2640,
+      "1": 70
+    },
+    "labels_exported_open_access_with_abstract": {
+      "0": 903,
+      "1": 20
+    }
+  },
+  "muthu_input_sha256": {
+    "metadata.json": "a8d94627257d8beeb978b54bcfd30a671f747ebd94f281b6c582e9963cdbe35e",
+    "labels.csv": "0797ea2f25a1d532a6108f2d3f8b5539cdcfbcd010499bdb8dac7af0abc64e87",
+    "works_1.zip": "23843fe4520b8c1a30e829e71b2c635baa5f903b508ce4b2d43ddbec84da5577"
+  },
+  "screening_replays": {
+    "statins": [
+      {
+        "duplicate_groups": 7,
+        "duplicate_rows": 115,
+        "conflicting_label_groups": 1,
+        "exported_representative_rows": 3085,
+        "exported_representative_positives": 84,
+        "record_decisions": {
+          "total": 3465,
+          "reference_positive": 85,
+          "screened": 3141,
+          "found_positive": 85,
+          "reference_recall": 1.0,
+          "recall_at_budget_percent": {
+            "10": 0.7764705882352941,
+            "25": 0.788235294117647,
+            "50": 0.9411764705882353
+          },
+          "screened_at_95": 1745,
+          "random_expected_screened_at_95": 3264.4883720930234,
+          "wss95": 0.44639249639249634
+        },
+        "asreview_version": "3.0.8",
+        "seed": 42,
+        "grouped_simulation": false,
+        "dataset_sha256": "d880b79bef64296a57ee8f0b886ae1f7a7267ce12a3f7a8596ad77539210b470",
+        "oracle_assisted": true,
+        "qualification_granted": false
+      },
+      {
+        "duplicate_groups": 7,
+        "duplicate_rows": 115,
+        "conflicting_label_groups": 1,
+        "exported_representative_rows": 3086,
+        "exported_representative_positives": 84,
+        "record_decisions": {
+          "total": 3465,
+          "reference_positive": 85,
+          "screened": 3142,
+          "found_positive": 85,
+          "reference_recall": 1.0,
+          "recall_at_budget_percent": {
+            "10": 0.1411764705882353,
+            "25": 0.9294117647058824,
+            "50": 0.9529411764705882
+          },
+          "screened_at_95": 1419,
+          "random_expected_screened_at_95": 3264.4883720930234,
+          "wss95": 0.5404761904761904
+        },
+        "asreview_version": "3.0.8",
+        "seed": 17,
+        "grouped_simulation": false,
+        "dataset_sha256": "d880b79bef64296a57ee8f0b886ae1f7a7267ce12a3f7a8596ad77539210b470",
+        "oracle_assisted": true,
+        "qualification_granted": false
+      },
+      {
+        "duplicate_groups": 7,
+        "duplicate_rows": 115,
+        "conflicting_label_groups": 1,
+        "exported_representative_rows": 3085,
+        "exported_representative_positives": 84,
+        "record_decisions": {
+          "total": 3465,
+          "reference_positive": 85,
+          "screened": 3141,
+          "found_positive": 85,
+          "reference_recall": 1.0,
+          "recall_at_budget_percent": {
+            "10": 0.7764705882352941,
+            "25": 0.788235294117647,
+            "50": 0.9411764705882353
+          },
+          "screened_at_95": 1745,
+          "random_expected_screened_at_95": 3264.4883720930234,
+          "wss95": 0.44639249639249634
+        },
+        "asreview_version": "3.0.8",
+        "seed": 73,
+        "grouped_simulation": false,
+        "dataset_sha256": "d880b79bef64296a57ee8f0b886ae1f7a7267ce12a3f7a8596ad77539210b470",
+        "oracle_assisted": true,
+        "qualification_granted": false
+      }
+    ],
+    "ace": [
+      {
+        "duplicate_groups": 1,
+        "duplicate_rows": 25,
+        "conflicting_label_groups": 1,
+        "exported_representative_rows": 2033,
+        "exported_representative_positives": 40,
+        "record_decisions": {
+          "total": 2544,
+          "reference_positive": 41,
+          "screened": 2048,
+          "found_positive": 41,
+          "reference_recall": 1.0,
+          "recall_at_budget_percent": {
+            "10": 0.8292682926829268,
+            "25": 0.9512195121951219,
+            "50": 0.9512195121951219
+          },
+          "screened_at_95": 506,
+          "random_expected_screened_at_95": 2363.214285714286,
+          "wss95": 0.7511006289308175
+        },
+        "asreview_version": "3.0.8",
+        "seed": 42,
+        "grouped_simulation": false,
+        "dataset_sha256": "67bc0b3ad9bd9d98610cfe124336fb192a19a921dfb6ac52ee486caac64fd27f",
+        "oracle_assisted": true,
+        "qualification_granted": false
+      },
+      {
+        "duplicate_groups": 1,
+        "duplicate_rows": 25,
+        "conflicting_label_groups": 1,
+        "exported_representative_rows": 2143,
+        "exported_representative_positives": 40,
+        "record_decisions": {
+          "total": 2544,
+          "reference_positive": 41,
+          "screened": 2168,
+          "found_positive": 41,
+          "reference_recall": 1.0,
+          "recall_at_budget_percent": {
+            "10": 0.024390243902439025,
+            "25": 0.024390243902439025,
+            "50": 0.975609756097561
+          },
+          "screened_at_95": 1156,
+          "random_expected_screened_at_95": 2363.214285714286,
+          "wss95": 0.4955974842767295
+        },
+        "asreview_version": "3.0.8",
+        "seed": 17,
+        "grouped_simulation": false,
+        "dataset_sha256": "67bc0b3ad9bd9d98610cfe124336fb192a19a921dfb6ac52ee486caac64fd27f",
+        "oracle_assisted": true,
+        "qualification_granted": false
+      },
+      {
+        "duplicate_groups": 1,
+        "duplicate_rows": 25,
+        "conflicting_label_groups": 1,
+        "exported_representative_rows": 2033,
+        "exported_representative_positives": 40,
+        "record_decisions": {
+          "total": 2544,
+          "reference_positive": 41,
+          "screened": 2048,
+          "found_positive": 41,
+          "reference_recall": 1.0,
+          "recall_at_budget_percent": {
+            "10": 0.8292682926829268,
+            "25": 0.9512195121951219,
+            "50": 0.9512195121951219
+          },
+          "screened_at_95": 507,
+          "random_expected_screened_at_95": 2363.214285714286,
+          "wss95": 0.7507075471698113
+        },
+        "asreview_version": "3.0.8",
+        "seed": 73,
+        "grouped_simulation": false,
+        "dataset_sha256": "67bc0b3ad9bd9d98610cfe124336fb192a19a921dfb6ac52ee486caac64fd27f",
+        "oracle_assisted": true,
+        "qualification_granted": false
+      }
+    ],
+    "muthu": [
+      {
+        "duplicate_groups": 0,
+        "duplicate_rows": 0,
+        "conflicting_label_groups": 0,
+        "exported_representative_rows": 906,
+        "exported_representative_positives": 20,
+        "record_decisions": {
+          "total": 923,
+          "reference_positive": 20,
+          "screened": 906,
+          "found_positive": 20,
+          "reference_recall": 1.0,
+          "recall_at_budget_percent": {
+            "10": 0.5,
+            "25": 0.55,
+            "50": 0.8
+          },
+          "screened_at_95": 700,
+          "random_expected_screened_at_95": 836.0,
+          "wss95": 0.19160346695557962
+        },
+        "asreview_version": "3.0.8",
+        "seed": 42,
+        "grouped_simulation": false,
+        "dataset_sha256": "09acfeee00a0e6bcd25937b3a7eafc5e4bbd095443807f3833039a67dc26c017",
+        "oracle_assisted": true,
+        "qualification_granted": false
+      },
+      {
+        "duplicate_groups": 0,
+        "duplicate_rows": 0,
+        "conflicting_label_groups": 0,
+        "exported_representative_rows": 906,
+        "exported_representative_positives": 20,
+        "record_decisions": {
+          "total": 923,
+          "reference_positive": 20,
+          "screened": 906,
+          "found_positive": 20,
+          "reference_recall": 1.0,
+          "recall_at_budget_percent": {
+            "10": 0.35,
+            "25": 0.55,
+            "50": 0.8
+          },
+          "screened_at_95": 699,
+          "random_expected_screened_at_95": 836.0,
+          "wss95": 0.1926868905742145
+        },
+        "asreview_version": "3.0.8",
+        "seed": 17,
+        "grouped_simulation": false,
+        "dataset_sha256": "09acfeee00a0e6bcd25937b3a7eafc5e4bbd095443807f3833039a67dc26c017",
+        "oracle_assisted": true,
+        "qualification_granted": false
+      },
+      {
+        "duplicate_groups": 0,
+        "duplicate_rows": 0,
+        "conflicting_label_groups": 0,
+        "exported_representative_rows": 906,
+        "exported_representative_positives": 20,
+        "record_decisions": {
+          "total": 923,
+          "reference_positive": 20,
+          "screened": 906,
+          "found_positive": 20,
+          "reference_recall": 1.0,
+          "recall_at_budget_percent": {
+            "10": 0.3,
+            "25": 0.55,
+            "50": 0.8
+          },
+          "screened_at_95": 703,
+          "random_expected_screened_at_95": 836.0,
+          "wss95": 0.18835319609967494
+        },
+        "asreview_version": "3.0.8",
+        "seed": 73,
+        "grouped_simulation": false,
+        "dataset_sha256": "09acfeee00a0e6bcd25937b3a7eafc5e4bbd095443807f3833039a67dc26c017",
+        "oracle_assisted": true,
+        "qualification_granted": false
+      }
+    ]
+  },
+  "grouped_statins": {
+    "completed": false,
+    "reason": "ASReview rejected conflicting labels within a duplicate group"
+  },
+  "grouped_synthetic_control": {
+    "duplicate_groups": 2,
+    "duplicate_rows": 2,
+    "conflicting_label_groups": 0,
+    "exported_representative_rows": 3,
+    "exported_representative_positives": 2,
+    "group_decisions": {
+      "total": 4,
+      "reference_positive": 2,
+      "screened": 3,
+      "found_positive": 2,
+      "reference_recall": 1.0,
+      "recall_at_budget_percent": {
+        "10": 0.5,
+        "25": 0.5,
+        "50": 0.5
+      },
+      "screened_at_95": 3,
+      "random_expected_screened_at_95": 3.3333333333333335,
+      "wss95": 0.19999999999999996
+    },
+    "expanded_rows": {
+      "total": 6,
+      "reference_positive": 3,
+      "labeled": 5,
+      "found_positive": 3,
+      "reference_recall": 1.0
+    },
+    "asreview_version": "3.0.8",
+    "seed": 42,
+    "grouped_simulation": true,
+    "dataset_sha256": "8d1c94818b5a9018e42dba7d0e8749df5327a61a7ed2c28aa9c0b9990b2807e3",
+    "oracle_assisted": true,
+    "qualification_granted": false
+  },
+  "native_aviary_ldp": {
+    "aviary": "0.37.0",
+    "ldp": "1.10.1",
+    "failure_stage": "development",
+    "failure_reason": "unresolved development source",
+    "policy_written": false,
+    "development_cases": {
+      "statins": {
+        "thresholds_exercised": [
+          0.0,
+          2.0,
+          5.0,
+          1000000.0
+        ],
+        "resolved": false,
+        "route_audits": [
+          {
+            "query": "(statin*[tiab] OR \"Hydroxymethylglutaryl-CoA Reductase Inhibitors\"[Mesh] OR atorvastatin[tiab] OR pravastatin[tiab] OR rosuvastatin[tiab] OR simvastatin[tiab] OR lovastatin[tiab] OR fluvastatin[tiab] OR pitavastatin[tiab]) AND (primary prevention[tiab] OR \"Primary Prevention\"[Mesh]) AND (randomized controlled trial[pt] OR random*[tiab] OR placebo[tiab]) AND (\"1800/01/01\"[dp] : \"2017/10/31\"[dp])",
+            "slots": 0,
+            "complete_bounded": false,
+            "error_type": "RuntimeError"
+          },
+          {
+            "query": "(statin*[tiab] OR \"Hydroxymethylglutaryl-CoA Reductase Inhibitors\"[Mesh] OR atorvastatin[tiab] OR pravastatin[tiab] OR rosuvastatin[tiab] OR simvastatin[tiab] OR lovastatin[tiab] OR fluvastatin[tiab] OR pitavastatin[tiab]) AND (cardiovascular[tiab] OR coronary[tiab] OR atherosclero*[tiab] OR stroke[tiab] OR hypertens*[tiab] OR hypercholesterolemia[tiab]) AND (randomized controlled trial[pt] OR random*[tiab] OR placebo[tiab]) AND (\"1800/01/01\"[dp] : \"2017/10/31\"[dp])",
+            "slots": 0,
+            "complete_bounded": false,
+            "error_type": "RuntimeError"
+          }
+        ]
+      },
+      "sglt2_hf": {
+        "thresholds_exercised": [
+          0.0,
+          2.0,
+          5.0,
+          1000000.0
+        ],
+        "resolved": false,
+        "route_audits": [
+          {
+            "query": "(SGLT2[tiab] OR \"Sodium-Glucose Transporter 2 Inhibitors\"[Mesh] OR dapagliflozin[tiab] OR empagliflozin[tiab] OR sotagliflozin[tiab] OR canagliflozin[tiab] OR ertugliflozin[tiab]) AND (\"heart failure\"[tiab] OR \"Heart Failure\"[Mesh]) AND (randomized controlled trial[pt] OR random*[tiab] OR placebo[tiab]) AND (\"1800/01/01\"[dp] : \"2021/09/30\"[dp])",
+            "slots": 0,
+            "complete_bounded": false,
+            "error_type": "RuntimeError"
+          },
+          {
+            "query": "(SGLT2[tiab] OR \"Sodium-Glucose Transporter 2 Inhibitors\"[Mesh] OR dapagliflozin[tiab] OR empagliflozin[tiab] OR sotagliflozin[tiab] OR canagliflozin[tiab] OR ertugliflozin[tiab]) AND (cardiovascular[tiab] OR ventricular[tiab] OR cardiac[tiab]) AND (randomized controlled trial[pt] OR random*[tiab] OR placebo[tiab]) AND (\"1800/01/01\"[dp] : \"2021/09/30\"[dp])",
+            "slots": 0,
+            "complete_bounded": false,
+            "error_type": "RuntimeError"
+          }
+        ]
+      }
+    },
+    "curriculum": {
+      "requested": 9,
+      "retrieved": 0,
+      "source_diagnostics": {
+        "status": "ACCESS_FAILED",
+        "error_type": "URLError"
+      }
+    }
+  },
+  "validation": {
+    "python_tests_passed": 570,
+    "web_tests_passed": 68,
+    "discovery_benchmark_checks_passed": 15,
+    "discovery_benchmark_clinical_accuracy_validated": false,
+    "cli_health": "OK"
+  }
+}

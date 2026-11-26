@@ -55,8 +55,11 @@ class SequentialGym(Environment[State]):
         self.state=State()
         self.tools=[Tool.from_function(f) for f in (self.probe,self.narrow_top,self.expand,self.finish)]
         return [Message(content=json.dumps({"phase":"start","task":self.name}))],self.tools
-    def _remember(self,action,result):
-        self.state.trace.append({"action":action,**result})
+    def _remember(self,action,result,source_audits=None):
+        trace={"action":action,**result}
+        if source_audits is not None:
+            trace["source_audits"]=source_audits
+        self.state.trace.append(trace)
         return json.dumps(result)
     def _cached(self,key,fn):
         if key not in self.cache:
@@ -69,14 +72,14 @@ class SequentialGym(Environment[State]):
         self.state.valid=all(r["complete_bounded"] for r in rows)
         self.state.counts={"narrow":rows[0].get("total"),"broad":rows[1].get("total")}
         self.state.phase=1
-        return self._remember("probe",{"phase":"probed","valid":self.state.valid,**self.state.counts})
+        return self._remember("probe",{"phase":"probed","valid":self.state.valid,**self.state.counts},rows)
     def narrow_top(self)->str:
         """Retrieve the first 100 ranked PubMed identifiers from the narrow query."""
         ids,rows=self._cached("top",lambda:bounded_ids(self.client,self.strategies["narrow"]))
         self.state.valid=self.state.valid and all(r["complete_bounded"] for r in rows)
         self.state.ids.update(ids)
         self.state.phase=2
-        return self._remember("narrow_top",{"phase":"ranked","valid":self.state.valid,"retrieved":len(self.state.ids)})
+        return self._remember("narrow_top",{"phase":"ranked","valid":self.state.valid,"retrieved":len(self.state.ids)},rows)
     def expand(self)->str:
         """Enumerate all matching identifiers from both bounded query routes."""
         def fetch():
@@ -88,7 +91,7 @@ class SequentialGym(Environment[State]):
         self.state.valid=self.state.valid and all(r["complete"] for r in rows)
         self.state.ids.update(ids)
         self.state.phase=3
-        return self._remember("expand",{"phase":"expanded","valid":self.state.valid,"retrieved":len(self.state.ids)})
+        return self._remember("expand",{"phase":"expanded","valid":self.state.valid,"retrieved":len(self.state.ids)},rows)
     def finish(self)->str:
         """End development episode. This is not a scientific search stopping rule."""
         self.state.finished=True
@@ -166,9 +169,14 @@ async def run(client):
     for case in CASES[:2]:
         env=SequentialGym(client,case,{})
         train_results[case[0]]=[await rollout(env,t) for t in THRESHOLDS]
+    common={"aviary":version("fhaviary"),"ldp":version("ldp"),"development":train_results,
+            "independent_final_test":False,"llm_calls":0,"llm_weights_changed":False,
+            "qualification_granted":False}
+    if not all(r["resolved"] for rows in train_results.values() for r in rows):
+        return {**common,"all_resolved":False,"failure_stage":"development",
+                "policy_written":False,"production_approved":False,
+                "failure_reason":"unresolved development source"}
     scores={t:sum(next(row["reward"] for row in rows if row["threshold"]==t) for rows in train_results.values())/len(train_results) for t in THRESHOLDS}
-    valid=all(r["resolved"] for rows in train_results.values() for r in rows)
-    if not valid: raise RuntimeError("unresolved development source; no policy saved")
     # Prefer simpler/high threshold in ties, never touch transfer labels during selection.
     chosen=max(THRESHOLDS,key=lambda t:(scores[t],t))
     path=Path("adaptive-policy.json")
@@ -182,16 +190,15 @@ async def run(client):
             "observed_recall":transfer["recall"],"conservative_control_recall":baselines["always_expand"]["recall"],
             "recovery_strategy":"always_expand","qualification_granted":False}
     Path("adaptive-experience.json").write_text(json.dumps(memory,indent=2)+"\n")
-    return {"aviary":version("fhaviary"),"ldp":version("ldp"),"development":train_results,
+    return {**common,"policy_written":True,"production_approved":False,
             "chosen_threshold":chosen,"policy_reloaded":True,"scores":scores,"transfer_safety_decision":decision,
             "transfer":{"case":CASES[2][0],"review":SURG_REF["review_pmid"],"adaptive":transfer,"baselines":baselines},
             "all_resolved":all(x["resolved"] for x in [transfer,*baselines.values()]),
-            "independent_final_test":False,"llm_calls":0,"llm_weights_changed":False,
-            "qualification_granted":False,"limitations":["two training cases","ten linked report references not complete RCT gold set","current PubMed index with publication-date cutoff","development-only stop and reward","policy selected on two cases, not validated scientific stopping rule"]}
+            "limitations":["two training cases","ten linked report references not complete RCT gold set","current PubMed index with publication-date cutoff","development-only stop and reward","policy selected on two cases, not validated scientific stopping rule"]}
 
 def main():
     report=asyncio.run(run(PubMedSource(sort="relevance")))
     Path("adaptive-gym-report.json").write_text(json.dumps(report,indent=2)+"\n")
     print("ADAPTIVE_GYM "+json.dumps(report),flush=True)
-    if not report["all_resolved"]:raise SystemExit("transfer unresolved")
+    if not report["all_resolved"]:raise SystemExit(f"{report.get('failure_stage', 'transfer')} unresolved")
 if __name__=="__main__":main()

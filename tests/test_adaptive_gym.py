@@ -40,3 +40,45 @@ def test_failed_transfer_rejects_policy_even_when_source_resolved():
     result=assess_transfer({"resolved":True,"recall":1},{"resolved":True,"recall":1})
     assert result["passed"] and not result["production_approved"]
     assert not assess_transfer({"resolved":False,"recall":None},{"resolved":True,"recall":1})["passed"]
+
+
+def test_unresolved_development_persists_diagnostics_without_policy(tmp_path, monkeypatch):
+    from scripts import v2_adaptive_gym as gym
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(gym, "PubMedSource", lambda **_: None)
+
+    def unavailable(_client, routes):
+        return set(), [
+            {"complete_bounded": False, "error_type": "HTTPError"} for _ in routes
+        ]
+
+    monkeypatch.setattr(gym, "bounded_ids", unavailable)
+    with pytest.raises(SystemExit, match="development unresolved"):
+        gym.main()
+    report = json.loads((tmp_path / "adaptive-gym-report.json").read_text())
+    assert not report["all_resolved"]
+    assert not report["policy_written"]
+    assert not report["qualification_granted"]
+    assert not (tmp_path / "adaptive-policy.json").exists()
+    trace = report["development"]["statins"][0]["actions"][0]
+    assert trace["source_audits"][0]["error_type"] == "HTTPError"
+
+
+def test_report_curriculum_persists_source_access_failure(tmp_path, monkeypatch):
+    from urllib.error import URLError
+
+    from scripts import v2_report_gym as gym
+
+    monkeypatch.chdir(tmp_path)
+
+    def unavailable(_client, _ids):
+        raise URLError("network unavailable")
+
+    monkeypatch.setattr(gym, "_fetch", unavailable)
+    with pytest.raises(SystemExit, match="ACCESS_FAILED"):
+        asyncio.run(gym.main_async())
+    report = json.loads((tmp_path / "report-gym.json").read_text())
+    assert report["source_diagnostics"] == {"status": "ACCESS_FAILED", "error_type": "URLError"}
+    assert report["reports"] == []
+    assert not report["qualification_granted"]

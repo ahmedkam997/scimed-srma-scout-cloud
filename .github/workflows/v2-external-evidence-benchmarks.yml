@@ -3,10 +3,14 @@ on:
   workflow_dispatch:
   push:
     branches: [scientific-verification-v2-phase3-replay]
-    paths: ['.github/workflows/v2-external-evidence-benchmarks.yml']
+    paths:
+      - '.github/workflows/v2-external-evidence-benchmarks.yml'
+      - 'scripts/asreview_screening_audit.py'
   pull_request:
     branches: [scientific-verification-v2-phase1]
-    paths: ['.github/workflows/v2-external-evidence-benchmarks.yml']
+    paths:
+      - '.github/workflows/v2-external-evidence-benchmarks.yml'
+      - 'scripts/asreview_screening_audit.py'
 permissions:
   contents: read
 jobs:
@@ -44,41 +48,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
       - uses: actions/setup-python@v6
         with: {python-version: '3.12'}
       - name: Install published ASReview release
         run: python -m pip install 'asreview==3.0.8'
       - name: Download published clinical screening data
         run: |
-          curl --fail --location --retry 2 --max-time 60 'https://raw.githubusercontent.com/asreview/systematic-review-datasets/metadata-v1-final/datasets/Cohen_2006/output/online/Statins.csv' -o statins.csv
-          sha256sum statins.csv
+          curl --fail --location --retry 2 --max-time 60 'https://raw.githubusercontent.com/asreview/systematic-review-datasets/38b35218e4d0f99621cec5a8a25a0147bb88c654/datasets/Cohen_2006/output/online/Statins.csv' -o statins.csv
+          echo 'd880b79bef64296a57ee8f0b886ae1f7a7267ce12a3f7a8596ad77539210b470  statins.csv' | sha256sum --check
       - name: Run upstream simulation without altering SciMed production
         run: |
           asreview simulate statins.csv -o statins.asreview --seed 42 --prior-seed 42 --n-prior-included 1 --n-prior-excluded 1
-      - name: Measure workload against published screening labels
-        run: |
-          python - <<'PY'
-          import json, math, csv
-          import asreview as asr
-          from pathlib import Path
-          rows=list(csv.DictReader(open("statins.csv",encoding="utf-8-sig")))
-          key=next(k for k in rows[0] if k.lower() in ("included","label","label_included"))
-          total=len(rows); positives=sum(int(r[key]) for r in rows)
-          from tempfile import TemporaryDirectory
-          with TemporaryDirectory() as tmp:
-              project=asr.Project.load("statins.asreview", tmp)
-              with asr.open_db(project.db_path, read_only=True) as state:
-                  df=state.get_results_table()
-          labels=[int(x) for x in df["label"]]
-          assert set(labels)<={0,1} and len(labels)<=total
-          target=math.ceil(.95*positives); cumulative=0; at95=None
-          for i,label in enumerate(labels,1):
-              cumulative+=label
-              if at95 is None and cumulative>=target:at95=i
-          report={"dataset":"Cohen_2006_Statins","total":total,"reference_positive":positives,"simulated_labels":len(labels),"found_positive":cumulative,"recall":cumulative/positives,"records_at_95_recall":at95,"fraction_screened_at_95":at95/total if at95 is not None else None,"wss95":.95-at95/total if at95 is not None else None,"prior_positive":1,"prior_negative":1,"seed":42,"simulation_only":True,"qualification_granted":False}
-          print("ASREVIEW_EXTERNAL_BENCHMARK "+json.dumps(report))
-          Path("asreview-external-benchmark.json").write_text(json.dumps(report,indent=2))
-          PY
+      - name: Audit screening decisions and expanded duplicate coverage
+        run: python -m scripts.asreview_screening_audit statins.csv statins.asreview --seed 42 --output asreview-external-benchmark.json
       - uses: actions/upload-artifact@v6
         if: always()
         with:

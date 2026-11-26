@@ -17,6 +17,8 @@ Report-role/contrast episode uses native LDP tools to inspect PubMed metadata th
 
 ASReview closed-corpus simulation (run 45884974971): 3,465 input records, 85 reference positives; 1,744 screened at 95% observed recall, WSS@95=0.44668, 84/85 measured at exported default results-table level. Different raw log vs export counts require duplicate-group audit; never infer trial-level recall. Oracle-assisted labels are not autonomous decisions.
 
+The follow-up replay resolves the export discrepancy and records nine seeded screening runs. [Phase 3 replay checkpoint](PHASE3_REPLAY_PROGRESS.md)
+
 ## Decisions and boundaries
 - Prioritize retrieval coverage; use learned models to prioritize screening rather than drop search routes or stop on document counts.
 - Training here is exhaustive selection among four scalar policy thresholds, NOT RL fine-tuning of LLM weights.

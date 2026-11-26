@@ -4,6 +4,7 @@ Role cues and extracted ratio leads are not eligibility or verified endpoint dat
 import asyncio,json
 from dataclasses import dataclass,field
 from pathlib import Path
+from xml.etree.ElementTree import ParseError
 from aviary.core import Environment,Message,Tool,ToolCall,ToolRequestMessage
 from ldp.agent import Agent
 from scimed_scout.sources.pubmed import PubMedSource
@@ -70,7 +71,13 @@ async def run_one(row):
     raise RuntimeError("unfinished")
 async def main_async():
     ids=list(CASES)
-    found,diag=parse_efetch(_fetch(PubMedSource(),ids),ids)
+    try:
+        found,diag=parse_efetch(_fetch(PubMedSource(),ids),ids)
+    except (OSError, ValueError, ParseError) as exc:
+        found={}
+        diag={"status":"ACCESS_FAILED","error_type":type(exc).__name__}
+    else:
+        diag["status"]="SEARCHED_POSITIVE" if len(found)==len(ids) else "PARTIAL"
     rows=[]
     for pmid,m in found.items():
         if pmid not in CASES:continue
@@ -91,5 +98,5 @@ async def main_async():
             "limitations":["previously used development controls","cue routing only, not clinical eligibility screening","ratio lead matching, not verified primary endpoint selection"]}
     Path("report-gym.json").write_text(json.dumps(report,indent=2)+"\n")
     print("REPORT_GYM "+json.dumps(report),flush=True)
-    if len(rows)!=len(ids):raise SystemExit("partial retrieval")
+    if len(rows)!=len(ids):raise SystemExit(f"report retrieval unresolved: {diag['status']}")
 if __name__=="__main__":asyncio.run(main_async())
