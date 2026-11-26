@@ -16,6 +16,11 @@ RENAL_REVIEW_QUERY = (
     '"renal denervation"[ti] AND sham[tiab] AND '
     '(systematic review[pt] OR meta-analysis[pt] OR "meta-analysis"[ti])'
 )
+RENAL_UPDATE_QUERY = (
+    '"renal denervation"[ti] AND (sham[tiab] OR randomized controlled trial[pt]) '
+    'AND ("2025/09/04"[dp] : "3000/01/01"[dp]) '
+    'NOT (systematic review[pt] OR meta-analysis[pt] OR editorial[pt] OR comment[pt])'
+)
 REVIEWS = ("42985463", "42499063", "42201709", "43090943")
 
 
@@ -101,6 +106,7 @@ def main():
     renal = any(row["candidate_id"] == RENAL for row in candidates)
     targets, reviews = TARGETS, REVIEWS
     review_search = None
+    update_search = None
     if renal:
         targets = {RENAL}
         search = client.search(RENAL_REVIEW_QUERY, limit=6)
@@ -110,11 +116,21 @@ def main():
             "reported_total": search.total_count,
             "reports": [{"pmid": str(row.record_id), "title": row.title} for row in search.records],
         }
+        update = client.search(RENAL_UPDATE_QUERY, limit=12)
+        update_search = {
+            "query": RENAL_UPDATE_QUERY, "status": update.status.value,
+            "reported_total": update.total_count,
+            "cutoff_basis": "Sampled network meta-analysis PMID 41205197; exact overlap unverified",
+            "reports": [{"pmid": str(row.record_id), "title": row.title} for row in update.records],
+        }
     result = audit(client, candidates, targets=targets, reviews=reviews)
     result["bounded_review_search"] = review_search
+    result["bounded_update_search"] = update_search
     Path("phase3-family-methods.json").write_text(json.dumps(result, indent=2) + "\n")
     if review_search is not None:
         notice("Renal competitor search", review_search)
+    if update_search is not None:
+        notice("Renal update search", update_search)
     for pmid, methods in result["competitor_methods"].items():
         notice(f"Full Methods PMID {pmid}", {
             "identity": result["competitor_identities"].get(pmid), "methods": methods,
@@ -137,7 +153,13 @@ def main():
             }
             for pmid, evidence in row["outcome_cues"].items()
         })
-    if result["missing_pubmed_ids"] or set(result["candidates"]) != targets or not reviews or not all(result["competitor_methods"].values()):
+    searches_available = all(
+        row is None or row["status"] in {"SEARCHED_POSITIVE", "SEARCHED_NEGATIVE"}
+        for row in (review_search, update_search)
+    )
+    if (not searches_available or result["missing_pubmed_ids"]
+        or set(result["candidates"]) != targets or not reviews
+        or not all(result["competitor_methods"].values())):
         raise SystemExit("Family or full-text Methods audit remains incomplete")
 
 
