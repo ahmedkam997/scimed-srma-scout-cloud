@@ -1,5 +1,11 @@
 from scimed_scout.discovery.rct_first import review_title_query
-from scripts.external_reference_validation import metrics,linkage,retrieval
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+try:
+    from external_reference_validation import metrics,linkage,retrieval
+finally:
+    sys.path.pop(0)
 from scimed_scout.sources.base import SearchRecord
 
 def test_competitor_recovery_is_title_based_and_not_population_required():
