@@ -83,6 +83,22 @@ def main():
         report.update(status="MEASURED" if len(available)==len(truth) else "PARTIAL_METADATA",batches=batches,
             end_to_end=pair_score(truth,gold_rows),conditional_on_retrieved=pair_score({k:v for k,v in truth.items() if k in available},gold_rows),
             silver_only=pair_score(silver_truth,silver_rows))
+        # Frozen same-sample before/after comparison. Reference truth is used
+        # only here to evaluate observed links, never in the lookup function.
+        from scimed_scout.discovery.registration_enrichment import enrich_records
+        from scimed_scout.discovery.registry_reference_suggestions import suggest
+        from scimed_scout.discovery.trial_family import registration_signals
+        revised,oa=enrich_records(gold_rows,max_lookups=3)
+        hints=suggest(revised,max_lookups=5)
+        scored=[]
+        for hint in hints["suggestions"]:
+            if hint["pmid"] in truth:
+                scored.append({"pmid":hint["pmid"],"suggested_ids":hint["registry_ids"],
+                               "exact_single_reference_match":hint["registry_ids"]==[truth[hint["pmid"]]]})
+        report["recovery"]={"oa":oa,"after_oa":pair_score(truth,revised),
+            "registry_suggestions":hints,"suggestions_evaluated":len(scored),
+            "exact_single_reference_matches":sum(x["exact_single_reference_match"] for x in scored),
+            "automatic_merges":0,"independent_rct_eligibility_validated":False}
     except Exception as exc:report.update(status="REFERENCE_OR_METADATA_UNRESOLVED",error_type=type(exc).__name__)
     save()
 if __name__=="__main__":main()

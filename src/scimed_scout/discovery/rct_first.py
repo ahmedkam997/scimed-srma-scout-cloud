@@ -323,6 +323,19 @@ def _search(client,query,cap,stage,audits,check):
     audits.append({"source":client.name,"query":query,"stage":stage,"status":r.status.value,"total":r.total_count,"retrieved":len(r.records),"message":str(r.message or "")[:240]})
     return [_record(x) for x in r.records if x.title.strip()]
 
+def review_title_recovery(client,pair,control,audits,check):
+    """Finish modest scoped result sets without repeatedly fetching large sets."""
+    query=review_title_query(pair,control)
+    first=_search(client,query,30,"REVIEW_TITLE_RECOVERY",audits,check)
+    latest=audits[-1]
+    total=latest.get("total")
+    if latest["status"]=="SEARCHED_POSITIVE" and isinstance(total,int) and 30<total<=60:
+        second=_search(client,query,total,"REVIEW_TITLE_SMALL_SET_COMPLETION",audits,check)
+        # Never replace the first sample, even when the second access fails.
+        seen={str(x["source_record_id"]) for x in first}
+        first.extend(x for x in second if str(x["source_record_id"]) not in seen)
+    return first
+
 def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),year=None,max_pairs=MAX_PAIRS,abstract_enricher=None,dynamic=None,registry_lookup=None,citation=None):
     key=str(specialty).strip().casefold()
     year=year or datetime.now(timezone.utc).year
@@ -379,6 +392,24 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
         pair,rows,n=samples[i]
         if n<2:continue
         rows+=_search(europe,ep_query(pair),MAX_SEED_RECORDS,"ABSTRACT_SUPPLEMENT",report["queries"],check)
+    # Complement a truncated high-yield seed with nonoverlapping date strata.
+    # Only one cell per job, no model requests, no qualification clearance.
+    if isinstance(pubmed,PubMedSource) and pubmed.http.loader is None and abstract_enricher:
+        from .stratified_retrieval import collect as stratified_collect
+        ranked=sorted(range(len(samples)),key=lambda i:(-samples[i][2],i))
+        for i in ranked:
+            pair,rows,n=samples[i]
+            if n<2 or len(rows)<MAX_SEED_RECORDS:continue
+            dated=PubMedSource(http=pubmed.http,sort="relevance")
+            dated.api_key=pubmed.api_key;dated.email=pubmed.email
+            audit,extra=stratified_collect(dated,query_pair(pair),budget=60,check=check)
+            new=[_record(x) for x in extra if str(x.record_id) not in {str(r["source_record_id"]) for r in rows if r["source"]=="PubMed"}]
+            if new:
+                new,diag=abstract_enricher(new);report["queries"].append(diag);rows.extend(new)
+            report["stratified_seed_recovery"]={"population":pair[0],"intervention":pair[1],"new_records":len(new),**audit}
+            for win in audit["windows"]:
+                report["queries"].append({"source":"PubMed","stage":"DATE_STRATIFIED_SEED",**win})
+            break
     # Recover near-threshold comparisons before spending AI requests.
     recovery=[]
     for i,(pair,rows,_) in enumerate(samples):
@@ -520,7 +551,7 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
             if key2 in recovered:continue
             if len(recovered)>=MAX_REVIEW_TITLE_RECOVERIES:break
             recovered.add(key2)
-            extra=_search(pubmed,review_title_query(pair,control),30,"REVIEW_TITLE_RECOVERY",report["queries"],check)
+            extra=review_title_recovery(pubmed,pair,control,report["queries"],check)
             status=report["queries"][-1]["status"]
             if extra and abstract_enricher:
                 if check:check()

@@ -56,3 +56,9 @@ def test_conventional_thermal_alias_uses_review_only_group():
     assert "thermal techniques" not in control_terms("conventional thermal ablation")
     assert '"thermal techniques"' not in comparison_query(pair,"conventional thermal ablation")
     assert review_control_terms("unrelated comparator")==("unrelated comparator",)
+
+
+def test_synergy_pubmed_url_identity_normalized():
+    from external_reference_validation import identity_set
+    assert identity_set({"pmid":"https://pubmed.ncbi.nlm.nih.gov/4022764/"})=={("pmid","4022764")}
+    assert not identity_set({"pmid":"https://unrelated.example/4022764"})
