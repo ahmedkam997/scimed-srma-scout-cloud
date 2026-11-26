@@ -296,6 +296,14 @@ class ReviewDiscoveryOrchestrator:
             candidate=self.ledger.get_candidate(candidate_id) or candidate
             candidate.metadata={**(candidate.metadata or {}),"registry_result_reference_audit":registry_audit}
             self.ledger.upsert_candidate(candidate)
+        if self.strict_rct_minimum and self.adaptive_search:
+            from .structured_extraction_v2 import collect as extract_leads
+            prior=(candidate.metadata or {}).get("structured_extraction_v2")
+            if not prior or recover_only:
+                extracted=extract_leads(self.ledger.list_external_evidence(candidate_id,"PRIMARY_STUDY"),previous=prior,check=self._check_cancellation)
+                candidate=self.ledger.get_candidate(candidate_id) or candidate
+                candidate.metadata={**(candidate.metadata or {}),"structured_extraction_v2":extracted}
+                self.ledger.upsert_candidate(candidate)
         logs = self.ledger.list_search_log(candidate_id)
         coverage = evaluate_coverage(logs, policy)
         evidence = discovery_evidence_snapshot(self.ledger, candidate_id)

@@ -496,6 +496,7 @@ def _build_research_dossier(
         "registry_result_reference_audit": dict(meta.get("registry_result_reference_audit") or {}),
         "study_centric_adjudication": build_v2_packet(ledger,candidate),
         "scientific_verification_v2": v2,
+        "structured_extraction_v2": dict(meta.get("structured_extraction_v2") or {}),
 
         "fulltext_search_date_resolutions": list(
             meta.get("discovery_fulltext_search_date_resolutions") or []

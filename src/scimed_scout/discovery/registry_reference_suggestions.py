@@ -19,6 +19,7 @@ def suggest(rows,*,lookup=None,max_lookups=3,check=None,previous=None):
         lookup=lambda n:http.get_json("https://clinicaltrials.gov/api/v2/studies/"+n)
     edges=defaultdict(set)
     outcome_by_registry={r["registry_id"]:r["outcomes"] for r in (previous or {}).get("registry_outcome_leads",[]) if r.get("registry_id") in known and isinstance(r.get("outcomes"),list)}
+    structured={r["registry_id"]:r for r in (previous or {}).get("structured_registry_leads",[]) if r.get("registry_id") in known}
     for hint in (previous or {}).get("suggestions",[]):
         if hint.get("pmid") in missing:edges[hint["pmid"]].update(n for n in hint.get("registry_ids",[]) if n in known)
     fresh=[n for n in known if n not in checked]
@@ -34,6 +35,8 @@ def suggest(rows,*,lookup=None,max_lookups=3,check=None,previous=None):
                 audit["attempts"].append({"nct":n,"status":"IDENTITY_MISMATCH"});continue
             from .registry_outcomes import extract
             outcome_by_registry[n]=extract(study,n)
+            from .structured_extraction_v2 import registry_leads
+            structured[n]=registry_leads(study,n)
             refs=(p.get("referencesModule") or {}).get("references") or []
             matched=set()
             for ref in refs:
@@ -48,6 +51,7 @@ def suggest(rows,*,lookup=None,max_lookups=3,check=None,previous=None):
     audit["attempts"]=[*prior,*new_attempts]
     audit["new_attempts"]=new_attempts
     audit["remaining_registry_ids"]=len(set(known)-{a.get("nct") for a in audit["attempts"] if a.get("status")=="CHECKED"})
+    audit["structured_registry_leads"]=[structured[n] for n in sorted(structured)]
     audit["registry_outcome_leads"]=[{"registry_id":n,"outcomes":v} for n,v in sorted(outcome_by_registry.items()) if v]
     audit["suggestions"]=[{"pmid":p,"registry_ids":sorted(ns),"status":"MANUAL_LINK_REVIEW" if len(ns)==1 else "AMBIGUOUS_REGISTRY_LINKS","source_urls":["https://clinicaltrials.gov/study/"+n for n in sorted(ns)]} for p,ns in sorted(edges.items())]
     return audit

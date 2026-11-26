@@ -15,3 +15,5 @@ Joint cue triage now counts the intersection at report-group level rather than t
 
 ## Phase 2 storage integrity
 SQLite schema v4 uses candidate + evidence type + source + native record ID as primary key. Migration is transactional, verifies row counts and flags legacy candidates; old overwritten data cannot be recovered from the surviving row. Legacy snapshots remain ineligible for V2 until fresh retrieval in a new ledger. Registry result extraction now runs even if every report has an observed registry link.
+
+Phase 2 extraction: exact-source abstract event/denominator leads, identity-checked OA JATS raw table cells with spans and Methods snippets, explicit registry design and participant count leads. No inferred arms, no automatic trial eligibility or pooling. Hybrid BM25 and existing lexical rank via reciprocal-rank fusion prioritizes uncached competitors; no exclusion, no new AI requests. Bounded OA calls and registry calls, no negative inference from missing data.
