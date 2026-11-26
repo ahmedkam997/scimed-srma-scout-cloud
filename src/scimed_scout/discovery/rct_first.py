@@ -129,9 +129,10 @@ OUTCOMES=("all cause mortality","mortality","cardiovascular death","hospitalizat
 # Sensitive RCT search *cue*, not a validated standalone search strategy.
 RCT_FILTER='(randomized controlled trial[pt] OR controlled clinical trial[pt] OR randomized[tiab] OR randomised[tiab] OR randomly[tiab] OR placebo[tiab] OR trial[tiab]) NOT (animals[mh] NOT humans[mh])'
 REVIEW_FILTER='(systematic[sb] OR meta-analysis[pt] OR systematic review[tiab])'
-ALLOCATION=r"(?:randomi[sz]ed|randomly (?:assigned|allocated))(?:\s+(?:(?:\d+[\s,]+)?(?:patients|participants|subjects|individuals|adults|children|women|men|people|infants)|\d+)(?:\s+[\w-]+){0,12}?)?\s+(?:to|into)\s+"
+# Ratios are removed from an allocation passage only, not from clinical terms.
+ALLOCATION=r"(?:randomi[sz]ed|randomly (?:assigned|allocated))(?:\s*\(\s*\d+\s*:\s*\d+\s*\))?(?:\s+in\s+(?:a\s+)?\d+\s*:\s*\d+\s+ratio)?(?:\s+(?:(?:\d+[\s,]+)?(?:patients|participants|subjects|individuals|adults|children|women|men|people|infants)|\d+)(?:\s+[\w-]+){0,12}?)?\s+(?:to|into)\s+"
 OWN_ASSIGN=re.compile(r"\b(?:randomi[sz]ed (?:controlled )?(?:trial|study)|placebo.controlled|sham.controlled|"+ALLOCATION+r")",re.I)
-SECONDARY=re.compile(r"\b(?:secondary analysis|post.hoc|subgroup analysis|sub.study|pooled analysis|individual patient data|insights from|rationale and design|trial protocol|study protocol|retracted publication)\b",re.I)
+SECONDARY=re.compile(r"\b(?:secondary analysis|post.hoc|subgroup analysis|sub.study|subanalysis|pooled analysis|individual patient data|insights from|rationale and design|trial protocol|study protocol|retracted publication|extended follow.up|author correction|erratum)\b",re.I)
 COMPARE=re.compile(r"\b(?:versus|vs\.?|compared (?:with|to)|randomi[sz]ed (?:to|into)|randomly (?:assigned|allocated)|placebo.controlled|sham.controlled)\b",re.I)
 BACKGROUND=re.compile(r"^(?:background|introduction|rationale|objective|aim)\s*[:：]",re.I)
 
@@ -234,6 +235,15 @@ def exact_arms(left,right,interventions,control):
 def explicit_comparison(text,interventions,control):
     """Conservative direct-arm clues, not confirmed randomization or eligibility."""
     text=clean_passage(text)
+    # Coordinated title ellipsis: e.g. "X or Y ablation". Expand only a
+    # shared final noun explicitly present in both requested arm names.
+    # No inferred head if the phrase is absent or ambiguous.
+    for inter in interventions:
+        iw=str(inter).split();cw=str(control).split()
+        if len(iw)>=2 and len(cw)>=2 and iw[-1].casefold()==cw[-1].casefold():
+            left=" ".join(iw[:-1]);right=str(control)
+            pattern=r"^"+re.escape(left)+r"\s+or\s+"+re.escape(right)+r"(?=\s|[:.,]|$)"
+            if re.search(pattern,text,re.I):return True
     if not any_term(text,interventions) or not any_term(text,control_terms(control)):return False
     # Prefer explicit allocation. The initial population/procedure cannot
     # leak into either arm. Shared-agent/composition ambiguity is withheld.

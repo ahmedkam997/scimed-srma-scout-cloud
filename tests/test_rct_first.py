@@ -192,3 +192,14 @@ def test_single_direct_arm_can_seed_search_but_not_shortlist():
     assert len(p)==1 and p[0]["family_cues"]==1 and d["single_direct_arm_anchors"]==1
     row["title"]="Vericiguat in cardiomyopathy: randomized trial"
     assert derive([row],[],year=2026,allow_single=True,specialty="cardiology")==[]
+
+
+def test_ratio_and_coordinated_title_comparisons():
+    from scimed_scout.discovery.rct_first import explicit_comparison
+    # Paraphrased regression inputs grounded in PMIDs 39217271, 37634148,
+    # 36876753 and 39602173. Add-on interventions must stay separate.
+    assert explicit_comparison("Patients were randomized (1:1) to receive usual care or digital consults.",("digital consults",),"usual care")
+    assert explicit_comparison("Pulsed field or conventional thermal ablation for paroxysmal atrial fibrillation",("pulsed field ablation",),"conventional thermal ablation")
+    assert explicit_comparison("Patients were randomly assigned in a 1:1 ratio to receive either TEER or medical therapy.",("TEER",),"medical therapy")
+    assert not explicit_comparison("T-TEER plus medical therapy versus medical therapy alone",("T-TEER",),"medical therapy")
+    assert not explicit_comparison("We randomized patients to aspirin or placebo in addition to ticagrelor",("ticagrelor",),"placebo")

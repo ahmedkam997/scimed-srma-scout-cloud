@@ -11,6 +11,9 @@ def evaluate(case,primary,reviews):
     def ids(rows):return {str(r["source_record_id"]) for r in rows}
     all_rows,buckets=comparison_rows(case["pair"],primary,comparator=case["comparator"])
     matched=buckets.get(case["comparator"],[])
+    # Clinical reference set includes add-on designs; direct-arm classifier
+    # may appropriately withhold a shared background contrast. Preserve it
+    # separately instead of counting as a false direct-arm match.
     refs=set(case["primary"]);negative=set(case["nonprimary"]);followups=set(case.get("followups",[]))
     return {"reference_primary":sorted(refs),"retrieved_primary":sorted(refs&ids(primary)),
             "retained_primary_comparison_cue":sorted(refs&ids(matched)),
@@ -18,6 +21,7 @@ def evaluate(case,primary,reviews):
             "followups_retrieved":sorted(followups&ids(primary)),"followups_retained_as_report_cues":sorted(followups&ids(matched)),
             "family_audit":family_summary(matched),"reference_reviews":sorted(case["reviews"]),
             "retrieved_review_references":sorted(set(case["reviews"])&ids(reviews)),
+            "known_add_on_reference_requires_separate_pico":sorted({"39602173"} & ids(primary)) if case["id"]=="TRICUSPID_TEER" else [],
             "independent_trial_eligibility_validated":False}
 
 def main():

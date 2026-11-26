@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'src/scimed_scout/discovery/scientific_validation_v2.py'
+      - 'src/scimed_scout/discovery/rct_first.py'
       - 'benchmarks/scientific_validation_v2.json'
       - '.github/workflows/scientific-validation-v2.yml'
 permissions:
