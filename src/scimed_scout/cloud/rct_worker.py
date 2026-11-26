@@ -187,7 +187,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     "adaptive_retrieval_audit":m.get("adaptive_retrieval_audit") or [],"adaptive_search_audit":m.get("adaptive_search_audit") or {},"fulltext_search_date_resolutions":m.get("discovery_fulltext_search_date_resolutions") or [],
                     "competitor_audit":{"published_reviews_discovered":m.get("discovery_competitor_records_discovered",0),
                     "unassessed_reviews":m.get("discovery_unassessed_review_count",0),"unassessed_registrations":m.get("discovery_unassessed_registration_count",0)},
-                    "scorecard":m.get("discovery_gate_inputs") or {},"opportunity_mcda":m.get("opportunity_mcda") or {}})
+                    "scorecard":m.get("discovery_gate_inputs") or {},"scoring_deferred_reason":m.get("discovery_scoring_deferred_reason",""),"registry_result_reference_audit":m.get("registry_result_reference_audit") or {},"registration_enrichment_audit":m.get("registration_enrichment_audit") or {},"opportunity_mcda":m.get("opportunity_mcda") or {}})
             recovery_queue=[{"candidate_id":x.candidate_id,"reasons":recovery_reasons(x,ledger.get_candidate(x.candidate_id).metadata or {})} for x in checked]
             recovery_queue=[x for x in recovery_queue if x["reasons"]]
             desired=min(3,job.final_options)
@@ -200,7 +200,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
             package["unverified_generated_options"]=[_draft(c) for c in candidates if c.candidate_id not in ids]
             package["unverified_generated_options_are_not_qualified"]=True
             package["rct_first"]={"version":VERSION,"minimum_comparison_family_leads":MIN_FAMILIES,"seed_status":seed["status"],
-                "seed_queries":seed["queries"],"citation_recovery":seed.get("citation_recovery",{}),"dynamic_discovery":seed.get("dynamic_discovery",{}),"comparison_recovery":seed.get("comparison_recovery",[]),"review_comparison_recovery":seed.get("review_comparison_recovery",[]),"review_title_recovery":seed.get("review_title_recovery",[]),"cells":[{k:v for k,v in x.items() if k!="source_records"} for x in seed.get("cells",[])],
+                "seed_queries":seed["queries"],"stratified_seed_recovery":seed.get("stratified_seed_recovery",{}),"citation_recovery":seed.get("citation_recovery",{}),"dynamic_discovery":seed.get("dynamic_discovery",{}),"comparison_recovery":seed.get("comparison_recovery",[]),"review_comparison_recovery":seed.get("review_comparison_recovery",[]),"review_title_recovery":seed.get("review_title_recovery",[]),"cells":[{k:v for k,v in x.items() if k!="source_records"} for x in seed.get("cells",[])],
                 "deep_limit":MAX_DEEP,"confirmed_independent_eligible_trials":None,"novelty_confirmed_by_seed":False,
                 "scope_note":"Unsupported specialties return explicit diagnostic instead of switching to mixed-design AI generation. Bounded samples do not establish absence.",
                 "selected_for_deep_verification":len(selected),"source_linked_candidates":len(candidates)}

@@ -345,6 +345,7 @@ def _build_research_dossier(
     logs = ledger.list_search_log(candidate.candidate_id)
     scorecard = dict(meta.get("discovery_gate_inputs") or {})
     latest = ledger.list_decisions(candidate.candidate_id)
+    from .adjudication import build as build_adjudication
     return {
         "schema_version": 1,
         "candidate_id": candidate.candidate_id,
@@ -483,6 +484,9 @@ def _build_research_dossier(
         "rct_first_seed": dict(meta.get("rct_first") or {}),
         "rct_first_final_audit": dict(meta.get("rct_first_final_audit") or {}),
         "registration_enrichment_audit": dict(meta.get("registration_enrichment_audit") or {}),
+        "registry_result_reference_audit": dict(meta.get("registry_result_reference_audit") or {}),
+        "study_centric_adjudication": build_adjudication(candidate,primary,review_records,registrations,ambiguous=unclassified_review_leads+other_preregistrations,opportunity=meta.get("discovery_review_opportunity")),
+
         "fulltext_search_date_resolutions": list(
             meta.get("discovery_fulltext_search_date_resolutions") or []
         ),

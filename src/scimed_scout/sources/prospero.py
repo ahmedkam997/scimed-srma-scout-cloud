@@ -28,7 +28,13 @@ class ProsperoCliSource:
     name: str = "PROSPERO"
     max_pages: int = 5
 
+    def search_recovery(self, query: str, *, limit: int = 20) -> SearchResult:
+        return self._search(query,limit=limit,page_cap=10)
+
     def search(self, query: str, *, limit: int = 20) -> SearchResult:
+        return self._search(query,limit=limit,page_cap=min(5,max(1,self.max_pages)))
+
+    def _search(self, query: str, *, limit: int, page_cap: int) -> SearchResult:
         node_entry = os.getenv("PROSPERO_CLI_JS", "").strip() if self.runner is None else ""
         if self.runner is None and not (node_entry and os.path.isfile(node_entry)) and shutil.which(self.executable) is None:
             return SearchResult(
@@ -40,7 +46,7 @@ class ProsperoCliSource:
         # focused clinical queries. PROSPERO can change result totals while
         # paginating; do not treat such changes as complete coverage.
         page_size = 50
-        max_pages = min(5, max(1, self.max_pages))
+        max_pages = min(10,max(1,page_cap))
         all_records: dict[str, SearchRecord] = {}
         total: int | None = None
         count_changed = False

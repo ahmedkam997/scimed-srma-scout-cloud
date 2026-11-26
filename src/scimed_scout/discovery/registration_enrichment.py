@@ -154,9 +154,52 @@ def enrich_records(rows,*,fetcher=None,max_lookups=3):
             out[index]={**row,"payload":payload}
     return out,{"method":"OPEN_ACCESS_REGISTRATION_V3","source_calls":attempts,"records_linked":sum(a["status"]=="LINK_FOUND" for a in audit),"attempts":audit,"independence_confirmed":False}
 
-def enrich_ledger(ledger,candidate_id,*,fetcher=None,max_lookups=3):
+def enrich_fair(rows,*,fetcher=None,max_lookups=3,previous=None,check=None):
+    """Spend first requests on different reports, rotate attempts on resume."""
+    fetcher=fetcher or _fetch_xml
+    cap=max(0,min(3,int(max_lookups)))
+    old=(previous or {}).get("attempts",[])
+    counts={}
+    for a in old:
+        k=(a.get("pmid"),a.get("pmcid"));counts[k]=len(a.get("routes",[]))
+    eligible={}
+    for i,r in enumerate(rows):
+        if registration_signals(r):continue
+        p,m=_pmid(r),_pmcid(r)
+        if p and m:eligible.setdefault((p,m),(i,r))
+    ordered=sorted(eligible,key=lambda k:(counts.get(k,0),not bool(re.search(r"\b(?:analysis|subgroup|follow.up|secondary)\b",str(eligible[k][1].get("title") or ""),re.I)),k))
+    out=list(rows);audit=[];calls=0;linked={}
+    for k in ordered:
+        if calls>=cap:break
+        # Each report receives at most one route per pass. Previously
+        # attempted reports use next route; no repeat of exhausted routes.
+        routes=list(_routes(k[1]));n=counts.get(k,0)
+        if n>=len(routes):continue
+        if check:check()
+        route,url=routes[n];calls+=1
+        r=eligible[k][1];e=None
+        item={"route":route,"status":"NO_VERIFIED_LINK"}
+        try:
+            raw=fetcher(url)
+            e=extract_bioc_registration(r,raw,source_url=url) if route=="NCBI_BIOC" else extract_registration(r,raw,source_url=url)
+            if e:item["status"]="LINK_FOUND";linked[k]=e
+        except Exception as exc:item.update(status="ACCESS_UNRESOLVED",error=_error_code(exc))
+        audit.append({"pmid":k[0],"pmcid":k[1],"status":"LINK_FOUND" if e else "ACCESS_UNRESOLVED","evidence":e,"routes":[item]})
+    merged={(a["pmid"],a["pmcid"]):dict(a) for a in old if a.get("pmid") and a.get("pmcid")}
+    for a in audit:
+        k=(a["pmid"],a["pmcid"]);prior=merged.get(k,{})
+        merged[k]={**a,"routes":[*prior.get("routes",[]),*a["routes"]]}
+    for i,r in enumerate(rows):
+        if registration_signals(r):continue
+        if e:=linked.get((_pmid(r),_pmcid(r))):
+            p=dict(r.get("payload") or {});m=dict(p.get("metadata") or {})
+            m.update(trial_registration_id=e["registration_id"],registration_enrichment_evidence=e);p["metadata"]=m
+            out[i]={**r,"payload":p}
+    return out,{"method":"OPEN_ACCESS_REGISTRATION_FAIR_V1","source_calls":calls,"records_linked":len(linked),"attempts":list(merged.values()),"new_attempts":audit,"remaining_report_routes":sum(max(0,3-len(merged.get(k,{}).get("routes",[]))) for k in eligible if k not in linked),"independence_confirmed":False}
+
+def enrich_ledger(ledger,candidate_id,*,fetcher=None,max_lookups=3,fair=False,previous=None,check=None):
     rows=ledger.list_external_evidence(candidate_id,"PRIMARY_STUDY")
-    changed,audit=enrich_records(rows,fetcher=fetcher,max_lookups=max_lookups)
+    changed,audit=(enrich_fair(rows,fetcher=fetcher,max_lookups=max_lookups,previous=previous,check=check) if fair else enrich_records(rows,fetcher=fetcher,max_lookups=max_lookups))
     for old,new in zip(rows,changed):
         if old is new:continue
         ledger.upsert_external_evidence(candidate_id,"PRIMARY_STUDY",new["source_record_id"],

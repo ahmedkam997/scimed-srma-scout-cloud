@@ -72,7 +72,8 @@ def compare_assessments(items):
         rows=[]
         for cid,a in items:
             lo,hi=a["scenarios"][scenario]["documented_bounds"]
-            rows.append({"candidate_id":cid,"lower":lo,"upper":hi})
+            exploratory=a["scenarios"][scenario].get("exploratory_bounds",[lo,hi])
+            rows.append({"candidate_id":cid,"lower":lo,"upper":hi,"exploratory_lower":exploratory[0],"exploratory_upper":exploratory[1]})
         winners=[r["candidate_id"] for r in rows if len(rows)>1 and all(r["lower"]>s["upper"] for s in rows if s["candidate_id"]!=r["candidate_id"])]
         out[scenario]={"intervals":rows,"strict_dominance_winner":winners[0] if len(winners)==1 else None}
     winners=[x["strict_dominance_winner"] for x in out.values()]
@@ -151,7 +152,7 @@ def profile(candidate, reviews=None, *, opportunity=None, scorecard=None, primar
     n=family_summary(records)["family_leads"] if primary_records is not None else int(info.get("family_leads") or 0)
     # Operational priority only: evidence floor, source-linked actionable gaps,
     # and capped count rather than reward for the largest saturated topic.
-    priority=(int(n>=MIN_FAMILIES),int(bool(post or correction)),int(bool(synthesis_cues)),min(n,14))
+    priority=(int(n>=MIN_FAMILIES),int(bool(post or correction)),int(bool(synthesis_cues)),int(bool(outcome_hypotheses)),min(n,14))
     ratings={}
     if n:
         ratings["evidence_readiness"]={"rating":min(5,round(n/MIN_FAMILIES*3,2)),"status":"PRELIMINARY",

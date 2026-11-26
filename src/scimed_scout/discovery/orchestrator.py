@@ -272,9 +272,10 @@ class ReviewDiscoveryOrchestrator:
                 (recover_only and previous_supplement.get("status")=="DEFERRED_BASE_SOURCE_FAILURE")):
             self._supplementary_search(candidate)
             candidate=self.ledger.get_candidate(candidate_id) or candidate
-        if self.adaptive_search and not (candidate.metadata or {}).get("registration_enrichment_audit"):
+        prior_enrichment=(candidate.metadata or {}).get("registration_enrichment_audit") or {}
+        if self.adaptive_search and (not prior_enrichment or (recover_only and prior_enrichment.get("remaining_report_routes",1)>0)):
             self._check_cancellation()
-            registration_audit=enrich_ledger(self.ledger,candidate_id,max_lookups=3)
+            registration_audit=enrich_ledger(self.ledger,candidate_id,max_lookups=3,fair=True,previous=prior_enrichment,check=self._check_cancellation)
             candidate=self.ledger.get_candidate(candidate_id) or candidate
             candidate.metadata={**(candidate.metadata or {}),"registration_enrichment_audit":registration_audit}
             self.ledger.upsert_candidate(candidate)
@@ -558,6 +559,7 @@ class ReviewDiscoveryOrchestrator:
                     client,
                     source_queries[source_name],
                     limit_per_query,
+                    recover_only,
                 )
                 for source_name, client in configured
             }
@@ -767,11 +769,13 @@ def _run_source_queries(
     client: SourceClient,
     queries: tuple[str, ...],
     limit_per_query: int,
+    recover_only: bool = False,
 ) -> list[tuple[str, SearchResult]]:
     results: list[tuple[str, SearchResult]] = []
     for index, query in enumerate(queries):
         try:
-            result = client.search(query, limit=limit_per_query)
+            search=getattr(client,"search_recovery",client.search) if recover_only else client.search
+            result = search(query, limit=limit_per_query)
         except Exception as exc:
             result = SearchResult(
                 source=getattr(client, "name", "Unknown"),
