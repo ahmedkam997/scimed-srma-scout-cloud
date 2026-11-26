@@ -21,6 +21,7 @@ permissions:
   contents: read
 jobs:
   triage:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[replay-alt]')
     runs-on: ubuntu-latest
     timeout-minutes: 7
     env:
@@ -128,3 +129,38 @@ jobs:
           name: phase3-competitor-recovery
           path: phase3-competitor-recovery.json
           retention-days: 14
+  replay-alternate-ledger:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[replay-alt]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: '45894079291'
+          name: phase3-family-methods
+          path: recovery
+      - name: Expose bounded family evidence from the preserved artifact
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path("recovery/phase3-family-methods.json").read_text())
+          for candidate, evidence in result["candidates"].items():
+              ledger = evidence["families"]
+              summary = {
+                  "linked_pmids": {
+                      group["registration_id"]: [row["report_id"] for row in group["reports"]]
+                      for group in ledger["families"]
+                  },
+                  "unlinked": [row["report_id"] for row in ledger["unlinked_reports"]],
+                  "ambiguous": [row["report_id"] for row in ledger["ambiguous_reports"]],
+                  "reports": {
+                      pmid: [record["title"], len(record["count_leads"]), len(record["ratio_leads"])]
+                      for pmid, record in evidence["outcome_cues"].items()
+                  },
+                  "qualification_granted": False,
+              }
+              print(f"::notice title=Recovered family ledger {candidate}::{json.dumps(summary).replace('%', '%25')}")
+          PY
