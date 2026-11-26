@@ -53,6 +53,7 @@ class ReviewDiscoveryOrchestrator:
         adaptive_retrieval: bool = False,
         adaptive_recovery_only: bool = False,
         strict_rct_minimum: int = 0,
+        scientific_verifier=None,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
@@ -69,6 +70,7 @@ class ReviewDiscoveryOrchestrator:
         self.adaptive_retrieval = adaptive_retrieval
         self.adaptive_recovery_only = adaptive_recovery_only
         self.strict_rct_minimum = max(0,int(strict_rct_minimum))
+        self.scientific_verifier = scientific_verifier
 
     def run(
         self,
@@ -295,6 +297,28 @@ class ReviewDiscoveryOrchestrator:
         pico_audit, pico_records = assess_pico(candidate, primary_records)
         evidence = replace(evidence, pico_audit=pico_audit)
         pending = list(coverage.blockers)
+        # V2 can only use operator-trusted adjudication. A bibliographic cue,
+        # model output or metadata flag cannot clear the independent RCT gate.
+        if self.strict_rct_minimum and self.scientific_verifier is not None:
+            from .scientific_verification_v2 import snapshot
+            try:
+                verified=self.scientific_verifier(snapshot(self.ledger,candidate),coverage,policy)
+            except (OSError,ValueError,TypeError,KeyError) as exc:
+                verified={"qualification_granted":False,"blockers":["trusted adjudication unavailable: "+type(exc).__name__]}
+            candidate.metadata={**(candidate.metadata or {}),"scientific_verification_v2":verified}
+            self.ledger.upsert_candidate(candidate)
+            gate=verified.get("gate_result") or {}
+            if (coverage.complete and verified.get("qualification_granted") is True
+                    and verified.get("confirmed_independent_rct_count",0)>=max(7,self.strict_rct_minimum)
+                    and gate.get("all_discovery_gates_passed") is True and not gate.get("unresolved_type_a")
+                    and gate.get("decision")=="QUALIFIED — FIRST-CHOICE REVIEW TOPIC"):
+                candidate.metadata={**candidate.metadata,"discovery_gate_inputs":verified["scorecard"],"discovery_scoring_preliminary_only":False}
+                self.ledger.upsert_candidate(candidate)
+                self.ledger.set_candidate_status(candidate_id,CandidateStatus.QUALIFIED)
+                self._append_decision(candidate,decision=gate["decision"],reason="Trusted dual-reviewer V2 adjudication and all gates passed",
+                    payload={"scope":"SCIENTIFIC_VERIFICATION_V2","scientific_verification":verified,"final_gate_result":gate})
+                return DiscoveryCandidateResult(candidate_id,ranking_score,coverage,evidence,[],gate["decision"],CandidateStatus.QUALIFIED,gate)
+            pending.extend("TYPE-A: V2: "+x for x in verified.get("blockers",[]))
         if self.require_pico_signals and evidence.conservative_family_lead_count >= MIN_DISCOVERY_STUDIES and pico_audit["pico_design_family_leads"] < MIN_DISCOVERY_STUDIES:
             pending.append("TYPE-A: insufficient source-linked PICO/design cues for the minimum family-lead count; unresolved records need title/abstract and full-text assessment")
         strict_ready=True

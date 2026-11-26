@@ -95,7 +95,7 @@ def build_discovery_review_package(
             "triage": discovery_triage(verification),
             "research_dossier": _build_research_dossier(
                 ledger, candidate, verification,
-                "QUALIFIED_DISCOVERY_ONLY",
+                "FULLY_QUALIFIED_V2" if (candidate.metadata or {}).get("scientific_verification_v2",{}).get("qualification_granted") else "QUALIFIED_DISCOVERY_ONLY",
             ),
             "primary_study_screening_queue": _primary_screening_queue(
                 candidate, primary,
@@ -345,7 +345,9 @@ def _build_research_dossier(
     logs = ledger.list_search_log(candidate.candidate_id)
     scorecard = dict(meta.get("discovery_gate_inputs") or {})
     latest = ledger.list_decisions(candidate.candidate_id)
-    from .adjudication import build as build_adjudication
+    from .scientific_verification_v2 import snapshot as build_v2_packet
+    v2=meta.get('scientific_verification_v2') or {}
+    v2_pass=verification.candidate_status.value=='QUALIFIED' and v2.get('qualification_granted') is True
     return {
         "schema_version": 1,
         "candidate_id": candidate.candidate_id,
@@ -440,7 +442,7 @@ def _build_research_dossier(
             "trial_family_audit": verification.evidence.trial_family_audit,
             "pico_design_audit": verification.evidence.pico_audit,
             "conservative_family_lead_count": verification.evidence.conservative_family_lead_count,
-            "eligible_independent_studies_confirmed": None,
+            "eligible_independent_studies_confirmed": v2.get("confirmed_independent_rct_count") if v2_pass else None,
         },
         "published_review_evidence": [
             _source_record_for_review(record)
@@ -491,15 +493,16 @@ def _build_research_dossier(
         "rct_first_final_audit": dict(meta.get("rct_first_final_audit") or {}),
         "registration_enrichment_audit": dict(meta.get("registration_enrichment_audit") or {}),
         "registry_result_reference_audit": dict(meta.get("registry_result_reference_audit") or {}),
-        "study_centric_adjudication": build_adjudication(candidate,primary,review_records,registrations,ambiguous=unclassified_review_leads+other_preregistrations,opportunity=meta.get("discovery_review_opportunity")),
+        "study_centric_adjudication": build_v2_packet(ledger,candidate),
+        "scientific_verification_v2": v2,
 
         "fulltext_search_date_resolutions": list(
             meta.get("discovery_fulltext_search_date_resolutions") or []
         ),
-        "study_screening_and_trial_family_adjudication_complete": False,
+        "study_screening_and_trial_family_adjudication_complete": bool(v2_pass),
         "risk_of_bias_complete": False,
         "meta_analysis_performed": False,
-        "independent_literature_confirmation_required": True,
+        "independent_literature_confirmation_required": not v2_pass,
         "next_actions": [
             "Re-run database-specific searches and check all PARTIAL / ACCESS_FAILED queries.",
             "Verify overlapping published reviews, PROSPERO and OSF records, their last actual search dates, and update value.",
