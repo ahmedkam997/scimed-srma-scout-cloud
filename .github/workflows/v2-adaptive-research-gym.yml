@@ -37,5 +37,6 @@ jobs:
           name: adaptive-gym-report
           path: |
             adaptive-policy.json
+            adaptive-experience.json
             adaptive-gym-report.json
             report-gym.json
