@@ -379,6 +379,24 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
         pair,rows,n=samples[i]
         if n<2:continue
         rows+=_search(europe,ep_query(pair),MAX_SEED_RECORDS,"ABSTRACT_SUPPLEMENT",report["queries"],check)
+    # Complement a truncated high-yield seed with nonoverlapping date strata.
+    # Only one cell per job, no model requests, no qualification clearance.
+    if isinstance(pubmed,PubMedSource) and pubmed.http.loader is None and abstract_enricher:
+        from .stratified_retrieval import collect as stratified_collect
+        ranked=sorted(range(len(samples)),key=lambda i:(-samples[i][2],i))
+        for i in ranked:
+            pair,rows,n=samples[i]
+            if n<2 or len(rows)<MAX_SEED_RECORDS:continue
+            dated=PubMedSource(http=pubmed.http,sort="relevance")
+            dated.api_key=pubmed.api_key;dated.email=pubmed.email
+            audit,extra=stratified_collect(dated,query_pair(pair),budget=60,check=check)
+            new=[_record(x) for x in extra if str(x.record_id) not in {str(r["source_record_id"]) for r in rows if r["source"]=="PubMed"}]
+            if new:
+                new,diag=abstract_enricher(new);report["queries"].append(diag);rows.extend(new)
+            report["stratified_seed_recovery"]={"population":pair[0],"intervention":pair[1],"new_records":len(new),**audit}
+            for win in audit["windows"]:
+                report["queries"].append({"source":"PubMed","stage":"DATE_STRATIFIED_SEED",**win})
+            break
     # Recover near-threshold comparisons before spending AI requests.
     recovery=[]
     for i,(pair,rows,_) in enumerate(samples):

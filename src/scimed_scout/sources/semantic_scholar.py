@@ -13,7 +13,7 @@ class SemanticScholarSource:
     endpoint = "https://api.semanticscholar.org/graph/v1/paper/search"
 
     def __init__(self, http: JsonHttpClient | None = None, api_key: str | None = None, *, allow_keyless_probe: bool = True):
-        self.http = http or JsonHttpClient()
+        self.http = http or JsonHttpClient(service="semantic_scholar", min_interval=1.1, retries=0, retry_rate_limit=False)
         self.api_key = api_key if api_key is not None else os.getenv("SEMANTIC_SCHOLAR_API_KEY", "")
         self.allow_keyless_probe = allow_keyless_probe
         self._rate_limited = False

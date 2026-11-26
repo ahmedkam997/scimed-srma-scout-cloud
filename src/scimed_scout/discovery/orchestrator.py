@@ -278,6 +278,12 @@ class ReviewDiscoveryOrchestrator:
             candidate=self.ledger.get_candidate(candidate_id) or candidate
             candidate.metadata={**(candidate.metadata or {}),"registration_enrichment_audit":registration_audit}
             self.ledger.upsert_candidate(candidate)
+        if self.adaptive_search and not (candidate.metadata or {}).get("registry_result_reference_audit"):
+            from .registry_reference_suggestions import suggest
+            registry_audit=suggest(self.ledger.list_external_evidence(candidate_id,"PRIMARY_STUDY"),max_lookups=3,check=self._check_cancellation)
+            candidate=self.ledger.get_candidate(candidate_id) or candidate
+            candidate.metadata={**(candidate.metadata or {}),"registry_result_reference_audit":registry_audit}
+            self.ledger.upsert_candidate(candidate)
         logs = self.ledger.list_search_log(candidate_id)
         coverage = evaluate_coverage(logs, policy)
         evidence = discovery_evidence_snapshot(self.ledger, candidate_id)
