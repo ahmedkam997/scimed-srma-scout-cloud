@@ -31,3 +31,12 @@ def test_transfer_queries_have_no_reference_identifiers():
         for q,_ in routes:
             assert all(i not in q for i in SURG_REF["linked_reports"])
             assert SURG_REF["review_pmid"] not in q
+
+def test_failed_transfer_rejects_policy_even_when_source_resolved():
+    from scripts.v2_adaptive_gym import assess_transfer
+    result=assess_transfer({"resolved":True,"recall":.3},{"resolved":True,"recall":1})
+    assert not result["passed"] and result["fallback"]=="always_expand"
+    assert not result["production_approved"] and not result["scientific_search_complete"]
+    result=assess_transfer({"resolved":True,"recall":1},{"resolved":True,"recall":1})
+    assert result["passed"] and not result["production_approved"]
+    assert not assess_transfer({"resolved":False,"recall":None},{"resolved":True,"recall":1})["passed"]
