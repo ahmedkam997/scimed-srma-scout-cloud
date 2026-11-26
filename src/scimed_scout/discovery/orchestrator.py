@@ -278,7 +278,9 @@ class ReviewDiscoveryOrchestrator:
             candidate=self.ledger.get_candidate(candidate_id) or candidate
             candidate.metadata={**(candidate.metadata or {}),"registration_enrichment_audit":registration_audit}
             self.ledger.upsert_candidate(candidate)
-        if self.adaptive_search and not (candidate.metadata or {}).get("registry_result_reference_audit"):
+        from scimed_scout.sources.clinicaltrials import ClinicalTrialsGovSource
+        registry_client=self.clients.get("ClinicalTrials.gov")
+        if self.adaptive_search and isinstance(registry_client,ClinicalTrialsGovSource) and registry_client.http.loader is None and not (candidate.metadata or {}).get("registry_result_reference_audit"):
             from .registry_reference_suggestions import suggest
             registry_audit=suggest(self.ledger.list_external_evidence(candidate_id,"PRIMARY_STUDY"),max_lookups=3,check=self._check_cancellation)
             candidate=self.ledger.get_candidate(candidate_id) or candidate
