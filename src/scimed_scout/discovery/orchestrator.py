@@ -297,7 +297,14 @@ class ReviewDiscoveryOrchestrator:
             candidate.metadata={**(candidate.metadata or {}),"registry_result_reference_audit":registry_audit}
             self.ledger.upsert_candidate(candidate)
         if self.strict_rct_minimum and self.adaptive_search:
-            from .structured_extraction_v2 import collect as extract_leads
+            from .structured_extraction_v2 import collect as extract_leads,recover_pubmed_abstracts
+            pubmed=self.clients.get("PubMed")
+            from scimed_scout.sources.pubmed import PubMedSource
+            if isinstance(pubmed,PubMedSource) and pubmed.http.loader is None:
+                recovery=recover_pubmed_abstracts(self.ledger,candidate_id,pubmed,previous=(candidate.metadata or {}).get("v2_exact_pmid_recovery"),check=self._check_cancellation)
+                candidate=self.ledger.get_candidate(candidate_id) or candidate
+                candidate.metadata={**(candidate.metadata or {}),"v2_exact_pmid_recovery":recovery}
+                self.ledger.upsert_candidate(candidate)
             prior=(candidate.metadata or {}).get("structured_extraction_v2")
             if not prior or recover_only:
                 extracted=extract_leads(self.ledger.list_external_evidence(candidate_id,"PRIMARY_STUDY"),previous=prior,check=self._check_cancellation)

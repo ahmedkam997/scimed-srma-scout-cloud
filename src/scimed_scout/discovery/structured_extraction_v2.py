@@ -114,3 +114,41 @@ def collect(rows,*,fetcher=None,previous=None,max_fulltexts=3,check=None):
         if "fulltext_attempts" not in entry:entry["fulltext_attempts"]=old.get("fulltext_attempts",[])
         results.append(entry)
     return {"version":VERSION,"reports":results,"source_calls":calls,"eligibility_confirmed":False,"pooling_allowed":False}
+
+def recover_pubmed_abstracts(ledger,candidate_id,client,*,previous=None,fetcher=None,check=None):
+    from scimed_scout.sources.pubmed_abstracts import parse_efetch,_fetch
+    prior=set((previous or {}).get("attempted_pmids",[]))
+    rows=ledger.list_external_evidence(candidate_id,"PRIMARY_STUDY")
+    # Only PMIDs positively identified in PubMed or supported external metadata.
+    # Conflicting IDs and untyped native record IDs are not guesses.
+    present=set()
+    todo=set()
+    for row in rows:
+        ids=identifiers(row)
+        if len(ids["pmid"])!=1 or len(ids["doi"])>1:continue
+        pmid=next(iter(ids["pmid"]))
+        if abstract(row):present.add(pmid)
+        else:todo.add(pmid)
+    ids=sorted(todo-present-prior)[:40]
+    result={"method":"EXACT_PMID_ABSTRACT_RECOVERY_V2","requested":len(ids),"retrieved":0,"attempted_pmids":sorted(prior),"source_calls":0,"qualification_granted":False}
+    if not ids:return result
+    if check:check()
+    result["source_calls"]=1
+    try:
+        found,diag=parse_efetch((fetcher or (lambda x:_fetch(client,x)))(ids),ids)
+        for pmid,metadata in found.items():
+            title=metadata.get("pubmed_efetch_title")
+            if not title or not metadata.get("abstractText"):continue
+            old=next((r for r in rows if r["source"]=="PubMed" and r["source_record_id"]==pmid),None)
+            payload=dict((old or {}).get("payload") or {});meta=dict(payload.get("metadata") or {})
+            for k,v in metadata.items():
+                if v:meta[k]=v
+            payload.update(url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",metadata=meta)
+            ledger.upsert_external_evidence(candidate_id,"PRIMARY_STUDY",pmid,source="PubMed",title=title,payload=payload)
+            result["retrieved"]+=1
+        result.update(status="SEARCHED_POSITIVE" if len(found)==len(ids) and not any(diag.values()) else "PARTIAL",**diag)
+        result["attempted_pmids"]=sorted(prior|set(ids))
+    except Exception as ex:
+        result.update(status="ACCESS_UNRESOLVED",error_type=type(ex).__name__)
+        # Transient access failure must not permanently consume IDs.
+    return result

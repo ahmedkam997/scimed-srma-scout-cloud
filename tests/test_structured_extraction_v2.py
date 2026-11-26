@@ -54,3 +54,14 @@ def test_rank_only_preserves_entire_inventory():
     rows=[{"source":"PubMed","source_record_id":str(i),"title":t,"payload":{}} for i,t in enumerate(["Heart failure exercise","Abdominal surgery","Dapagliflozin versus placebo in heart failure","Dapagliflozin in diabetes"])]
     ranked=hybrid(c,rows)
     assert len(ranked)==len(rows) and set(r["source_record_id"] for r in ranked)==set(r["source_record_id"] for r in rows)
+
+def test_exact_pmid_recovery_does_not_replace_other_source(tmp_path):
+    from scimed_scout.storage import SQLiteLedger,ProjectRecord
+    from scimed_scout.discovery.structured_extraction_v2 import recover_pubmed_abstracts
+    with SQLiteLedger(tmp_path/"r.sqlite") as ledger:
+        ledger.upsert_project(ProjectRecord("p","Medicine"));ledger.upsert_candidate(CandidateRecord("c","p","Q","Medicine"))
+        ledger.upsert_external_evidence("c","PRIMARY_STUDY","29067426",source="Other",title="Other source",payload={"metadata":{"pmid":"29067426"}})
+        raw=b'<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>29067426</PMID><Article><ArticleTitle>ROLARR</ArticleTitle><Abstract><AbstractText>19 of 236 patients.</AbstractText></Abstract></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>'
+        a=recover_pubmed_abstracts(ledger,"c",None,fetcher=lambda ids:raw)
+        assert a["retrieved"]==1 and len(ledger.list_external_evidence("c"))==2
+        assert recover_pubmed_abstracts(ledger,"c",None,previous=a,fetcher=lambda ids:raw)["source_calls"]==0
