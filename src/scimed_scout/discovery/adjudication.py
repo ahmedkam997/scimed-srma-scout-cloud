@@ -16,7 +16,7 @@ def key(r):
 def citation(r):
     p=r.get("payload") or {}
     ids=identifiers(r)
-    return {"id":key(r),"title":r.get("title",""),"url":p.get("url",""),"doi":sorted(ids["doi"]),"pmid":sorted(ids["pmid"]),"year":p.get("year")}
+    return {"id":key(r),"source":r.get("source",""),"record_id":str(r.get("source_record_id") or ""),"title":r.get("title",""),"url":p.get("url",""),"doi":sorted(ids["doi"]),"pmid":sorted(ids["pmid"]),"year":p.get("year")}
 
 def build(candidate, primary, reviews, registrations, *, ambiguous=(), opportunity=None):
     """Export all records in compact index, no artificial exclusions."""

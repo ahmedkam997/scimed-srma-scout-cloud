@@ -78,15 +78,15 @@ jobs:
             echo "No queued work."
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: steps.config.outputs.ready == 'true' && steps.queue.outputs.has_job == 'true'
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         if: steps.config.outputs.ready == 'true' && steps.queue.outputs.has_job == 'true'
         with:
           python-version: '3.12'
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         if: steps.config.outputs.ready == 'true' && steps.queue.outputs.has_job == 'true'
         with:
           node-version: '22'
@@ -108,7 +108,7 @@ jobs:
 
       - name: Upload aggregate discovery telemetry
         if: always() && steps.queue.outputs.kind == 'discovery'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: scimed-worker-telemetry
           path: ${{ runner.temp }}/scimed-worker-telemetry.json

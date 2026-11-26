@@ -74,6 +74,18 @@
     add(dossier.registration_evidence || topic?.registration_examples, 'registration', true);
     add(screening.unassessed_review_queue, 'review', false);
     add(screening.unassessed_registration_queue, 'registration', false);
+    const full = dossier.study_centric_adjudication?.competitor_index;
+    if (Array.isArray(full)) {
+      for (const raw of full) {
+        // Unclassified hits stay in the portable packet; do not fabricate a
+        // review/protocol label or a resolved overlap for them.
+        const kind=raw.kind==='REVIEW'?'review':raw.kind==='REGISTRATION'?'registration':null;
+        if(!kind)continue;
+        add([{...raw,doi:Array.isArray(raw.doi)?(raw.doi.length===1?raw.doi[0]:''):raw.doi,
+          last_search_date_if_documented:raw.last_search_date_cue?.date||'',
+          overlap_assessment:raw.model_overlap?{overall_overlap:raw.model_overlap}:null}],kind,!!raw.model_overlap);
+      }
+    }
     const q = qOf(topic);
     const concepts = [
       [0.50, tokens(q.intervention_exposure_index_test)],
@@ -314,7 +326,7 @@
       '</details>';
   }
 
-  function render(job, topic) {
+  function render(job, topic, offsets = {}) {
     if (!topic?.candidate_id || !job?.id) return '';
     const records = evidenceOf(topic);
     const saved = read(job, topic);
@@ -345,11 +357,17 @@
     };
     const itemsHtml = (kind, label) => {
       const items = records.filter(x => x.kind === kind);
-      const shown = items.slice(0, 14);
+      const pageSize=14;
+      const start=Math.max(0,Math.min(Math.max(0,Math.floor((items.length-1)/pageSize)*pageSize),Math.floor((Number(offsets[kind])||0)/pageSize)*pageSize));
+      const shown = items.slice(start,start+pageSize);
+      const pageButton=(next,label)=>'<button type="button" class="secondary small" data-gap-page="'+next+'" data-gap-kind="'+esc(kind)+'" data-gap-job="'+esc(job.id)+'" data-gap-topic="'+esc(topic.candidate_id)+'">'+label+'</button>';
+      const navigation='<div class="job-actions">'+(start>0?pageButton(start-pageSize,'Previous'):'')+
+        '<span>'+ (items.length?start+1:0)+'–'+Math.min(items.length,start+pageSize)+' of '+items.length+'</span>'+
+        (start+pageSize<items.length?pageButton(start+pageSize,'Next'):'')+'</div>';
       const inventory = itemInventory(kind);
       const sourceGap = inventory.unrepresented_hit_difference;
       return '<details class="gap-queue"><summary>' + esc(label) + ' (' +
-        items.length + ' saved citations; ' + shown.length + ' shown)</summary>' +
+        items.length + ' saved citations; ' + shown.length + ' shown)</summary>' + navigation +
         '<p class="help">' + Math.max(0, items.length - shown.length) +
         ' additional saved citations are included in the JSON export. ' +
         (sourceGap > 0 ? 'The source discovery count (' + esc(inventory.reported_source_hits) +
@@ -386,9 +404,9 @@
               esc(job.id) + '" data-gap-topic="' + esc(topic.candidate_id) +
               '">Save manual evidence record</button><p class="gap-message" aria-live="polite"></p>' +
           '</details>';
-        }).join('') + '</details>';
+        }).join('') + navigation + '</details>';
     };
-    return '<details class="gap-review" data-gap-key="' + esc(job.id + ':' + topic.candidate_id) + '">' +
+    return '<details class="gap-review" data-gap-review-offset="'+esc(Number(offsets.review)||0)+'" data-gap-registration-offset="'+esc(Number(offsets.registration)||0)+'" data-gap-key="' + esc(job.id + ':' + topic.candidate_id) + '">' +
       '<summary>Research Gap Verification · ' + decisions + ' saved manual finding(s)</summary>' +
       '<p class="help">Evidence review workbench. This never changes a source status, scientific gate or QUALIFIED decision automatically.</p>' +
       '<p class="help">Notes are saved locally first and synchronized with your private Supabase job when connected. The browser device token controls access, not an authenticated account. Export JSON backups; sharing across a different device is not available yet.</p>' +
