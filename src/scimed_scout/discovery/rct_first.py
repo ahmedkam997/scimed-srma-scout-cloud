@@ -314,8 +314,9 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
             if check:check()
             recent,diag=abstract_enricher(recent);report["queries"].append({**diag,"stage":"DYNAMIC_MESH_ENRICHMENT"})
             if diag["status"] not in ("SEARCHED_POSITIVE","SEARCHED_NEGATIVE"):status="PARTIAL"
-        proposed=derive(recent,anchors,year=year)
-        report["dynamic_discovery"].update(status=status,anchors=proposed,retrieved=len(recent))
+        diagnostic={}
+        proposed=derive(recent,anchors,year=year,allow_single=True,specialty=key,diagnostic=diagnostic)
+        report["dynamic_discovery"].update(status=status,anchors=proposed,retrieved=len(recent),diagnostic=diagnostic,anchor_status="ANCHORS_RETRIEVED" if proposed else "NO_ANCHORS_IN_BOUNDED_SAMPLE")
         pairs.extend(tuple(x["pair"]) for x in proposed)
     samples=[]
     for pair in pairs:

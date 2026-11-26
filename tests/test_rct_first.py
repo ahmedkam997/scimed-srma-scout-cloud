@@ -178,3 +178,17 @@ def test_dynamic_anchors_require_indexed_title_corroboration_and_distinct_famili
     assert not derive(rows,[],year=2029)
     assert "Cardiovascular Diseases" in query("cardiology",2026)
     assert "2024/01/01" in query("cardiology",2026)
+
+
+def test_single_direct_arm_can_seed_search_but_not_shortlist():
+    from scimed_scout.discovery.dynamic_anchors import derive
+    from scimed_scout.discovery.evidence_first import _record
+    row=_record(SearchRecord("PubMed","123","Vericiguat versus placebo in cardiomyopathy: randomized trial",year=2025,metadata={
+        "pubtype":["Randomized Controlled Trial"],"pubmed_efetch_identity":"EXACT_PMID",
+        "mesh_headings":[{"descriptor":"cardiomyopathy","qualifiers":["drug therapy"]}],"chemical_names":["vericiguat"]}))
+    d={}
+    assert derive([row],[],year=2026)==[]
+    p=derive([row],[],year=2026,allow_single=True,specialty="cardiology",diagnostic=d)
+    assert len(p)==1 and p[0]["family_cues"]==1 and d["single_direct_arm_anchors"]==1
+    row["title"]="Vericiguat in cardiomyopathy: randomized trial"
+    assert derive([row],[],year=2026,allow_single=True,specialty="cardiology")==[]
