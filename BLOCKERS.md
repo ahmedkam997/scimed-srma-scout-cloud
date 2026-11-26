@@ -15,3 +15,8 @@
 - Both hosted discovery samples were partial. TAVR/SAVR and ticagrelor/
   clopidogrel have bibliographic shortlist cues, with actual trial identity,
   extractable outcomes and competitor cutoffs still unresolved.
+
+- Hosted open-access full-text recovery returned no Methods cutoff for all
+  four direct review leads. Do not rerun the same resolver unchanged.
+  Investigate DOI/publisher Methods, then preserve each source-specific
+  date. Keep access and missing statements distinct.

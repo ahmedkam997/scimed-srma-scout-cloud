@@ -49,3 +49,23 @@ stroke review abstract. The newer TAVR health-status record identifies
 itself as a NOTION-2 analysis, so it provides a follow-up cue within an
 existing family. [Corrected hosted run](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892078476)
 [NOTION-2 follow-up, PMID 43053874](https://pubmed.ncbi.nlm.nih.gov/43053874/)
+
+## Direct report-family and Methods audit
+
+Hosted audit `45892409004` retrieved comparison metadata for the PubMed
+subset of two shortlisted candidates. Five TAVR/SAVR registration-linked
+reports were observed and two were unlinked. The ticagrelor/clopidogrel
+subset contained four registration-linked reports. Reports from other
+sources still require identity resolution. Registry links and publication
+types do not establish independence, exact PICO eligibility or compatible
+outcomes.
+
+| Comparison | Registry-linked report leads | Unlinked PMIDs |
+| --- | --- | --- |
+| TAVR/SAVR | NCT01240902/32997095, NCT01586910/31476897, NCT02701283/30883053, NCT03383445/37883682, NCT03424941/39644913 | 35579641, 30409278 |
+| Ticagrelor/clopidogrel | NCT01813435/30166073, NCT02018055/34627490, NCT04483583/38597172, NCT06318481/40892606 | None in the PubMed subset |
+
+The open-access Methods resolver did not establish a cutoff for any of the
+four target reviews (PMIDs 42985463, 42499063, 42201709 and 43090943).
+This does not invalidate the abstract excerpts or show that full text is
+unavailable from every authorized source. [Hosted family and Methods audit](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892409004)

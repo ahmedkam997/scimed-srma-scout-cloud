@@ -23,3 +23,10 @@ Both specialty samples were partial. Counts below are bibliographic cues.
 
 [Hosted discovery run](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45891271291) ·
 [Hosted triage annotations](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45891617031)
+
+The next audit kept both cardiology candidates at provisional status.
+The TAVR/SAVR PubMed subset had five registration links and two unlinked
+reports. Ticagrelor/clopidogrel had four registration-linked reports.
+Usable and independently eligible counts remain unknown for both. The
+published opportunity counts also include other sources that have yet to
+be reconciled. [Report-to-registry ledger](EVIDENCE.md)

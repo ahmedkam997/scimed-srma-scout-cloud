@@ -35,3 +35,11 @@ cutoff statements are in [EVIDENCE.md](EVIDENCE.md). If these exact PICOs
 fail, rotate to a new cardiology comparison and a fixed-anchor surgery
 sample to address the observed out-of-specialty drift. The independent
 adjudication gate remains unmet.
+
+Family and Methods artifact `15152072119` from run `45892409004`
+contains the PubMed subset ledger. The audit did not meet the full-text
+Methods check. Next, examine DOI/publisher Methods routes for the four
+specific PMIDs and reconcile the remaining non-PubMed comparison
+records. Independently sample an alternate fixed-anchor surgical rotation
+to recover from out-of-specialty drift while the cardiology reviews are
+pending. Neither cardiology lead has an adjudicable seven-trial dossier.

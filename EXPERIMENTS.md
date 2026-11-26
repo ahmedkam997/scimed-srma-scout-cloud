@@ -21,3 +21,10 @@
   The corrected title-focused and search-method run `45892078476`
   succeeded with six positive bounded routes and no translation warning.
   [Corrected hosted run](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892078476)
+
+- Full-text/family audit `45892325002` failed before artifact creation
+  when checkout followed artifact download. Reordering the steps yielded
+  artifact `15152072119` on run `45892409004` and recovered both family
+  ledgers. The rerun exited nonzero because no Methods cutoffs resolved.
+  Ten resolver and family tests passed locally, as did a synthetic EFetch
+  linkage check. [Audit rerun](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892409004)
