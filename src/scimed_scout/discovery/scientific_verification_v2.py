@@ -46,7 +46,7 @@ def snapshot(ledger,candidate):
         "reviewer_submission_template":{"project_id":candidate.project_id,"candidate_id":candidate.candidate_id,
             "snapshot_sha256":digest(binding),"route":"NOVEL","studies":[],"outcomes":[],"competitor_decisions":[],
             "excluded_reports":[],"ratings":{},"ratings_evidence":{},"synthesis_group":{},
-            "independent_extraction_and_screening_attested":False,"clinical_scope_evidence":{},"update_or_correction_audits":[]}}
+            "independent_extraction_and_screening_attested":False,"clinical_scope_evidence":{},"search_scope_adjudication":{},"update_or_correction_audits":[]}}
     return packet
 
 def signature(payload,reviewer,key):
@@ -71,12 +71,15 @@ def authenticated(bundle,keys):
 def effect(row):
     """Conservative common-effect pilot. No invented continuity correction."""
     m=row["measure"]
-    if m=="LOG_HR":return float(row["effect"]),float(row["se"])**2
+    if m=="LOG_HR":
+        if not number(row.get("effect")) or not number(row.get("se")) or row["se"]<=0:raise ValueError("invalid log HR or SE")
+        return float(row["effect"]),float(row["se"])**2
     if m=="MD":
+        if any(type(row.get(k)) is not int or row[k]<=1 for k in ("intervention_n","comparator_n")) or any(not number(row.get(k)) for k in ("intervention_mean","comparator_mean","intervention_sd","comparator_sd")) or row["intervention_sd"]<0 or row["comparator_sd"]<0:raise ValueError("invalid continuous summary")
         return row["intervention_mean"]-row["comparator_mean"],row["intervention_sd"]**2/row["intervention_n"]+row["comparator_sd"]**2/row["comparator_n"]
     if m in ("RR","OR"):
         a,c=row["intervention_events"],row["comparator_events"];n,t=row["intervention_n"],row["comparator_n"]
-        if not (0<a<n and 0<c<t):raise ValueError("sparse or boundary events need separately validated method")
+        if any(type(x) is not int for x in (a,c,n,t)) or not (0<a<n and 0<c<t):raise ValueError("sparse or boundary events need separately validated method")
         if m=="RR":return math.log((a/n)/(c/t)),1/a-1/n+1/c-1/t
         return math.log(a/(n-a)/(c/(t-c))),1/a+1/(n-a)+1/c+1/(t-c)
     raise ValueError("measure not supported by V2 pilot")
@@ -119,12 +122,18 @@ def evaluate(packet,bundle,keys,coverage,policy):
         structural=validate(packet,data)
         errors.extend(structural["errors"])
         if not coverage.complete:fail("mandatory source coverage incomplete")
+        # A successful API sample is not a systematic search. Independently
+        # adjudicate actual search methods and remaining material limits.
+        search=data.get("search_scope_adjudication") or {}
+        if (search.get("actual_search_methods_and_results_verified") is not True or search.get("unresolved_material_search_limits") is not False or not evidence(search.get("evidence")) or search.get("search_log_sha256")!=digest(binding["search_log"])):
+            fail("independent search completeness and limits not adjudicated")
         if structural["valid_study_rows"]<MIN_RCTS:fail("fewer than seven independently adjudicated RCTs")
         if structural["competitors_pending"]:fail("unresolved competitor records")
         if not evidence(data.get("clinical_scope_evidence")):fail("missing source-backed scope justification")
         if any(s.get("full_text_checked") is not True or s.get("pico_eligible") is not True or s.get("randomization_confirmed") is not True or s.get("independent_population_confirmed") is not True for s in data["studies"]):
             fail("full-text PICO, randomization or population independence not confirmed")
         primary={r["id"]:r for r in packet["primary_report_index"]}
+        if len(primary)!=len(packet["primary_report_index"]):fail("conflicting report identities in snapshot")
         covered={rid for s in data["studies"] for rid in s.get("report_ids",[])}
         for s in data["studies"]:
             if not any(source_linked(s["eligibility_evidence"],primary[rid]) for rid in s["report_ids"] if rid in primary):fail("study evidence not linked to included report")
@@ -147,7 +156,7 @@ def evaluate(packet,bundle,keys,coverage,policy):
         if ratings.get("feasibility") not in ("HIGH","STRONG MODERATE") or ratings.get("editorial_grade") not in ("A","B","CORRECTED C"):fail("feasibility or editorial gate not passed")
         group=data.get("synthesis_group") or {}
         fields=("outcome","definition","timepoint","measure")
-        if not all(nonempty(group.get(k)) for k in fields) or not evidence(group.get("compatibility_evidence")) or group.get("parallel_individual_randomization") is not True:
+        if not all(nonempty(group.get(k)) for k in fields) or not evidence(group.get("compatibility_evidence")) or not evidence(group.get("method_and_heterogeneity_evidence")) or group.get("parallel_individual_randomization") is not True:
             fail("outcome harmonization and unit-of-analysis judgment missing")
         selected=[o for o in data["outcomes"] if all(o.get(k)==group.get(k) for k in fields)]
         # Keep the original seven RCTs with extractable outcomes and require
@@ -161,6 +170,7 @@ def evaluate(packet,bundle,keys,coverage,policy):
         records={r["id"]:r for r in packet["competitor_index"]}
         for d in decisions.values():
             record=records[d["record_id"]]
+            if d["decision"]!="NON_OVERLAP" and d.get("full_text_checked") is not True:fail("material competitor full text not independently reviewed")
             if not any(source_linked(d.get("evidence"),r) for r in [record,*record.get("source_variants",[])]):fail("competitor evidence not linked to indexed record")
         overlaps=[d for d in decisions.values() if d["decision"]!="NON_OVERLAP"]
         audit=[]
@@ -195,16 +205,30 @@ def evaluate(packet,bundle,keys,coverage,policy):
                         fail("new independent trial chronology unresolved");continue
                     old=pool(baseline)
                 else:
-                    # Corrective baseline must reproduce the erroneous published analysis from signed source rows.
-                    # Do not support corrections without a machine-checkable original analysis yet.
-                    fail("corrective route needs verified original-analysis reconstruction; not implemented in phase 1");continue
+                    # Narrow correction: same trial set/outcome, demonstrable
+                    # wrong extracted effect or variance. Other types pending.
+                    if a.get("correction_type")!="INCORRECT_EFFECT_OR_VARIANCE_EXTRACTION" or set(ids)!={o["study_id"] for o in selected}:
+                        fail("unsupported correction type or different trial set");continue
+                    original=a.get("original_analysis_rows")
+                    if not isinstance(original,list) or len(original)!=len(ids) or not all(isinstance(o,dict) for o in original):
+                        fail("original analysis input rows missing");continue
+                    original_ids=[o.get("study_id") for o in original]
+                    if len(set(original_ids))!=len(ids) or set(original_ids)!=set(ids) or any(any(o.get(k)!=group[k] for k in fields) for o in original):
+                        fail("original analysis study or outcome identity mismatch");continue
+                    if not all(any(source_linked(o.get("evidence"),r) for r in [records[d["record_id"]],*records[d["record_id"]].get("source_variants",[])]) for o in original):
+                        fail("original input rows lack source-linked published review evidence");continue
+                    corrected={o["study_id"]:effect(o) for o in selected}
+                    changed=[o["study_id"] for o in original if any(abs(x-y)>1e-8 for x,y in zip(effect(o),corrected[o["study_id"]]))]
+                    if not changed or not evidence(a.get("verified_flaw_evidence")) or not evidence(a.get("correction_method_evidence")):
+                        fail("verified consequential extraction discrepancy missing");continue
+                    old=pool(original)
                 published=a.get("published_common_effect")
                 if not isinstance(published,dict) or not number(published.get("effect")) or not number(published.get("se")) or published["se"]<=0 or abs(old["effect"]-published["effect"])>0.001 or abs(old["se"]-published["se"])>0.001:
                     fail("published baseline not reproduced to 0.001 on declared effect scale");continue
                 threshold=a.get("minimum_important_effect_change")
                 if not number(threshold) or threshold<=0 or abs(combined["effect"]-old["effect"])<threshold:
                     fail("predeclared clinically important effect change not demonstrated");continue
-                audit.append({"record_id":d["record_id"],"route":route,"baseline":old,"new":combined,"effect_change":abs(combined["effect"]-old["effect"]),"threshold":threshold})
+                audit.append({"record_id":d["record_id"],"route":route,"baseline":old,"new":combined,"effect_change":abs(combined["effect"]-old["effect"]),"threshold":threshold,"corrected_study_ids":changed if route=="CORRECTIVE" else []})
         else:fail("unknown qualification route")
         score=composite_score(novelty=ratings["overall_novelty"],information_gain=ratings["new_information_gain"],
             clinical_importance=ratings["clinical_importance"],feasibility=ratings["feasibility"],publication_potential=ratings["publication_potential"])

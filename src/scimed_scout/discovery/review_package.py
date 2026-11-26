@@ -295,7 +295,7 @@ def build_discovery_review_package(
             "specialty": project.specialty,
             "question_type": project.question_type,
         },
-        "review_instructions": CHATGPT_REVIEW_INSTRUCTIONS,
+        "review_instructions": ("V2 options have passed operator-trusted dual-reviewer adjudication and the unchanged discovery gates. Review the source audit, signed-decision summary, study data and synthesis assumptions; this is not proof of publication acceptance. Legacy discovery-only options remain unconfirmed." if any(o.get("qualification_status")=="FULLY_QUALIFIED" for o in options) else CHATGPT_REVIEW_INSTRUCTIONS),
         "topic_review_prompt": CHATGPT_TOPIC_REVIEW_PROMPT,
         "selection_policy": {
             "system_does_not_select_winner": True,
