@@ -86,7 +86,15 @@ def recovery_reasons(result,metadata):
     return reasons
 
 def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=AdaptiveFreeRouter.from_env):
-    check=lambda:store.ensure_active(job.id)
+    import time
+    from .supabase import SupabaseJobStore
+    last_heartbeat=[time.monotonic()]
+    def check():
+        store.ensure_active(job.id)
+        now=time.monotonic()
+        if isinstance(store,SupabaseJobStore) and now-last_heartbeat[0]>=30:
+            store.update_job(job.id)
+            last_heartbeat[0]=now
     check()
     history=store.recent_completed_jobs(client_token_hash=job.client_token_hash,revisit_days=job.revisit_days)
     prior=recent_topic_memory(history,revisit_days=job.revisit_days)
@@ -169,7 +177,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     search_date_resolver=OpenAccessSearchDateResolver(),max_fulltext_reviews=2,enrichment_client=EuropePMCSource(),max_enrichment_lookups=1,bounded_recovery=True) if provider else None
                 scoring=ReservedScoring(provider) if provider else None
                 engine=ReviewDiscoveryOrchestrator(ledger,clients,novelty_service=novelty,scoring_service=scoring,
-                    cancellation_check=check,require_pico_signals=True,optimize_literature_queries=True,adaptive_search=True,
+                    cancellation_check=check,progress_callback=lambda pct,stage,msg:store.update_job(job.id,message=f"Topic {i}/{len(selected)}: {msg}") if pct==-1 else None,require_pico_signals=True,optimize_literature_queries=True,adaptive_search=True,
                     adaptive_retrieval=True,strict_rct_minimum=MIN_FAMILIES)
                 result=engine.verify_candidate(c.candidate_id,ranking_score=rank.score,limit_per_query=min(12,job.limit_per_query),recover_only=bool(previous))
                 assessed=ledger.get_candidate(c.candidate_id)

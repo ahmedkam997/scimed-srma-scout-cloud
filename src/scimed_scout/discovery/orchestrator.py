@@ -281,9 +281,10 @@ class ReviewDiscoveryOrchestrator:
             self.ledger.upsert_candidate(candidate)
         from scimed_scout.sources.clinicaltrials import ClinicalTrialsGovSource
         registry_client=self.clients.get("ClinicalTrials.gov")
-        if self.adaptive_search and isinstance(registry_client,ClinicalTrialsGovSource) and registry_client.http.loader is None and not (candidate.metadata or {}).get("registry_result_reference_audit"):
+        prior_registry=(candidate.metadata or {}).get("registry_result_reference_audit") or {}
+        if self.adaptive_search and isinstance(registry_client,ClinicalTrialsGovSource) and registry_client.http.loader is None and (not prior_registry or (recover_only and prior_registry.get("remaining_registry_ids",1)>0)):
             from .registry_reference_suggestions import suggest
-            registry_audit=suggest(self.ledger.list_external_evidence(candidate_id,"PRIMARY_STUDY"),max_lookups=3,check=self._check_cancellation)
+            registry_audit=suggest(self.ledger.list_external_evidence(candidate_id,"PRIMARY_STUDY"),max_lookups=3,check=self._check_cancellation,previous=prior_registry)
             candidate=self.ledger.get_candidate(candidate_id) or candidate
             candidate.metadata={**(candidate.metadata or {}),"registry_result_reference_audit":registry_audit}
             self.ledger.upsert_candidate(candidate)
@@ -568,7 +569,8 @@ class ReviewDiscoveryOrchestrator:
             # thread so the discovery ledger remains deterministic and thread-safe.
             for source_name, _ in configured:
                 self._check_cancellation()
-                for query, result in futures[source_name].result():
+                completed_results=futures[source_name].result()
+                for query, result in completed_results:
                     self._check_cancellation()
                     message=result.message
                     if self.optimize_literature_queries and evidence_type in ("PRIMARY_STUDY","PUBLISHED_REVIEW") and source_name in ("PubMed","Europe PMC"):
@@ -644,6 +646,8 @@ class ReviewDiscoveryOrchestrator:
                             classification=classification,
                             originally_requested=evidence_type,
                         )
+                if self.progress_callback:
+                    self.progress_callback(-1,"SOURCE_COMPLETE",f"{source_name}: {purpose}; {len(completed_results)} queries returned")
 
     def _adaptive_pubmed_retrieval(self,candidate,plan,limit_per_query):
         client=self.clients.get("PubMed")

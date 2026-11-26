@@ -5,7 +5,7 @@ consistency and provenance references, not the truth of a person's assertion.
 """
 from collections import defaultdict
 import math
-from .competitor_records import identifiers, groups, abstract
+from .competitor_records import identifiers
 from .trial_family import registration_signals
 from .review_opportunity import _cutoff, date_bounds
 from .novelty import _valid_cached, _select_records
@@ -27,7 +27,7 @@ def build(candidate, primary, reviews, registrations, *, ambiguous=(), opportuni
         for r in _select_records(candidate,list(rows),len(rows)):
             payload=r.get("payload") or {}
             assessment=payload.get("discovery_semantic_assessment") or {}
-            competitors.append({**citation(r),"kind":kind,"model_overlap":assessment.get("overall_overlap") if _valid_cached(candidate,r) else None,
+            competitors.append({**citation(r),"id":kind+":"+key(r),"kind":kind,"model_overlap":assessment.get("overall_overlap") if _valid_cached(candidate,r) else None,
                 "last_search_date_cue":_cutoff(r) if kind=="REVIEW" else None,
                 "adjudication_status":"AWAITING_INDEPENDENT_REVIEW"})
     return {"schema":VERSION,"candidate_id":candidate.candidate_id,
@@ -57,6 +57,8 @@ def validate(packet,submission):
         raise ValueError("candidate/scope mismatch")
     primary={r["id"]:r for r in packet["primary_report_index"]}
     competitors={r["id"]:r for r in packet["competitor_index"]}
+    for name in ("studies","outcomes","competitor_decisions"):
+        if not isinstance(submission.get(name,[]),list):raise ValueError("invalid list: "+name)
     errors=[];studies={};used_reports=set();used_registry=set();valid_outcomes=defaultdict(set);decisions=set()
     for s in submission.get("studies",[]):
         if not isinstance(s,dict):errors.append("invalid study row");continue
@@ -72,7 +74,7 @@ def validate(packet,submission):
     for o in submission.get("outcomes",[]):
         if not isinstance(o,dict):errors.append("invalid outcome row");continue
         sid=o.get("study_id");measure=o.get("measure")
-        ok=isinstance(sid,str) and sid in studies and o.get("report_id") in studies[sid]["report_ids"] and all(nonempty(o.get(k)) for k in ("outcome","definition","timepoint")) and evidence(o.get("evidence")) and dual(o.get("reviewers"))
+        ok=isinstance(sid,str) and sid in studies and isinstance(o.get("report_id"),str) and o.get("report_id") in studies[sid]["report_ids"] and all(nonempty(o.get(k)) for k in ("outcome","definition","timepoint")) and evidence(o.get("evidence")) and dual(o.get("reviewers"))
         ni,nc=o.get("intervention_n"),o.get("comparator_n")
         if measure in ("RR","OR","RD"):
             ei,ec=o.get("intervention_events"),o.get("comparator_events")

@@ -62,3 +62,27 @@ def test_ctgov_same_scope_recovery_completes_784():
     r=src.search_recovery("catheter ablation")
     assert len(r.records)==784 and r.status==SourceStatus.SEARCHED_POSITIVE and len(calls)==2
     assert all(x["query.term"]==["catheter ablation"] for x in calls)
+
+
+def test_registry_reference_recovery_rotates_without_new_merges():
+    from scimed_scout.discovery.registry_reference_suggestions import suggest
+    rows=[record(i) for i in range(1,6)]
+    for i in range(4):rows[i]["payload"]["metadata"]["trial_registration_id"]=f"NCT{i+1:08d}"
+    calls=[]
+    def lookup(n):
+        calls.append(n)
+        return {"protocolSection":{"identificationModule":{"nctId":n},"referencesModule":{"references":[{"type":"RESULT","pmid":"5"}] if n=="NCT00000004" else []}}}
+    first=suggest(rows,lookup=lookup,max_lookups=3)
+    assert not first["suggestions"] and first["remaining_registry_ids"]==1
+    second=suggest(rows,lookup=lookup,max_lookups=3,previous=first)
+    assert second["source_calls"]==1 and second["remaining_registry_ids"]==0
+    assert second["suggestions"][0]["pmid"]=="5" and not second["automatic_merge"]
+    assert len(set(calls))==4
+
+def test_documented_mcda_unchanged_exploratory_exposed():
+    from scimed_scout.discovery.opportunity_mcda import weighted_assessment,compare_assessments
+    a=weighted_assessment({"clinical_importance":{"rating":5,"status":"PRELIMINARY"}})
+    r=compare_assessments([("a",a)])
+    row=r["scenarios"]["balanced"]["intervals"][0]
+    assert row["lower"]==0 and row["upper"]==100 and row["exploratory_lower"]==15
+    assert r["robust_winner"] is None and not r["qualification_granted"]
