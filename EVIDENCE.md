@@ -89,3 +89,30 @@ publisher audit. [Pediatric appendicitis review](https://doi.org/10.3390/jcm1522
 [Three-agent PCI synthesis](https://doi.org/10.1001/jamacardio.2026.1128)
 [STEMI post-PCI review](https://doi.org/10.1097/md.0000000000049923)
 [TAVR/SAVR stroke review](https://doi.org/10.31083/rcm49672)
+
+### Renal denervation versus sham
+
+The audit covered 12 reports, grouped 10 under seven distinct registration
+identifiers and retained two unlinked records. RADIANCE-HTN TRIO and SOLO
+returned the same registry identifier in the report evidence, which must
+be reconciled with randomized cohorts before counting either as a new
+population. SPYRAL HTN-ON and OFF MED reports also included repeated
+analyses. The generic count/ratio extractor yielded no renal outcome
+cues. Use continuous ambulatory blood-pressure data with a consistent
+time point, medication status, and measure before judging usability.
+[Renal family audit](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45893203803)
+
+The review query returned 33 hits, with six examined in this sample.
+Full-text Methods yielded the following source-specific statements.
+
+| Review PMID | Methods statement | Scope caveat |
+| --- | --- | --- |
+| 41205197 | PubMed, Ovid and Embase searched up to 4 September 2025 | Network meta-analysis across renal denervation approaches. |
+| 40933009 | PubMed, Embase and Cochrane searched through 1 November 2024 | Ultrasound-specific synthesis. |
+| 40478231 | Sources systematically searched for reports published before 31 December 2024 | Publication eligibility boundary. Actual last search run date remains unknown. |
+
+The directly titled sham-controlled meta-analysis, PMID 40022571, did
+not yield a Methods date through the tested open-access routes. One
+sampled record, PMID 40640559, identifies itself as a comment. Treat the
+network review date as an exploratory post-cutoff anchor and verify
+exact overlap before asserting a review update. [Review and Methods audit](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45893203803)

@@ -37,3 +37,9 @@
 - The outcome inventory records only explicit abstract count and ratio
   cues, preserving their original context in the artifact. It keeps
   independent usable trial counts unknown.
+
+- Reused the completed alternate rotation artifact for a targeted renal
+  denervation trial-family audit. The workflow restricts the competing
+  review query to renal denervation, sham and synthesis terminology, samples
+  six review hits, and preserves missing Methods and family uncertainty.
+  [Renal triage run](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45893203803)

@@ -53,3 +53,16 @@ versus enalapril in heart failure (seven) and catheter ablation versus
 medical treatment for atrial fibrillation (seven). Prioritize the sham
 comparison for a device, medication status, endpoint and competitor
 cutoff audit. These are bibliographic shortlist leads. [Alternate rotation](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892703407)
+
+The fixed-anchor General Surgery rotation retained only antibiotics versus
+appendectomy in appendicitis, with two bibliographic trial-family leads
+and partial coverage. The out-of-specialty drift was absent in this sample.
+No surgical candidate met the shortlist threshold in that rotation.
+[Fixed-anchor rotation](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892703407)
+
+Renal denervation versus sham remains provisional. Its 12 reports map
+to seven distinct registration links and two unlinked reports. The
+audit includes overlap or uncertainty within named trial families,
+mixed device modalities and medication status. No common usable
+ambulatory blood-pressure endpoint or update value has been established.
+[Renal Methods and report ledger](EVIDENCE.md)

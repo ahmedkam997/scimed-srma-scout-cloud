@@ -61,3 +61,11 @@ independence, compatible ambulatory blood-pressure outcomes and competing
 review cutoffs before pursuing adjudication. Publisher DOI retrieval from
 this machine is blocked. The exact identifiers for a hosted publisher
 audit are preserved in [EVIDENCE.md](EVIDENCE.md).
+
+Renal audit `45893203803` produced artifact `15153115299` and the public
+family ledger despite exiting nonzero for incomplete Methods. Three of
+six sampled records yielded dated Methods statements, one of which is a
+publication boundary. Review the post-cutoff run `45893375836` before a
+repeat search. Then check whether post-cutoff reports add independent
+eligible randomized comparisons or only revisit existing participants.
+No candidate is ready for signed adjudication.

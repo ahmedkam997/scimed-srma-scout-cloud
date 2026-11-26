@@ -25,3 +25,9 @@
   The existing two cardiology leads remain provisional. The alternate
   cardiology rotation surfaced new candidates for targeted triage.
   All 571 Python tests passed with the development dependencies installed.
+
+- Completed fixed-anchor surgery triage and the focused renal
+  review/family audit. The latter recovered seven registration links,
+  three dated Methods statements and an unresolved exact-PICO comparator.
+  Queued bounded post-cutoff retrieval using the sampled network review's
+  date as an exploratory anchor.
