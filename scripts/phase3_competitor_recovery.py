@@ -90,7 +90,7 @@ def retrieve_cutoff_cues(client, reviews=REVIEW_CONTROLS):
     }
 
 
-def trace_trial_reports(client):
+def trace_trial_reports(client, *, camera_only=False):
     from scimed_scout.discovery.structured_extraction_v2 import report_role_cues
     from scimed_scout.discovery.trial_family import registration_signals
     from scripts.phase3_family_methods import as_row, notice
@@ -101,6 +101,13 @@ def trace_trial_reports(client):
     }
     matches = {}
     ids = ["42246906", "41396086", "40916703", "41335448"]
+    if camera_only:
+        queries = {
+            "camera-title": 'catheter[ti] AND ablation[ti] AND atrial[ti] AND fibrillation[ti] AND fibrosis[ti]',
+            "camera-trial": 'camera[tiab] AND mri[tiab] AND ablation[tiab] AND atrial[tiab] AND random*[tiab]',
+        }
+        ids = ["42246906"]
+    citations = {}
     for label, query in queries.items():
         route = client.search(query, limit=10)
         matches[label] = {
@@ -108,6 +115,8 @@ def trace_trial_reports(client):
             "pmids": [str(record.record_id) for record in route.records],
         }
         ids.extend(matches[label]["pmids"])
+        for record in route.records:
+            citations[str(record.record_id)] = {"year": record.year, "pubdate": record.metadata.get("pubdate")}
     ids = list(dict.fromkeys(ids))
     try:
         found, diagnostics = parse_efetch(_fetch(client, ids), ids)
@@ -119,6 +128,8 @@ def trace_trial_reports(client):
         reports[pmid] = {
             "title": row["title"],
             "registration_signals": registration_signals(row),
+            "publication_metadata": citations.get(pmid),
+            "abstract_readout": metadata["abstractText"][:700] if camera_only else None,
             "role_cues": report_role_cues(row)["cues"],
         }
         notice(f"HF trial report PMID {pmid}", reports[pmid])
@@ -126,6 +137,8 @@ def trace_trial_reports(client):
     output = {"searches": matches, "reports": reports, "diagnostics": diagnostics,
               "missing_pmids": missing, "qualification_granted": False}
     Path("phase3-competitor-recovery.json").write_text(json.dumps(output, indent=2) + "\n")
+    if camera_only:
+        notice("CAMERA source routes", {"searches": matches, "missing_pmids": missing})
     if missing or any(item["status"] not in {"SEARCHED_POSITIVE", "SEARCHED_NEGATIVE"}
                       for item in matches.values()):
         raise SystemExit("HF trial-report retrieval remains unresolved")
@@ -135,8 +148,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--heart-failure", action="store_true")
     parser.add_argument("--trace-trial-reports", action="store_true")
+    parser.add_argument("--camera-only", action="store_true")
     args = parser.parse_args()
     client = PubMedSource(sort="pub_date")
+    if args.camera_only:
+        return trace_trial_reports(client, camera_only=True)
     if args.trace_trial_reports:
         return trace_trial_reports(client)
     if args.heart_failure:
