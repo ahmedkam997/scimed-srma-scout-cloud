@@ -116,3 +116,14 @@ not yield a Methods date through the tested open-access routes. One
 sampled record, PMID 40640559, identifies itself as a comment. Treat the
 network review date as an exploratory post-cutoff anchor and verify
 exact overlap before asserting a review update. [Review and Methods audit](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45893203803)
+
+The bounded post-cutoff retrieval returned 38 hits and displayed the
+first 12. The RDN-CKD Study title describes a randomized, blinded
+sham-controlled comparison in chronic kidney disease. This is the
+strongest newly sampled primary-report lead. Its registration identity,
+participant independence, intervention details and compatible outcome
+data are unverified. The 12-hit display also includes commentaries and
+an atrial fibrillation protocol, so it is not an eligible-trial list.
+The workflow remained nonzero because the competitor Methods audit was
+incomplete. [Post-cutoff run](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45893375836)
+[RDN-CKD report](https://pubmed.ncbi.nlm.nih.gov/42937114/)

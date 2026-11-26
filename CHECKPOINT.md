@@ -69,3 +69,11 @@ publication boundary. Review the post-cutoff run `45893375836` before a
 repeat search. Then check whether post-cutoff reports add independent
 eligible randomized comparisons or only revisit existing participants.
 No candidate is ready for signed adjudication.
+
+Post-cutoff run `45893375836` resolved the bounded retrieval and returned
+RDN-CKD (PMID `42937114`) as the strongest new report lead. First verify
+the registration and original trial Methods against the prior renal
+families. Assess whether the CKD population, device modality, medication
+policy and ambulatory BP measure fit one defensible comparison. Verify
+the directly overlapping sham-controlled review's cutoff before claiming
+new evidence. Do not count this lead as a new eligible RCT yet.
