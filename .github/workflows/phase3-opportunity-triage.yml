@@ -1,0 +1,83 @@
+name: phase3-opportunity-triage
+on:
+  workflow_dispatch:
+    inputs:
+      discovery_run:
+        description: Run ID of the Phase 3 opportunity discovery workflow
+        required: true
+        type: string
+  push:
+    branches: [scientific-verification-v2-phase3-replay]
+    paths:
+      - '.github/workflows/phase3-opportunity-triage.yml'
+permissions:
+  actions: read
+  contents: read
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DISCOVERY_RUN: ${{ inputs.discovery_run || '45891271291' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Wait for and verify the Phase 3 discovery run
+        run: |
+          [[ "$DISCOVERY_RUN" =~ ^[0-9]+$ ]]
+          for attempt in {1..18}; do
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$DISCOVERY_RUN")
+            jq -e --arg repo "$GITHUB_REPOSITORY" '
+              .path == ".github/workflows/phase3-opportunity-discovery.yml"
+              and .head_branch == "scientific-verification-v2-phase3-replay"
+              and .head_repository.full_name == $repo
+            ' <<< "$run" > /dev/null
+            if jq -e '.status == "completed"' <<< "$run" > /dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          exit 1
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ env.DISCOVERY_RUN }}
+          pattern: phase3-opportunities-*
+          path: inputs
+      - name: Record coverage and lead counts for each specialty
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          results = {}
+          for path in sorted(Path("inputs").glob("phase3-opportunities-*/opportunity.json")):
+              report = json.loads(path.read_text())
+              specialty = path.parent.name.removeprefix("phase3-opportunities-")
+              candidates = []
+              for row in report["candidates"]:
+                  hints = row["metadata"]["rct_first"]
+                  candidates.append({
+                      "id": row["candidate_id"],
+                      "title": row["title"],
+                      "family_leads": hints["family_leads"],
+                      "shortlist_eligible": hints["shortlist_eligible"],
+                  })
+              results[specialty] = {
+                  "coverage": report["status"],
+                  "total_candidate_leads": len(candidates),
+                  "candidates": candidates,
+                  "qualification_granted": False,
+              }
+              summary = json.dumps({**results[specialty], "candidates": candidates[:6]})
+              print(f"::notice title={specialty} discovery leads::{summary.replace('%', '%25')}")
+          if results:
+              Path("phase3-triage.json").write_text(json.dumps(results, indent=2) + "\n")
+          if set(results) != {"cardiology", "general-surgery"}:
+              raise SystemExit("One or more specialty artifacts are unavailable")
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: phase3-opportunity-triage
+          path: phase3-triage.json
+          retention-days: 14
