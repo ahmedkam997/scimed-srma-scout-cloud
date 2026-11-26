@@ -74,7 +74,9 @@ class DiscoveryNoveltyService:
                 review_records=select(candidate,all_reviews,review_cap,force=force)
                 cached_reviews=sum(_valid_cached(candidate,r) for r in review_records) if not force else 0
         resolved_dates = self._resolve_search_dates(candidate_id, review_records)
-        if resolved_dates:
+        if self.search_date_resolver is not None and self.max_fulltext_reviews:
+            # Refresh even when no cutoff was found: attempt counters were
+            # persisted and must survive later semantic-assessment writes.
             all_reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
             review_records = select(candidate, all_reviews, review_cap, force=force) if allow_ai else select(candidate, all_reviews, review_cap)
             cached_reviews = sum(_valid_cached(candidate,r) for r in review_records) if allow_ai and not force else 0

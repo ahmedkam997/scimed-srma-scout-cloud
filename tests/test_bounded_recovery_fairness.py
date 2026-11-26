@@ -41,3 +41,15 @@ def test_unverified_cutoff_retried_and_date_attempts_rotate(tmp_path):
             service._resolve_search_dates("C",ledger.list_external_evidence("C","PUBLISHED_REVIEW"))
         assert resolver.ids==["0","1","2"]
         assert all(r["payload"]["discovery_search_date_attempts"]==1 for r in ledger.list_external_evidence("C","PUBLISHED_REVIEW"))
+
+
+def test_failed_date_attempt_survives_semantic_persistence(tmp_path):
+    class Resolver:
+        def resolve(self,r):return None
+    with SQLiteLedger(tmp_path/"persist.sqlite") as ledger:
+        ledger.upsert_project(ProjectRecord("P","Cardiology"))
+        ledger.upsert_candidate(CandidateRecord("C","P","Question","Cardiology"))
+        ledger.upsert_external_evidence("C","PUBLISHED_REVIEW","1",source="PubMed",title="Review",payload={"year":2025})
+        service=DiscoveryNoveltyService(ledger,Assessor(),search_date_resolver=Resolver(),max_fulltext_reviews=1)
+        service.assess_candidate("C")
+        assert ledger.list_external_evidence("C","PUBLISHED_REVIEW")[0]["payload"]["discovery_search_date_attempts"]==1
