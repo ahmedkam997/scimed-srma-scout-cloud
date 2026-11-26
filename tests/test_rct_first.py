@@ -160,3 +160,21 @@ def test_real_production_false_arm_regressions():
     assert explicit_comparison("Endoscopic vein harvesting versus OVH in CABG: randomized trial.",("endoscopic vein harvesting",),"open vein harvesting")
     assert explicit_comparison("Renal denervation versus sham in hypertension: randomized trial.",("renal denervation",),"sham")
     assert explicit_comparison("Empagliflozin in heart failure: a placebo-controlled randomized trial.",("empagliflozin",),"placebo")
+
+
+def test_dynamic_anchors_require_indexed_title_corroboration_and_distinct_families():
+    from scimed_scout.discovery.dynamic_anchors import derive,query
+    from scimed_scout.discovery.evidence_first import _record
+    def row(n):
+        return _record(SearchRecord("PubMed",str(n),f"Vericiguat versus placebo in cardiomyopathy: randomized trial {n}",year=2025,metadata={
+          "pubtype":["Randomized Controlled Trial"],"pubmed_efetch_identity":"EXACT_PMID",
+          "trial_registration_ids":[f"NCT{n:08d}"],"mesh_headings":[{"descriptor":"cardiomyopathy","qualifiers":["drug therapy"]},{"descriptor":"hypertension","qualifiers":["therapy"]}],
+          "chemical_names":["vericiguat","placebo","aspirin"]}))
+    rows=[row(1),row(2)]
+    r=derive(rows,[],year=2026)
+    assert len(r)==1 and r[0]["pair"][:2]==("cardiomyopathy","vericiguat")
+    assert not derive([row(1),row(1)],[],year=2026)
+    assert not derive(rows,[("cardiomyopathy","vericiguat",(),())],year=2026)
+    assert not derive(rows,[],year=2029)
+    assert "Cardiovascular Diseases" in query("cardiology",2026)
+    assert "2024/01/01" in query("cardiology",2026)

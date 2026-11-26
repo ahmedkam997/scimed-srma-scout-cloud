@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'src/scimed_scout/discovery/rct_first.py'
+      - 'src/scimed_scout/discovery/dynamic_anchors.py'
       - 'src/scimed_scout/cloud/rct_worker.py'
       - 'src/scimed_scout/sources/pubmed_abstracts.py'
       - '.github/workflows/rct-first.yml'

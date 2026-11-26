@@ -39,7 +39,9 @@ def parse_efetch(raw,expected):
             for acc in bank.findall("AccessionNumberList/AccessionNumber"):
                 text=_text(acc)
                 if re.fullmatch(r"(?:NCT\d{8}|ISRCTN\d{8}|ACTRN\d{14}|DRKS\d{8}|UMIN\d{9})",text,re.I):accessions.append(text.upper())
-        result[pmid]={"abstractText":"\n".join(chunks),"pubtype":types,"trial_registration_ids":sorted(set(accessions)),
+        mesh=[{"descriptor":_text(h.find("DescriptorName")),"qualifiers":[_text(q).casefold() for q in h.findall("QualifierName") if _text(q)]} for h in med.findall("MeshHeadingList/MeshHeading") if _text(h.find("DescriptorName"))]
+        chemicals=[_text(c) for c in med.findall("ChemicalList/Chemical/NameOfSubstance") if _text(c)]
+        result[pmid]={"abstractText":"\n".join(chunks),"pubtype":types,"trial_registration_ids":sorted(set(accessions)), "mesh_headings":mesh,"chemical_names":chemicals,
             "pubmed_efetch_title":_text(article.find("ArticleTitle")),"pubmed_efetch_identity":"EXACT_PMID"}
     for pmid in duplicates:result.pop(pmid,None)
     return result,{"unexpected_pmids":unexpected,"ambiguous_pmids":len(duplicates)}
@@ -77,6 +79,8 @@ def enrich_rows(client,rows,*,fetcher=None):
         if match["abstractText"]:meta["abstractText"]=match["abstractText"]
         if match["pubtype"]:meta["pubtype"]=match["pubtype"]
         meta["trial_registration_ids"]=sorted(set(existing)|set(match["trial_registration_ids"]))
+        meta["mesh_headings"]=match["mesh_headings"]
+        meta["chemical_names"]=match["chemical_names"]
         meta["pubmed_efetch_identity"]="EXACT_PMID"
         payload["metadata"]=meta
         enriched.append({**r,"payload":payload})

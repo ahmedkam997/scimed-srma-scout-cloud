@@ -27,7 +27,7 @@ MAX_SEED_RECORDS=60
 MAX_EUROPE_SUPPLEMENTS=2
 MAX_REVIEW_PREFLIGHTS=4
 MAX_REVIEW_COMPARISON_RECOVERIES=2
-MAX_COMPARISON_RECOVERIES=2
+MAX_COMPARISON_RECOVERIES=3
 # Clinical search vocabulary; no claim that any pair is novel or eligible.
 # Each tuple has a population phrase, intervention phrase and optional aliases.
 ANCHORS={
@@ -293,7 +293,7 @@ def _search(client,query,cap,stage,audits,check):
     audits.append({"source":client.name,"query":query,"stage":stage,"status":r.status.value,"total":r.total_count,"retrieved":len(r.records),"message":str(r.message or "")[:240]})
     return [_record(x) for x in r.records if x.title.strip()]
 
-def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),year=None,max_pairs=MAX_PAIRS,abstract_enricher=None):
+def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),year=None,max_pairs=MAX_PAIRS,abstract_enricher=None,dynamic=None):
     key=str(specialty).strip().casefold()
     year=year or datetime.now(timezone.utc).year
     if key=="all":key=tuple(ANCHORS)[rotation%len(ANCHORS)]
@@ -302,8 +302,21 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
     pubmed=pubmed or PubMedSource(sort="relevance");europe=europe or EuropePMCSource()
     if abstract_enricher is None and isinstance(pubmed,PubMedSource) and pubmed.http.loader is None:
         abstract_enricher=lambda rows:enrich_rows(pubmed,rows)
+    from .dynamic_anchors import query as dynamic_query,derive,VERSION as DYNAMIC_VERSION
     anchors=ANCHORS[key];start=(int(rotation)*5)%len(anchors)
     pairs=[anchors[(start+i)%len(anchors)] for i in range(min(max_pairs,len(anchors),MAX_PAIRS))]
+    dynamic_enabled=bool(abstract_enricher and isinstance(pubmed,PubMedSource) and pubmed.http.loader is None) if dynamic is None else bool(dynamic)
+    report["dynamic_discovery"]={"version":DYNAMIC_VERSION,"status":"NOT_SEARCHED","anchors":[],"qualification_granted":False}
+    if dynamic_enabled and abstract_enricher and (dq:=dynamic_query(key,year)):
+        recent=_search(pubmed,dq,MAX_SEED_RECORDS,"DYNAMIC_SPECIALTY_SAMPLE",report["queries"],check)
+        status=report["queries"][-1]["status"]
+        if recent:
+            if check:check()
+            recent,diag=abstract_enricher(recent);report["queries"].append({**diag,"stage":"DYNAMIC_MESH_ENRICHMENT"})
+            if diag["status"] not in ("SEARCHED_POSITIVE","SEARCHED_NEGATIVE"):status="PARTIAL"
+        proposed=derive(recent,anchors,year=year)
+        report["dynamic_discovery"].update(status=status,anchors=proposed,retrieved=len(recent))
+        pairs.extend(tuple(x["pair"]) for x in proposed)
     samples=[]
     for pair in pairs:
         rows=_search(pubmed,query_pair(pair),MAX_SEED_RECORDS,"RCT_SEED",report["queries"],check)
@@ -323,10 +336,10 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
     # Recover near-threshold comparisons before spending AI requests.
     recovery=[]
     for i,(pair,rows,_) in enumerate(samples):
-        _,buckets=comparison_rows(pair,rows,year=year)
+        matched_rows,buckets=comparison_rows(pair,rows,year=year)
         for control,exact in buckets.items():
             n=family_summary(exact)["family_leads"]
-            if 4<=n<MIN_FAMILIES:recovery.append((n,i,control))
+            if 4<=n<MIN_FAMILIES or (2<=n<4 and family_summary(matched_rows)["family_leads"]>=MIN_FAMILIES):recovery.append((n,i,control))
     recovered_cells=set()
     for before,i,control in sorted(recovery,key=lambda x:(-x[0],x[1],x[2])):
         if len(recovered_cells)>=MAX_COMPARISON_RECOVERIES:break
@@ -429,5 +442,5 @@ def main():
     from pathlib import Path
     p=argparse.ArgumentParser();p.add_argument("--output",type=Path,required=True);p.add_argument("--rotation",type=int,default=0);p.add_argument("--specialty",default="Cardiology");args=p.parse_args()
     r=collect(args.specialty,args.rotation);args.output.write_text(json.dumps(r,indent=2,default=str)+"\n")
-    print(json.dumps({"status":r["status"],"queries":r["queries"],"cells":[{k:v for k,v in c.items() if k!="source_records"} for c in r["cells"]],"candidates":[{"title":c["title"],"family_leads":c["metadata"]["rct_first"]["family_leads"],"pi_families":c["metadata"]["rct_first"]["population_intervention_family_leads"],"shortlist_eligible":c["metadata"]["rct_first"]["shortlist_eligible"],"opportunity_routes":c["metadata"].get("opportunity_mcda",{}).get("routes",[]),"gap_cue_count":len(c["metadata"].get("opportunity_mcda",{}).get("source_linked_gap_cues",[]))} for c in r["candidates"]],"comparison_recovery":r.get("comparison_recovery",[]),"review_comparison_recovery":r.get("review_comparison_recovery",[]),"new_ai_requests":0}),flush=True)
+    print(json.dumps({"status":r["status"],"queries":r["queries"],"cells":[{k:v for k,v in c.items() if k!="source_records"} for c in r["cells"]],"candidates":[{"title":c["title"],"family_leads":c["metadata"]["rct_first"]["family_leads"],"pi_families":c["metadata"]["rct_first"]["population_intervention_family_leads"],"shortlist_eligible":c["metadata"]["rct_first"]["shortlist_eligible"],"opportunity_routes":c["metadata"].get("opportunity_mcda",{}).get("routes",[]),"gap_cue_count":len(c["metadata"].get("opportunity_mcda",{}).get("source_linked_gap_cues",[]))} for c in r["candidates"]],"dynamic_discovery":r.get("dynamic_discovery",{}),"comparison_recovery":r.get("comparison_recovery",[]),"review_comparison_recovery":r.get("review_comparison_recovery",[]),"new_ai_requests":0}),flush=True)
 if __name__=="__main__":main()
