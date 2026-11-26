@@ -200,7 +200,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
             package["unverified_generated_options"]=[_draft(c) for c in candidates if c.candidate_id not in ids]
             package["unverified_generated_options_are_not_qualified"]=True
             package["rct_first"]={"version":VERSION,"minimum_comparison_family_leads":MIN_FAMILIES,"seed_status":seed["status"],
-                "seed_queries":seed["queries"],"citation_recovery":seed.get("citation_recovery",{}),"dynamic_discovery":seed.get("dynamic_discovery",{}),"comparison_recovery":seed.get("comparison_recovery",[]),"review_comparison_recovery":seed.get("review_comparison_recovery",[]),"cells":[{k:v for k,v in x.items() if k!="source_records"} for x in seed.get("cells",[])],
+                "seed_queries":seed["queries"],"citation_recovery":seed.get("citation_recovery",{}),"dynamic_discovery":seed.get("dynamic_discovery",{}),"comparison_recovery":seed.get("comparison_recovery",[]),"review_comparison_recovery":seed.get("review_comparison_recovery",[]),"review_title_recovery":seed.get("review_title_recovery",[]),"cells":[{k:v for k,v in x.items() if k!="source_records"} for x in seed.get("cells",[])],
                 "deep_limit":MAX_DEEP,"confirmed_independent_eligible_trials":None,"novelty_confirmed_by_seed":False,
                 "scope_note":"Unsupported specialties return explicit diagnostic instead of switching to mixed-design AI generation. Bounded samples do not establish absence.",
                 "selected_for_deep_verification":len(selected),"source_linked_candidates":len(candidates)}

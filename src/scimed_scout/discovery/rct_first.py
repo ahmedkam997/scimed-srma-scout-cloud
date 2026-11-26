@@ -27,6 +27,7 @@ MAX_SEED_RECORDS=60
 MAX_EUROPE_SUPPLEMENTS=2
 MAX_REVIEW_PREFLIGHTS=4
 MAX_REVIEW_COMPARISON_RECOVERIES=2
+MAX_REVIEW_TITLE_RECOVERIES=2
 MAX_COMPARISON_RECOVERIES=3
 MAX_CITATION_CELLS=2
 # Clinical search vocabulary; no claim that any pair is novel or eligible.
@@ -162,6 +163,17 @@ CONTROL_ALIASES={"surgical aortic valve replacement":("SAVR","surgical valve rep
 
 def control_terms(control):
     return phrases(control,CONTROL_ALIASES.get(control,()))
+
+# Bibliographic variants are supplementary retrieval terms, not arm-equivalence rules.
+REVIEW_INTERVENTION_ALIASES={"pulsed field ablation":("pulse field ablation","pulsed-field ablation")}
+REVIEW_COMPARATOR_ALIASES={"thermal ablation":("thermal techniques","radiofrequency ablation","cryoablation","thermal energy")}
+def review_title_query(pair, comparator):
+    _,inter,_,aliases=pair
+    i=phrases(inter,(*aliases,*REVIEW_INTERVENTION_ALIASES.get(inter.casefold(),())))
+    c=phrases(comparator,(*control_terms(comparator),*REVIEW_COMPARATOR_ALIASES.get(comparator.casefold(),())))
+    # Omit mandatory population only in this supplementary route. Every hit
+    # remains a review lead requiring original PICO assessment.
+    return _query(i,"[ti]")+" AND "+_query(c,"[tiab]")+" AND "+REVIEW_FILTER
 
 def comparison_query(pair, comparator):
     # Supplemental only: preserve the broader P+I sample.
@@ -490,6 +502,28 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
         p=profile(CandidateRecord(**row));row["metadata"]["opportunity_mcda"]=p
         report.setdefault("review_comparison_recovery",[]).append({"candidate_id":row["candidate_id"],"before_direct_review_cues":before,"after_direct_review_cues":len(p["direct_comparison_review_sample"]),"gap_cues":len(p["source_linked_gap_cues"]),"novelty_confirmed":False,"status":supplement_status})
         review_recoveries+=1
+    if citation_enabled:
+        # Run even when one competing review was found: one hit cannot
+        # establish complete retrieval. Keep independent caps and audit.
+        recovered=set()
+        for row in report["candidates"]:
+            info=row["metadata"]["rct_first"];pre=info.get("competing_review_preflight")
+            if not pre:continue
+            pair=info["pair"];control=row["comparator_reference"];key2=(*pair[:2],control)
+            if key2 in recovered:continue
+            if len(recovered)>=MAX_REVIEW_TITLE_RECOVERIES:break
+            recovered.add(key2)
+            extra=_search(pubmed,review_title_query(pair,control),30,"REVIEW_TITLE_RECOVERY",report["queries"],check)
+            status=report["queries"][-1]["status"]
+            if extra and abstract_enricher:
+                if check:check()
+                extra,diag=abstract_enricher(extra)
+                report["queries"].append({**diag,"stage":"REVIEW_TITLE_ABSTRACT_ENRICHMENT"})
+            before={str(x["source_record_id"]) for x in pre["records"]}
+            pre["records"].extend(x for x in extra if str(x["source_record_id"]) not in before)
+            pre["title_recovery_status"]=status
+            row["metadata"]["opportunity_mcda"]=profile(CandidateRecord(**row))
+            report.setdefault("review_title_recovery",[]).append({"candidate_id":row["candidate_id"],"new_bibliographic_records":len({str(x["source_record_id"]) for x in extra}-before),"status":status,"novelty_confirmed":False})
     report["candidates"].sort(key=lambda row: (tuple(-x for x in row["metadata"]["opportunity_mcda"]["priority_key"]),row["candidate_id"]))
     report["status"]="SAMPLED" if report["queries"] and all(q["status"] in ("SEARCHED_POSITIVE","SEARCHED_NEGATIVE") for q in report["queries"]) else "PARTIAL_SAMPLE" if any(q["retrieved"] for q in report["queries"]) else "ACCESS_UNRESOLVED"
     return report
