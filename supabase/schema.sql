@@ -227,7 +227,7 @@ begin
 
   raise exception 'Unauthorized discovery job status transition';
 end;
-$;
+$$;
 
 drop trigger if exists scimed_cancel_guard on public.discovery_jobs;
 create trigger scimed_cancel_guard

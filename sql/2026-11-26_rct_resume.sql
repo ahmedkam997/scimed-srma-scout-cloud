@@ -62,7 +62,7 @@ begin
 
   raise exception 'Unauthorized discovery job status transition';
 end;
-$;
+$$;
 
 
 -- New client inserts cannot fabricate completed reports or resume flags.

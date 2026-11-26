@@ -28,3 +28,11 @@ def test_resume_sql_is_invoker_and_preserves_report():
     branch=s.split("elsif old.status='COMPLETED'")[1].split("elsif old.status='QUEUED'")[0]
     assert "new := old" in branch and "new.result_json" not in branch
     assert "result_json='{}'::jsonb" in s
+
+
+def test_sql_function_delimiters_balanced():
+    from pathlib import Path
+    for p in ['sql/2026-11-26_rct_resume.sql','supabase/schema.sql']:
+        s=Path(p).read_text()
+        assert '\n$;\n' not in s
+        assert s.count('$$') % 2 == 0

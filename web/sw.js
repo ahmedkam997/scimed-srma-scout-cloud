@@ -1,6 +1,6 @@
 // Network first: phone users receive newly deployed JS even after PWA installation.
-const CACHE='scimed-review-scout-v41';
-const ASSETS=['./','./index.html','./styles.css?v=20261126-rct-resume-v1','./app.js?v=20261126-rct-resume-v1','./gap-verification.js?v=20261126-rct-resume-v1','./final-audit-evidence.js?v=20261126-rct-resume-v1','./final-evidence-audit.js?v=20261126-rct-resume-v1','./opportunity-assessment.js?v=20261126-rct-resume-v1','./manifest.webmanifest','./config.js?v=20261126-rct-resume-v1'];
+const CACHE='scimed-review-scout-v42';
+const ASSETS=['./','./index.html','./styles.css?v=20261126-durable-resume-rct-v2','./app.js?v=20261126-durable-resume-rct-v2','./gap-verification.js?v=20261126-durable-resume-rct-v2','./final-audit-evidence.js?v=20261126-durable-resume-rct-v2','./final-evidence-audit.js?v=20261126-durable-resume-rct-v2','./opportunity-assessment.js?v=20261126-durable-resume-rct-v2','./manifest.webmanifest','./config.js?v=20261126-durable-resume-rct-v2'];
 self.addEventListener('install',e=>e.waitUntil(
   caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())
 ));
