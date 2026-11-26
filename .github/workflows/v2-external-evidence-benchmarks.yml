@@ -64,8 +64,11 @@ jobs:
           rows=list(csv.DictReader(open("statins.csv",encoding="utf-8-sig")))
           key=next(k for k in rows[0] if k.lower() in ("included","label","label_included"))
           total=len(rows); positives=sum(int(r[key]) for r in rows)
-          with asr.open_state("statins.asreview") as state:
-              df=state.get_results_table()
+          from tempfile import TemporaryDirectory
+          with TemporaryDirectory() as tmp:
+              project=asr.Project.load("statins.asreview", tmp)
+              with asr.open_db(project.db_path, read_only=True) as state:
+                  df=state.get_results_table()
           labels=[int(x) for x in df["label"]]
           assert set(labels)<={0,1} and len(labels)<=total
           target=math.ceil(.95*positives); cumulative=0; at95=None
