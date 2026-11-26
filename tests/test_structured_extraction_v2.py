@@ -65,3 +65,18 @@ def test_exact_pmid_recovery_does_not_replace_other_source(tmp_path):
         a=recover_pubmed_abstracts(ledger,"c",None,fetcher=lambda ids:raw)
         assert a["retrieved"]==1 and len(ledger.list_external_evidence("c"))==2
         assert recover_pubmed_abstracts(ledger,"c",None,previous=a,fetcher=lambda ids:raw)["source_calls"]==0
+
+def test_explicit_hazard_ratio_does_not_convert_rates_or_infer_direction():
+    s=registry();o=s["resultsSection"]["outcomeMeasuresModule"]["outcomeMeasures"][0]
+    o["analyses"]=[{"paramType":"Hazard Ratio (HR)","paramValue":"0.75","ciLowerLimit":"0.65","ciUpperLimit":"0.86","ciPctValue":"95","ciNumSides":"2-Sided","groupIds":["A","B"]}]
+    r=registry_leads(s,"NCT00000001")["reported_ratio_estimates"]
+    assert len(r)==1 and r[0]["ratio"]==0.75 and r[0]["ci95"]==[.65,.86] and not r[0]["direction_verified"] and not r[0]["pooling_allowed"]
+    o["analyses"][0]["ciNumSides"]="1-Sided"
+    assert not registry_leads(s,"NCT00000001")["reported_ratio_estimates"]
+
+def test_focused_query_does_not_replace_broad_scope():
+    from scimed_scout.discovery.competitor_priority_v2 import focused_review_query
+    c=CandidateRecord("c","p","Q","Cardiology",population="heart failure",intervention_exposure_index_test="dapagliflozin")
+    assert '"heart failure"[ti]' in focused_review_query(c) and '"dapagliflozin"[ti]' in focused_review_query(c)
+    c.population="heart failure or kidney disease"
+    assert focused_review_query(c)==""

@@ -296,6 +296,27 @@ class ReviewDiscoveryOrchestrator:
             candidate=self.ledger.get_candidate(candidate_id) or candidate
             candidate.metadata={**(candidate.metadata or {}),"registry_result_reference_audit":registry_audit}
             self.ledger.upsert_candidate(candidate)
+        if self.strict_rct_minimum and recover_only and self.adaptive_search and not (candidate.metadata or {}).get("v2_focused_review_recovery"):
+            from .competitor_priority_v2 import focused_review_query
+            client=self.clients.get("PubMed")
+            query=focused_review_query(candidate)
+            if client is not None and query:
+                self._check_cancellation()
+                diagnostic={"query":query,"coverage_clearance_allowed":False}
+                try:
+                    result=client.search(query,limit=40)
+                    diagnostic.update(status=result.status.value,total=result.total_count,retrieved=len(result.records))
+                    for record in result.records:
+                        self._check_cancellation()
+                        cue=classify_review_search_hit(record)
+                        self._store_record(candidate_id,"PUBLISHED_REVIEW" if cue=="CONFIRMED_REVIEW_CUE" else "OTHER",
+                            record,query,"V2_FOCUSED_COMPETITOR_RECOVERY",classification=cue,originally_requested="PUBLISHED_REVIEW")
+                except Exception as exc:
+                    self._check_cancellation()
+                    diagnostic.update(status="ACCESS_FAILED",error_type=type(exc).__name__)
+                candidate=self.ledger.get_candidate(candidate_id) or candidate
+                candidate.metadata={**(candidate.metadata or {}),"v2_focused_review_recovery":diagnostic}
+                self.ledger.upsert_candidate(candidate)
         if self.strict_rct_minimum and self.adaptive_search:
             from .structured_extraction_v2 import collect as extract_leads,recover_pubmed_abstracts
             pubmed=self.clients.get("PubMed")

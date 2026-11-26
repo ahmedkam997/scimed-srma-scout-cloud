@@ -1,5 +1,5 @@
 """Bounded evidence extraction. Source facts are leads, never adjudicated eligibility."""
-import re,hashlib,xml.etree.ElementTree as ET
+import re,hashlib,math,xml.etree.ElementTree as ET
 from .competitor_records import identifiers,abstract
 from .open_access_dates import _pmcid,_fetch_xml
 from .registry_outcomes import extract
@@ -46,7 +46,7 @@ def registry_leads(study,nct):
     return {"status":"REGISTRY_LEADS","registry_id":nct,"study_type":d.get("studyType"),"allocation":design.get("allocation"),
             "intervention_model":design.get("interventionModel"),"enrollment":(d.get("enrollmentInfo") or {}).get("count"),
             "protocol_arms":[{"label":x.get("label"),"type":x.get("type"),"interventions":x.get("interventionNames",[])} for x in a.get("armGroups",[]) if isinstance(x,dict)],
-            "numeric_outcome_leads":groups,"eligibility_confirmed":False,"independence_confirmed":False,"pooling_allowed":False}
+            "numeric_outcome_leads":groups,"reported_ratio_estimates":ratio_estimates(study,nct),"eligibility_confirmed":False,"independence_confirmed":False,"pooling_allowed":False}
 
 def jats_leads(row,raw,*,source_url=None):
     pmc=_pmcid(row);ids=identifiers(row)
@@ -152,3 +152,32 @@ def recover_pubmed_abstracts(ledger,candidate_id,client,*,previous=None,fetcher=
         result.update(status="ACCESS_UNRESOLVED",error_type=type(ex).__name__)
         # Transient access failure must not permanently consume IDs.
     return result
+
+def ratio_estimates(study,nct):
+    """Explicit reported ratios and two-sided 95% CIs, never infer direction."""
+    p=study.get("protocolSection") or {}
+    if (p.get("identificationModule") or {}).get("nctId")!=nct:return []
+    out=[]
+    for i,o in enumerate((study.get("resultsSection") or {}).get("outcomeMeasuresModule",{}).get("outcomeMeasures",[])):
+        if not isinstance(o,dict):continue
+        groups={g["id"]:g.get("title") for g in o.get("groups",[]) if isinstance(g,dict) and g.get("id") and g.get("title")}
+        for j,a in enumerate(o.get("analyses",[])):
+            if not isinstance(a,dict):continue
+            typ=str(a.get("paramType") or "").strip().casefold()
+            typ=re.sub(r"\s*\([^)]*\)\s*$","",typ)
+            if typ not in ("hazard ratio","risk ratio","relative risk","odds ratio"):continue
+            ids=a.get("groupIds") or []
+            if len(ids)!=2 or len(set(ids))!=2 or any(k not in groups for k in ids):continue
+            try:
+                value,lo,hi,pct=(float(a[k]) for k in ("paramValue","ciLowerLimit","ciUpperLimit","ciPctValue"))
+            except (KeyError,TypeError,ValueError):continue
+            if not all(math.isfinite(x) for x in (value,lo,hi,pct)) or pct!=95 or not 0<lo<=value<=hi or lo==hi:continue
+            if str(a.get("ciNumSides") or "").upper() not in ("2-SIDED","TWO_SIDED","TWO-SIDED","2"):continue
+            out.append({"title":o.get("title"),"time_frame":o.get("timeFrame"),"measure":typ,
+                        "ratio":value,"ci95":[lo,hi],"groups":[{"id":k,"label":groups[k]} for k in ids],
+                        "comparison_description":a.get("groupDescription"),"statistical_method":a.get("statisticalMethod"),
+                        "url":"https://clinicaltrials.gov/study/"+nct+"?tab=results",
+                        "locator":f"resultsSection.outcomeMeasuresModule.outcomeMeasures[{i}].analyses[{j}]",
+                        "direction_verified":False,"pooling_allowed":False})
+            if len(out)>=30:return out
+    return out

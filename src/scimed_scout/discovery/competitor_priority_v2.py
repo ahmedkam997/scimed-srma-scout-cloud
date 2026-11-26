@@ -24,3 +24,15 @@ def hybrid(candidate,rows):
     alt=order(candidate,rows)
     positions={identity(r):i for i,r in enumerate(alt)}
     return [r for _,r in sorted(enumerate(rows),key=lambda x:-(1/(20+x[0])+1/(20+positions[identity(x[1])])))]
+
+def focused_review_query(candidate):
+    """Additional title-constrained query, not a substitute for broad searches."""
+    import re
+    def phrase(value):
+        value=str(value or "").strip()
+        # Do not reinterpret Boolean or punctuated scopes as phrases.
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 -]{1,99}",value) or re.search(r"\b(or|and|not|except|without)\b",value,re.I):return None
+        return '"'+value+'"[ti]'
+    p,i=phrase(candidate.population),phrase(candidate.intervention_exposure_index_test)
+    if not p or not i:return ""
+    return p+" AND "+i+' AND (meta-analysis[pt] OR systematic review[pt] OR meta-analysis[tiab] OR pooled[ti])'

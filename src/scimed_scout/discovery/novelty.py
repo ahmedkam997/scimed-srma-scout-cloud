@@ -476,7 +476,9 @@ def _select_incremental(candidate,records,limit,*,force=False):
         return ranked[:limit]
     cached=[r for r in ranked if _valid_cached(candidate,r)]
     outstanding=[r for r in ranked if not _valid_cached(candidate,r)]
-    if (candidate.metadata or {}).get("rct_first"):
+    # The paired live challenge found mixed rank changes. Keep the
+    # existing priority as default; enable experimental hybrid explicitly.
+    if (candidate.metadata or {}).get("experimental_competitor_hybrid") is True:
         from .competitor_priority_v2 import hybrid
         outstanding=hybrid(candidate,outstanding)
     fresh=[r for r in outstanding if not _attempted_current(candidate,r)]
