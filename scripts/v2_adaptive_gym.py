@@ -151,6 +151,16 @@ def load_policy(path):
         raise ValueError("invalid experimental policy")
     return data["threshold"]
 
+def assess_transfer(adaptive,baseline):
+    """Fail closed: this gate is for experimental strategy selection only."""
+    ok=(adaptive.get("resolved") is True and baseline.get("resolved") is True
+        and adaptive.get("recall") is not None and baseline.get("recall") is not None
+        and adaptive["recall"]>=0.95 and adaptive["recall"]>=baseline["recall"])
+    return {"passed":ok,"experimental_policy_accepted":ok,
+            "fallback":"always_expand" if not ok else None,
+            "production_approved":False,"scientific_search_complete":False,
+            "reason":"relative recall below conservative control or unresolved" if not ok else "single development transfer check only"}
+
 async def run(client):
     train_results={}
     for case in CASES[:2]:
@@ -167,8 +177,13 @@ async def run(client):
     env=SequentialGym(client,CASES[2],{})
     transfer=await rollout(env,frozen)
     baselines={"always_expand":await rollout(env,0.0),"never_expand":await rollout(env,1000000.0)}
+    decision=assess_transfer(transfer,baselines["always_expand"])
+    memory={"schema":1,"case":CASES[2][0],"trained_policy_threshold":frozen,"decision":decision,
+            "observed_recall":transfer["recall"],"conservative_control_recall":baselines["always_expand"]["recall"],
+            "recovery_strategy":"always_expand","qualification_granted":False}
+    Path("adaptive-experience.json").write_text(json.dumps(memory,indent=2)+"\n")
     return {"aviary":version("fhaviary"),"ldp":version("ldp"),"development":train_results,
-            "chosen_threshold":chosen,"policy_reloaded":True,"scores":scores,
+            "chosen_threshold":chosen,"policy_reloaded":True,"scores":scores,"transfer_safety_decision":decision,
             "transfer":{"case":CASES[2][0],"review":SURG_REF["review_pmid"],"adaptive":transfer,"baselines":baselines},
             "all_resolved":all(x["resolved"] for x in [transfer,*baselines.values()]),
             "independent_final_test":False,"llm_calls":0,"llm_weights_changed":False,
