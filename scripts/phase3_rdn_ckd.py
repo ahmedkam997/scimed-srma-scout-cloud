@@ -72,8 +72,41 @@ def audit(client, registry, *, fetch=_fetch):
     return report
 
 
+def recover_identity(client, registry):
+    searches = []
+    for term in ("RDN-CKD", "ultrasound renal denervation chronic kidney disease sham"):
+        try:
+            response = registry.get_json(CTG, {"query.term": term, "pageSize": 10, "countTotal": "true"})
+            hints = [
+                study.get("protocolSection", {}).get("identificationModule", {})
+                for study in response.get("studies", [])
+            ]
+            searches.append({
+                "query": term, "reported_total": response.get("totalCount"),
+                "status": "BOUNDED_RESPONSE" if isinstance(response.get("totalCount"), int) else "UNRESOLVED",
+                "records": [
+                    {key: row.get(key) for key in ("nctId", "briefTitle", "acronym", "orgStudyIdInfo")}
+                    for row in hints
+                ],
+            })
+        except (OSError, ValueError, AttributeError, TypeError) as exc:
+            searches.append({"query": term, "status": "ACCESS_OR_FORMAT_UNRESOLVED", "error_type": type(exc).__name__})
+    protocol = client.search('("RDN-CKD"[tiab] OR "RDN CKD"[tiab]) AND "renal denervation"[tiab]', limit=10)
+    return {
+        "registry_searches": searches,
+        "related_pubmed_search": {
+            "status": protocol.status.value, "reported_total": protocol.total_count,
+            "reports": [{"pmid": str(row.record_id), "title": row.title} for row in protocol.records],
+        },
+        "identity_confirmed": False,
+    }
+
+
 def main():
-    report = audit(PubMedSource(), JsonHttpClient(timeout=12, retries=1))
+    client, registry = PubMedSource(), JsonHttpClient(timeout=12, retries=1)
+    report = audit(client, registry)
+    if report.get("registry", {}).get("status") == "UNRESOLVED_REGISTRATION":
+        report["identity_recovery"] = recover_identity(client, registry)
     Path("phase3-rdn-ckd.json").write_text(json.dumps(report, indent=2) + "\n")
     notice("RDN-CKD registration and outcome cues", report)
     if report.get("registry", {}).get("status") != "EXACT_IDENTIFIER":
