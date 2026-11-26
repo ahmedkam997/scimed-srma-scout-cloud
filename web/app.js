@@ -1019,6 +1019,7 @@ function renderJobs() {
         ? `<div class="job-actions">
             <button class="secondary small" data-copy-job="${escapeHtml(job.id)}">${options.length ? 'Copy for ChatGPT' : 'Copy diagnostic report'}</button>
             <button class="secondary small" data-download-job="${escapeHtml(job.id)}">${options.length ? 'Download JSON' : 'Download report JSON'}</button>
+            ${hasCurrentReport(job) && summary.resume_eligible === true ? `<button class="secondary small" data-retry-job="${escapeHtml(job.id)}">Resume unfinished verification</button><p class="help">Reuse the saved trial evidence. Only unresolved automated checks are retried; independent eligibility remains manual. Available 10 minutes after completion.</p>` : ''}
             ${hasScreeningQueue ? `<button class="secondary small" data-screening-csv="${escapeHtml(job.id)}">Download study-screening CSV</button>` : ''}
           </div>`
         : job.status === 'FAILED'
@@ -1170,7 +1171,8 @@ function formatDate(value) {
 
 async function retryJob(jobId) {
   const job = jobs.find(item => item.id === jobId);
-  if (!job || job.status !== 'FAILED') return;
+  const resume = job?.status === 'COMPLETED' && hasCurrentReport(job) && job.result_json?.run_summary?.resume_eligible === true;
+  if (!job || (job.status !== 'FAILED' && !resume)) return;
   if (jobs.some(item => item.id !== jobId && item.specialty === job.specialty
       && item.question_type === job.question_type
       && ['QUEUED', 'RUNNING'].includes(item.status))) {
@@ -1179,18 +1181,19 @@ async function retryJob(jobId) {
     return;
   }
   if (!window.confirm(
-    'Retry this failed job using the same clinical settings? Check your OpenRouter/Groq access first. Saved worker checkpoints are reused where available; the browser report is refreshed.'
+    resume ? 'Resume unresolved automated verification using saved evidence? This may use free AI quota. Download a backup of the current report first if needed. Scientific eligibility still requires independent verification.' : 'Retry this failed job using the same clinical settings? Check your free AI access first. Saved worker checkpoints are reused where available.'
   )) return;
   const button = Array.from(els.jobs.querySelectorAll('[data-retry-job]'))
     .find(item => item.dataset.retryJob === jobId);
   if (button) button.disabled = true;
   try {
-    const { data, error } = await supabase.rpc('scimed_retry_job', { p_job_id: jobId });
+    const { data, error } = await supabase.rpc(resume ? 'scimed_resume_rct_job' : 'scimed_retry_job', { p_job_id: jobId });
     if (error) throw error;
+    if (data) openedReports.delete(jobId);
     await loadJobs();
     if (!data) {
       backendState('waiting', 'Retry not applied',
-        'The task is no longer failed, or it does not belong to this browser.');
+        resume ? 'The task is no longer eligible, the 10-minute cooldown is active, or another matching job is active.' : 'The task is no longer failed, or it does not belong to this browser.');
       return;
     }
     backendState('waiting', 'Existing job requeued',

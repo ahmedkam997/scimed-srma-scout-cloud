@@ -26,6 +26,7 @@ from .checkpoints import audit_snapshot,restore_audit
 
 SEED="rct-first:seed:v1"
 AUDIT="rct-first:audit:v1:"
+SELECTION="rct-first:selection:v1"
 BUDGET=18
 PER_TOPIC=6
 
@@ -68,12 +69,29 @@ def _candidate(row,job):
     fields=dict(row);fields["project_id"]=job.id;fields["status"]=CandidateStatus.DISCOVERED
     return CandidateRecord(**fields)
 
+def recovery_reasons(result,metadata):
+    """Machine-actionable recovery only; independent human adjudication is separate."""
+    if result.candidate_status not in (CandidateStatus.PROVISIONAL_BACKUP,CandidateStatus.DEEP_VERIFYING):
+        return []
+    if not result.coverage.complete:
+        return ["MANDATORY_SOURCE_COVERAGE"]
+    strict=metadata.get("rct_first_final_audit") or {}
+    if strict.get("family_leads",0)<MIN_FAMILIES or result.evidence.pico_audit.get("pico_design_family_leads",0)<MIN_FAMILIES:
+        return []
+    reasons=[]
+    if any("competing published reviews are not fully assessed" in p or "competing review registrations are not fully assessed" in p or "limited competitor assessment scope" in p for p in result.pending):
+        reasons.append("COMPETITOR_BACKLOG")
+    if not metadata.get("discovery_gate_inputs") or metadata.get("discovery_scoring_deferred"):
+        reasons.append("SCORING_UNFINISHED")
+    return reasons
+
 def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=AdaptiveFreeRouter.from_env):
     check=lambda:store.ensure_active(job.id)
     check()
     history=store.recent_completed_jobs(client_token_hash=job.client_token_hash,revisit_days=job.revisit_days)
     prior=recent_topic_memory(history,revisit_days=job.revisit_days)
     seed=store.load_step(job.id,SEED)
+    reused_seed=bool(seed)
     if seed:
         if seed.get("version")!=VERSION or seed.get("job_id")!=job.id:raise RuntimeError("RCT seed checkpoint scope mismatch")
         seed=seed["report"]
@@ -86,8 +104,13 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
         c.metadata["opportunity_mcda"]=profile(c)
     candidates.sort(key=lambda c:(tuple(-x for x in c.metadata["opportunity_mcda"]["priority_key"]),c.candidate_id))
     drafts=[_draft(c) for c in candidates]
-    store.update_job(job.id,stage="RCT_EVIDENCE_TRIAGE",progress=20,message=f"Found {len(candidates)} source-linked comparison question(s); selecting up to three for deep verification",
-        result_json={"checkpoint":{"stage":"RCT_EVIDENCE_TRIAGE","verified":False,"candidates":drafts,"rct_first":seed}})
+    if reused_seed:
+        # Keep the last completed cloud report intact until a replacement is
+        # successfully built. Evidence snapshots are worker-only.
+        store.update_job(job.id,stage="RCT_EVIDENCE_TRIAGE",progress=20,message="Reusing saved evidence and candidate plan; checking unresolved work only")
+    else:
+        store.update_job(job.id,stage="RCT_EVIDENCE_TRIAGE",progress=20,message=f"Found {len(candidates)} source-linked comparison question(s); selecting up to three for deep verification",
+            result_json={"checkpoint":{"stage":"RCT_EVIDENCE_TRIAGE","verified":False,"candidates":drafts,"rct_first":seed}})
     try:provider=BoundedProvider(router_factory())
     except (RuntimeError,ValueError):provider=None
     clients=clients if clients is not None else build_default_source_clients()
@@ -101,7 +124,16 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
         if cell in seen:continue
         seen.add(cell);selected.append(c)
         if len(selected)>=MAX_DEEP:break
-    audits=[];ranked=[];checked=[];qualified=[]
+    saved_selection=store.load_step(job.id,SELECTION)
+    if saved_selection:
+        ids=saved_selection.get("candidate_ids")
+        by_id={c.candidate_id:c for c in candidates}
+        if saved_selection.get("job_id")!=job.id or saved_selection.get("version")!=1 or not isinstance(ids,list) or len(ids)>MAX_DEEP or len(set(ids))!=len(ids) or any(i not in by_id for i in ids):
+            raise ValueError("Invalid saved RCT selection scope")
+        selected=[by_id[i] for i in ids]
+    else:
+        store.save_step(job.id,SELECTION,{"version":1,"job_id":job.id,"candidate_ids":[c.candidate_id for c in selected]})
+    audits=[];ranked=[];checked=[];qualified=[];restored_count=0;recovery_count=0;reused_without_recheck=0
     with TemporaryDirectory(prefix="scimed-rct-first-") as d:
         with SQLiteLedger(Path(d)/"rct.sqlite3") as ledger:
             ledger.upsert_project(ProjectRecord(job.id,job.specialty,"EFFECTIVENESS"))
@@ -113,6 +145,11 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                 previous=store.load_step(job.id,AUDIT+c.candidate_id)
                 if previous:
                     result=restore_audit(ledger,previous,job.id,c.candidate_id)
+                    restored_count+=1
+                    restored=ledger.get_candidate(c.candidate_id)
+                    if result.candidate_status!=CandidateStatus.QUALIFIED and not recovery_reasons(result,restored.metadata or {}):
+                        checked.append(result);reused_without_recheck+=1;continue
+                    recovery_count+=1
                     # Retry restores source records and cached assessments rather
                     # than regenerating questions or repeating successful queries.
                     # A legacy discovery-only QUALIFIED label cannot establish seven independent eligible trials.
@@ -151,6 +188,8 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     "competitor_audit":{"published_reviews_discovered":m.get("discovery_competitor_records_discovered",0),
                     "unassessed_reviews":m.get("discovery_unassessed_review_count",0),"unassessed_registrations":m.get("discovery_unassessed_registration_count",0)},
                     "scorecard":m.get("discovery_gate_inputs") or {},"opportunity_mcda":m.get("opportunity_mcda") or {}})
+            recovery_queue=[{"candidate_id":x.candidate_id,"reasons":recovery_reasons(x,ledger.get_candidate(x.candidate_id).metadata or {})} for x in checked]
+            recovery_queue=[x for x in recovery_queue if x["reasons"]]
             desired=min(3,job.final_options)
             run=DiscoveryRunResult(job.id,ranked,checked,qualified[:desired],qualified,desired)
             package=build_discovery_review_package(ledger,run)
@@ -168,10 +207,11 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
             counts={}
             for x in checked:counts[x.candidate_status.value]=counts.get(x.candidate_status.value,0)+1
             return {"package":package,"run_summary":{"mode":VERSION,"requested_candidates":job.candidate_count,"generated_candidates":len(candidates),
+                "resume_eligible":bool(recovery_queue),"resume_queue":recovery_queue,"resume_audit":{"reused_seed":reused_seed,"restored_candidate_audits":restored_count,"rechecked_candidates":recovery_count,"reused_without_recheck":reused_without_recheck},
                 "verified_candidates":len(checked),"unverified_generated_candidates":len(candidates)-len(checked),"status_counts":counts,
                 "qualified_candidate_ids":qualified,"desired_options":desired,"candidate_audits":audits,
                 "ai_telemetry":provider.snapshot() if provider else {"logical_requests":0,"logical_call_cap":BUDGET,"provider_available":False},
-                "generation_shortfall":0,"generation_warnings":["Evidence-first mode: no AI-generated topics; bounded source samples, not systematic review eligibility."],
+                "generation_shortfall":max(0,job.candidate_count-len(candidates)),"generation_warnings":["Evidence-first mode: no AI-generated topics; bounded source samples, not systematic review eligibility."],
                 "rct_first":package["rct_first"],"weighted_assessment_comparison":package["weighted_assessment_comparison"],"topic_history":[{**{k:getattr(c,k) for k in ("candidate_id","title","specialty","question_type","population","intervention_exposure_index_test","comparator_reference","outcomes","eligible_designs")},"status":x.candidate_status.value,"checked_at":datetime.now(timezone.utc).isoformat()} for x in checked if (c:=ledger.get_candidate(x.candidate_id))],
                 "generated_topic_history":[{k:getattr(c,k) for k in ("candidate_id","title","specialty","question_type","population","intervention_exposure_index_test","comparator_reference","outcomes","eligible_designs")} for c in candidates],
                 "recent_topics_skipped":seed.get("skipped_recent",[]),"recent_topics_skipped_count":len(seed.get("skipped_recent",[]))}}
