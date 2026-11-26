@@ -1,5 +1,6 @@
 """Audit shortlisted public reports without granting scientific qualification."""
 
+import argparse
 import json
 from pathlib import Path
 
@@ -21,6 +22,17 @@ RENAL_UPDATE_QUERY = (
     'AND ("2025/09/04"[dp] : "3000/01/01"[dp]) '
     'NOT (systematic review[pt] OR meta-analysis[pt] OR editorial[pt] OR comment[pt])'
 )
+ALTERNATE_QUERIES = {
+    "RCT-DC2CCEEECCEA922C": (
+        'sacubitril[ti] AND enalapril[tiab] AND "heart failure"[tiab] '
+        'AND (systematic review[pt] OR meta-analysis[pt] OR "meta-analysis"[ti])'
+    ),
+    "RCT-4BCA689B9D4F33A5": (
+        '"catheter ablation"[ti] AND "atrial fibrillation"[tiab] '
+        'AND (medical[tiab] OR drug[tiab]) '
+        'AND (systematic review[pt] OR meta-analysis[pt] OR "meta-analysis"[ti])'
+    ),
+}
 REVIEWS = ("42985463", "42499063", "42201709", "43090943")
 
 
@@ -99,7 +111,20 @@ def notice(title, value):
     print(f"::notice title={title}::{json.dumps(value, ensure_ascii=True).replace('%', '%25')}")
 
 
+def search_review_leads(client, query, limit):
+    result = client.search(query, limit=limit)
+    return {
+        "query": query,
+        "status": result.status.value,
+        "reported_total": result.total_count,
+        "reports": [{"pmid": str(row.record_id), "title": row.title} for row in result.records],
+    }
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--alternate", action="store_true", help="Audit the two alternate cardiology candidates.")
+    args = parser.parse_args()
     source = Path("inputs/phase3-opportunities-cardiology/opportunity.json")
     candidates = json.loads(source.read_text())["candidates"]
     client = PubMedSource()
@@ -107,7 +132,17 @@ def main():
     targets, reviews = TARGETS, REVIEWS
     review_search = None
     update_search = None
-    if renal:
+    alternate_searches = {}
+    if args.alternate:
+        targets = set(ALTERNATE_QUERIES)
+        alternate_searches = {
+            cid: search_review_leads(client, query, limit=4)
+            for cid, query in ALTERNATE_QUERIES.items()
+        }
+        reviews = tuple(dict.fromkeys(
+            row["pmid"] for result in alternate_searches.values() for row in result["reports"]
+        ))
+    elif renal:
         targets = {RENAL}
         search = client.search(RENAL_REVIEW_QUERY, limit=6)
         reviews = tuple(str(row.record_id) for row in search.records)
@@ -124,9 +159,12 @@ def main():
             "reports": [{"pmid": str(row.record_id), "title": row.title} for row in update.records],
         }
     result = audit(client, candidates, targets=targets, reviews=reviews)
+    result["alternate_review_searches"] = alternate_searches
     result["bounded_review_search"] = review_search
     result["bounded_update_search"] = update_search
     Path("phase3-family-methods.json").write_text(json.dumps(result, indent=2) + "\n")
+    for cid, search in alternate_searches.items():
+        notice(f"Alternate review search {cid}", search)
     if review_search is not None:
         notice("Renal competitor search", review_search)
     if update_search is not None:
@@ -155,9 +193,10 @@ def main():
         })
     searches_available = all(
         row is None or row["status"] in {"SEARCHED_POSITIVE", "SEARCHED_NEGATIVE"}
-        for row in (review_search, update_search)
+        for row in (review_search, update_search, *alternate_searches.values())
     )
     if (not searches_available or result["missing_pubmed_ids"]
+        or any(not row["reports"] for row in alternate_searches.values())
         or set(result["candidates"]) != targets or not reviews
         or not all(result["competitor_methods"].values())):
         raise SystemExit("Family or full-text Methods audit remains incomplete")

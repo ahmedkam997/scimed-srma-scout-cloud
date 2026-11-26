@@ -6,6 +6,10 @@ on:
         description: Run ID of the Phase 3 opportunity discovery workflow
         required: true
         type: string
+      alternate:
+        description: Audit sacubitril/valsartan and AF ablation candidates
+        type: boolean
+        default: false
   push:
     branches: [scientific-verification-v2-phase3-replay]
     paths:
@@ -93,7 +97,11 @@ jobs:
         env:
           NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
           SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
-        run: python -m scripts.phase3_family_methods
+          AUDIT_ALTERNATE: ${{ inputs.alternate || (github.event_name == 'push' && contains(github.event.head_commit.message, '[alternate]')) }}
+        run: |
+          args=()
+          if [[ "$AUDIT_ALTERNATE" == true ]]; then args+=(--alternate); fi
+          python -m scripts.phase3_family_methods "${args[@]}"
       - uses: actions/upload-artifact@v6
         if: always()
         with:
