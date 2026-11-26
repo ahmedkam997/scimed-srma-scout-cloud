@@ -10,3 +10,12 @@
 - Started a dedicated development-branch opportunity run using the existing
   RCT-first sampler in Cardiology and General Surgery. Scientific status is
   unresolved until source evidence has been examined.
+
+- Hosted discovery completed. Cardiology yielded three candidate leads and
+  surgery five; both coverage statuses were `PARTIAL_SAMPLE`. Two
+  cardiology candidates met the bibliographic threshold and no candidate
+  received scientific qualification. The read-only hosted triage recovered
+  both reports when local artifact download was unavailable.
+- Hosted historical PubMed, native Aviary/LDP and external-data workflows
+  completed successfully. Focused competitor and recent-trial retrieval
+  was then queued for the two cardiology leads and appendicitis.

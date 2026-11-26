@@ -11,3 +11,7 @@
   evidence and sign a reconciled packet. Automation cannot furnish or simulate
   this approval. Keep reviewer identities, keys and signatures in the
   protected operator channel.
+
+- Both hosted discovery samples were partial. TAVR/SAVR and ticagrelor/
+  clopidogrel have bibliographic shortlist cues, with actual trial identity,
+  extractable outcomes and competitor cutoffs still unresolved.
