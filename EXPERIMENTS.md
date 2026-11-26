@@ -49,3 +49,10 @@
   metadata. The alternate lookup queries the trial acronym and clinical
   scope in ClinicalTrials.gov and PubMed. Synthetic checks covered exact ID,
   mismatch, and unverified search candidates. [Registry recovery run](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45893775017)
+
+- The alternate cardiology audit saved artifact `15152293472` on
+  run `45894079291`. Both bounded review searches responded and only
+  one of eight sampled Methods dates resolved. The workflow preserved
+  the artifact and exited nonzero. GitHub's public annotation limit
+  hid the trial-family rows, so recovery run `45894258451` reads the
+  preserved artifact without repeating source requests.

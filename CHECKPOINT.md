@@ -100,3 +100,14 @@ outside the strict parallel-trial count. The next feasible action is to
 triage the alternate cardiology shortlist (sacubitril/valsartan versus
 enalapril and AF ablation versus medical treatment) while the report's
 original Methods and corrected analysis remain unavailable locally.
+
+The alternate cardiology audit `45894079291` and successful artifact
+replay `45894258451` found scope heterogeneity and repeated reports.
+Neither is ready for adjudication. Use a prespecified exact PICO for
+any narrower recovery. For AF ablation, test whether source-linked
+primary RCTs with a compatible medical comparator and HF phenotype
+add usable evidence after the relevant February 2026 sweep. For adult
+sacubitril/valsartan, separate chronic HFrEF, hospitalized
+decompensation, pediatric and Chagas studies and verify the comparator
+review's Methods before claiming novelty. The [evidence ledger](EVIDENCE.md)
+records the reports and cutoff caveats.

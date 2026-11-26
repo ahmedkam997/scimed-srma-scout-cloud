@@ -168,3 +168,40 @@ the estimate. No registry lead qualifies under the current strict
 parallel-randomization gate. [Exact registry records audit](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45893883613)
 [German registry](https://clinicaltrials.gov/study/NCT04264403)
 [Greek registry](https://clinicaltrials.gov/study/NCT07742787)
+
+### Alternate cardiology shortlist
+
+The bounded sacubitril/valsartan search returned 14 hits and inspected
+four. It found a directly titled HFrEF synthesis (PMID 41773097) and
+two Chagas cardiomyopathy syntheses (PMIDs 41941460 and 41923142). No
+Methods cutoff was recovered for those reviews. Treat Chagas as a
+distinct population and verify the matching review's included trials
+and cutoff before inferring novelty.
+
+The AF ablation search returned 91 hits and inspected four. Two were
+close competitors in heart failure (PMIDs 42119914 and 42769399).
+The second review's full-text Methods states that PubMed, Embase and
+Cochrane were searched through February 2026. It addresses reduced or
+mildly reduced ejection fraction. Neither the exact day nor overlap
+with the broader AF comparison is established. The other two hits
+concern discharge or delayed ablation, rather than medical therapy.
+[Hosted competitor and Methods retrieval](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45894079291)
+
+The artifact replay recovered both trial-family ledgers. The
+sacubitril/valsartan comparison contains five distinct registry links and
+two unlinked reports. It mixes pediatric PANORAMA-HF, acute
+decompensation, Chagas cardiomyopathy and renal outcome analyses. Check
+adult HF phenotype, care setting, comparator and common endpoints before
+counting any review-eligible trials. [PANORAMA-HF](https://pubmed.ncbi.nlm.nih.gov/39319469/)
+[Acute decompensation report](https://pubmed.ncbi.nlm.nih.gov/30415601/)
+[Chagas trial](https://pubmed.ncbi.nlm.nih.gov/41335448/)
+
+The catheter ablation ledger has one explicit registration, CABANA
+(NCT00911508), and six unlinked reports. Titles identify a second
+CABANA report and two CASTLE-HTx reports. The ledger also contains a
+cost-effectiveness report. Exclude the economic evaluation from the
+primary-RCT inventory and verify the CASTLE-HTx primary publication,
+registration, HF phenotype and comparator. Repeated reports do not
+increase the independent trial count.
+[CABANA primary report](https://pubmed.ncbi.nlm.nih.gov/30874766/)
+[Artifact replay](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45894258451)

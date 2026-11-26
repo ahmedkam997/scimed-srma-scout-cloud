@@ -35,3 +35,8 @@
 - Verified the RDN-CKD abstract and recovered exact details of two
   candidate registry records. Neither established publication linkage
   or a usable parallel-trial estimate. Fifteen targeted tests passed.
+
+- Audited both alternate cardiology comparisons. The source artifact
+  and replay exposed repeated publications, population mismatch and
+  recent competing reviews. Thirty targeted tests passed. No candidate
+  reached confirmed independent usable RCT or adjudication requirements.

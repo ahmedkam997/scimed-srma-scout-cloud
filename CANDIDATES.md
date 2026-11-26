@@ -78,3 +78,13 @@ Both RDN-CKD registry leads have a crossover design. The German study
 is the stronger identity lead, with no exact publication citation in
 the registry. Keep the report outside the confirmed parallel RCT count.
 The systolic analysis remains unresolved. [Registry and outcome evidence](EVIDENCE.md)
+
+The alternate cardiology ledger did not confirm seven independent
+eligible trials for either candidate. Sacubitril/valsartan versus
+enalapril has five registry links and two unlinked reports across
+different populations and care settings. AF ablation versus medical
+therapy has one explicit registration, repeat reports from known
+families and an economic evaluation. The close HF-subgroup ablation
+review searched through February 2026. Any plausible update requires
+a fixed HF phenotype and verification of new primary RCT evidence.
+[Alternate comparison evidence](EVIDENCE.md)
