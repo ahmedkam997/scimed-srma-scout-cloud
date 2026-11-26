@@ -59,7 +59,7 @@ class RetrievalGym(Environment[State]):
             return "Episode already attempted."
         self.state.tried = True
         strategy, mode = action.rsplit("_", 1)
-        routes = self.strategies[strategy]
+        routes = self.strategies["dual_route" if strategy == "dual" else strategy]
         if action not in self.cache:
             if mode == "top":
                 ids, audit = retrieve(self.client, routes)
