@@ -93,6 +93,7 @@ def build_discovery_review_package(
             "evidence_first_link": dict((candidate.metadata or {}).get("evidence_first_link") or {}),
             "adaptive_search_audit": dict((candidate.metadata or {}).get("adaptive_search_audit") or {}),
             "triage": discovery_triage(verification),
+            "qualification_status": "FULLY_QUALIFIED" if (candidate.metadata or {}).get("scientific_verification_v2",{}).get("qualification_granted") else "QUALIFIED_DISCOVERY_ONLY",
             "research_dossier": _build_research_dossier(
                 ledger, candidate, verification,
                 "FULLY_QUALIFIED_V2" if (candidate.metadata or {}).get("scientific_verification_v2",{}).get("qualification_granted") else "QUALIFIED_DISCOVERY_ONLY",

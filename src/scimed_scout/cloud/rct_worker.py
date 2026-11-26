@@ -124,7 +124,8 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
         store.update_job(job.id,stage="RCT_EVIDENCE_TRIAGE",progress=20,message=f"Found {len(candidates)} source-linked comparison question(s); selecting up to three for deep verification",
             result_json={"checkpoint":{"stage":"RCT_EVIDENCE_TRIAGE","verified":False,"candidates":drafts,"rct_first":seed}})
     from scimed_scout.discovery.scientific_verification_v2 import TrustedDirectory
-    trusted_verifier=TrustedDirectory.from_env()
+    try:trusted_verifier=TrustedDirectory.from_env()
+    except (OSError,ValueError,TypeError):trusted_verifier=None
     try:provider=BoundedProvider(router_factory())
     except (RuntimeError,ValueError):provider=None
     clients=clients if clients is not None else build_default_source_clients()

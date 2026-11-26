@@ -24,13 +24,14 @@ def digest(value):return hashlib.sha256(canonical(value)).hexdigest()
 def snapshot(ledger,candidate):
     rows={k:ledger.list_external_evidence(candidate.candidate_id,k) for k in ("PRIMARY_STUDY","PUBLISHED_REVIEW","REGISTRATION","OTHER","ONGOING_STUDY")}
     other=[r for r in rows["OTHER"] if (r.get("payload") or {}).get("originally_requested_evidence_type") in ("PUBLISHED_REVIEW","REGISTRATION")]
-    packet=build(candidate,rows["PRIMARY_STUDY"],rows["PUBLISHED_REVIEW"],rows["REGISTRATION"],ambiguous=other)
+    primary_other=[r for r in rows["OTHER"] if (r.get("payload") or {}).get("originally_requested_evidence_type")=="PRIMARY_STUDY"]
+    packet=build(candidate,rows["PRIMARY_STUDY"]+primary_other,rows["PUBLISHED_REVIEW"],rows["REGISTRATION"],ambiguous=other)
     # Bind all actual retrieved source data, not just titles/identifiers.
     # Exclude changing semantic inference and derived metadata from content hash,
     # but retain raw source metadata including search-date evidence.
     def content(r):
         p=dict(r.get("payload") or {})
-        for k in ("discovery_semantic_assessment","discovery_semantic_assessment_input_hash","discovery_search_date_attempts"):
+        for k in ("discovery_semantic_assessment","discovery_semantic_assessment_input_hash","discovery_search_date_attempts","discovery_semantic_assessment_record_hash"):
             p.pop(k,None)
         return {"source":r.get("source"),"id":r.get("source_record_id"),"title":r.get("title"),"payload":p}
     latest={(l.source,l.query):l for l in ledger.list_search_log(candidate.candidate_id)}
@@ -90,6 +91,14 @@ def pool(rows):
     return {"k":len(rows),"effect":mean,"se":se,"ci95":[mean-1.95996398454*se,mean+1.95996398454*se],
         "q":q,"i2":max(0,1-(len(rows)-1)/q)*100 if q else 0.0,"method":"COMMON_EFFECT_INVERSE_VARIANCE_PILOT"}
 
+def source_linked(e,record):
+    if not evidence(e):return False
+    url=e["url"].rstrip("/").casefold()
+    allowed={str(record.get("url") or "").rstrip("/").casefold()}
+    allowed.update("https://doi.org/"+x.casefold() for x in record.get("doi",[]))
+    allowed.update("https://pubmed.ncbi.nlm.nih.gov/"+x for x in record.get("pmid",[]))
+    return url in allowed and bool(url)
+
 RATINGS=("clinical_question_novelty","overall_novelty","new_information_gain","clinical_importance","publication_potential")
 FLAGS=("design_framework_defined","meaningful_synthesis_plausible","question_framework_coherent")
 def evaluate(packet,bundle,keys,coverage,policy):
@@ -117,10 +126,14 @@ def evaluate(packet,bundle,keys,coverage,policy):
             fail("full-text PICO, randomization or population independence not confirmed")
         primary={r["id"]:r for r in packet["primary_report_index"]}
         covered={rid for s in data["studies"] for rid in s.get("report_ids",[])}
+        for s in data["studies"]:
+            if not any(source_linked(s["eligibility_evidence"],primary[rid]) for rid in s["report_ids"] if rid in primary):fail("study evidence not linked to included report")
+        for o in data["outcomes"]:
+            if o["report_id"] not in primary or not source_linked(o["evidence"],primary[o["report_id"]]):fail("outcome evidence not linked to indexed report")
         excluded=set()
         for r in data["excluded_reports"]:
             rid=r.get("report_id")
-            if rid not in primary or rid in covered or rid in excluded or not nonempty(r.get("reason")) or not evidence(r.get("evidence")):
+            if rid not in primary or rid in covered or rid in excluded or not nonempty(r.get("reason")) or not source_linked(r.get("evidence"),primary[rid]):
                 fail("invalid or duplicate report exclusion")
             else:excluded.add(rid)
         if covered|excluded != set(primary):fail("primary report inventory not fully screened")
@@ -146,6 +159,9 @@ def evaluate(packet,bundle,keys,coverage,policy):
         route=data.get("route")
         decisions={d["record_id"]:d for d in data["competitor_decisions"]}
         records={r["id"]:r for r in packet["competitor_index"]}
+        for d in decisions.values():
+            record=records[d["record_id"]]
+            if not any(source_linked(d.get("evidence"),r) for r in [record,*record.get("source_variants",[])]):fail("competitor evidence not linked to indexed record")
         overlaps=[d for d in decisions.values() if d["decision"]!="NON_OVERLAP"]
         audit=[]
         if route=="NOVEL":
@@ -161,7 +177,7 @@ def evaluate(packet,bundle,keys,coverage,policy):
             studies={s["study_id"]:s for s in data["studies"]}
             for d in overlaps:
                 a=indexed.get(d["record_id"],{})
-                if not evidence(a.get("baseline_evidence")) or not evidence(a.get("clinical_threshold_evidence")) or not evidence(a.get("impact_evidence")):
+                if not any(source_linked(a.get("baseline_evidence"),r) for r in [records[d["record_id"]],*records[d["record_id"]].get("source_variants",[])]) or not evidence(a.get("clinical_threshold_evidence")) or not evidence(a.get("impact_evidence")):
                     fail("missing baseline, clinical threshold or impact evidence");continue
                 if a.get("synthesis_group")!={k:group[k] for k in fields}:fail("baseline and new outcome/measure mismatch");continue
                 ids=d.get("included_study_ids")
@@ -175,7 +191,7 @@ def evaluate(packet,bundle,keys,coverage,policy):
                     added=[o for o in selected if o["study_id"] not in ids]
                     if not added:fail("no additional independent study in update");continue
                     # Exact source-backed first availability, not publication year or follow-up label alone.
-                    if any(not evidence(studies[o["study_id"]].get("first_report_date_evidence")) or not (b:=date_bounds(studies[o["study_id"]].get("first_report_date"))) or b[0]<=cutoff[1] or b[1]>date.today() for o in added):
+                    if any(not any(source_linked(studies[o["study_id"]].get("first_report_date_evidence"),primary[rid]) for rid in studies[o["study_id"]]["report_ids"]) or not (b:=date_bounds(studies[o["study_id"]].get("first_report_date"))) or b[0]<=cutoff[1] or b[1]>date.today() for o in added):
                         fail("new independent trial chronology unresolved");continue
                     old=pool(baseline)
                 else:
@@ -202,6 +218,8 @@ def evaluate(packet,bundle,keys,coverage,policy):
             "sources":[{"source":n,"status":coverage.source_statuses[n].value} for n in sorted(names) if n in coverage.source_statuses],
             "unresolved_type_a":errors})
         passed=gate["all_discovery_gates_passed"] and not errors
+        if not gate["all_discovery_gates_passed"]:
+            errors.extend("gate failed: "+g["name"] for g in gate["gates"] if not g["passed"])
         return {"version":VERSION,"qualification_granted":passed,"blockers":errors,"reviewers":reviewers,"route":route,
             "snapshot_sha256":binding["snapshot_sha256"],"confirmed_independent_rct_count":structural["valid_study_rows"],
             "trials_with_extractable_outcomes":structural["studies_with_valid_outcome_rows"],"synthesis":combined,"update_audits":audit,
