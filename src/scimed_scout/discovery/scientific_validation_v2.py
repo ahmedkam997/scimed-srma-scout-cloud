@@ -1,7 +1,7 @@
 """Reference retrieval pilot. IDs are only used for evaluation, not discovery."""
 from pathlib import Path
 import argparse,json
-from .rct_first import query_pair,comparison_rows,family_summary,own_rct,_search
+from .rct_first import query_pair,comparison_rows,family_summary,own_rct,_search,_query,control_terms
 from .evidence_first import _record
 from .evidence_classification import classify_review_search_hit
 from scimed_scout.sources.pubmed import PubMedSource
@@ -36,6 +36,10 @@ def main():
             primary,diag=enrich_rows(client,primary);audits.append(diag)
         reviews=_search(client,query_pair(case["pair"],review=True),30,"REVIEW_REFERENCE_RETRIEVAL",audits,None)
         metrics=evaluate(case,primary,reviews)
+        if case["reviews"] and len(metrics["retrieved_review_references"])<len(case["reviews"]):
+            supplemental=_search(client,query_pair(case["pair"],review=True)+" AND "+_query(control_terms(case["comparator"])),30,"REVIEW_COMPARISON_REFERENCE_RECOVERY",audits,None)
+            metrics["review_references_after_supplement"]=sorted(set(case["reviews"])&{str(r["source_record_id"]) for r in [*reviews,*supplemental]})
+        else:metrics["review_references_after_supplement"]=metrics["retrieved_review_references"]
         row={"case":case["id"],"search_audit":audits,**metrics}
         out["cases"].append(row);print(json.dumps(row),flush=True)
         args.output.write_text(json.dumps(out,indent=2)+"\n")
@@ -43,6 +47,7 @@ def main():
     out["primary_reference_retrieval"]=[sum(len(c["retrieved_primary"]) for c in out["cases"]),sum(len(c["reference_primary"]) for c in out["cases"])]
     out["primary_reference_comparison_retention"]=[sum(len(c["retained_primary_comparison_cue"]) for c in out["cases"]),sum(len(c["reference_primary"]) for c in out["cases"])]
     out["review_reference_retrieval"]=[sum(len(c["retrieved_review_references"]) for c in out["cases"]),sum(len(c["reference_reviews"]) for c in out["cases"])]
+    out["review_reference_retrieval_after_supplement"]=[sum(len(c["review_references_after_supplement"]) for c in out["cases"]),sum(len(c["reference_reviews"]) for c in out["cases"])]
     args.output.write_text(json.dumps(out,indent=2)+"\n");print(json.dumps({k:v for k,v in out.items() if k!="cases"}),flush=True)
 
 if __name__=="__main__":main()

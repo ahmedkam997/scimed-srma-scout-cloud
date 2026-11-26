@@ -131,7 +131,7 @@ RCT_FILTER='(randomized controlled trial[pt] OR controlled clinical trial[pt] OR
 REVIEW_FILTER='(systematic[sb] OR meta-analysis[pt] OR systematic review[tiab])'
 # Ratios are removed from an allocation passage only, not from clinical terms.
 ALLOCATION=r"(?:randomi[sz]ed|randomly (?:assigned|allocated))(?:\s*\(\s*\d+\s*:\s*\d+\s*\))?(?:\s+in\s+(?:a\s+)?\d+\s*:\s*\d+\s+ratio)?(?:\s+(?:(?:\d+[\s,]+)?(?:patients|participants|subjects|individuals|adults|children|women|men|people|infants)|\d+)(?:\s+[\w-]+){0,12}?)?\s+(?:to|into)\s+"
-OWN_ASSIGN=re.compile(r"\b(?:randomi[sz]ed (?:controlled )?(?:trial|study)|placebo.controlled|sham.controlled|"+ALLOCATION+r")",re.I)
+OWN_ASSIGN=re.compile(r"\b(?:randomi[sz]ed(?:\s*,\s*[\w-]+){0,4}\s+(?:controlled )?(?:trial|study)|placebo.controlled|sham.controlled|"+ALLOCATION+r")",re.I)
 SECONDARY=re.compile(r"\b(?:secondary analysis|post.hoc|subgroup analysis|sub.study|subanalysis|pooled analysis|individual patient data|insights from|rationale and design|trial protocol|study protocol|retracted publication|extended follow.up|author correction|erratum)\b",re.I)
 COMPARE=re.compile(r"\b(?:versus|vs\.?|compared (?:with|to)|randomi[sz]ed (?:to|into)|randomly (?:assigned|allocated)|placebo.controlled|sham.controlled)\b",re.I)
 BACKGROUND=re.compile(r"^(?:background|introduction|rationale|objective|aim)\s*[:：]",re.I)
@@ -199,7 +199,7 @@ def eligible_groups(pair,rows,year=None):
         if not valid_year:continue
         # Both concepts must appear in the title or in own-study Methods/
         # allocation text, not merely in unrelated background sentences.
-        eligible=[clean_passage(p[3]) for p in passages if p[0]=="title" or (OWN_ASSIGN.search(clean_passage(p[3])) and not BACKGROUND.search(clean_passage(p[3])) and not SECONDARY.search(clean_passage(p[3])) and not re.search(r"\b(?:previous|prior)\b",p[3],re.I))]
+        eligible=[clean_passage(p[3]) for p in passages if p[0]=="title" or ((OWN_ASSIGN.search(clean_passage(p[3])) or re.match(r"^(?:METHODS?|DESIGN(?:, SETTING, AND PARTICIPANTS)?)\s*:",clean_passage(p[3]),re.I)) and not BACKGROUND.search(clean_passage(p[3])) and not SECONDARY.search(clean_passage(p[3])) and not re.search(r"\b(?:previous|prior)\b",p[3],re.I))]
         # The condition may be stated in the title or another own-method
         # passage, while randomization arms are described separately.
         if not (any(any_term(t,phrases(pop,pa)) for t in eligible) and any(any_term(t,phrases(inter,ia)) for t in eligible)):continue

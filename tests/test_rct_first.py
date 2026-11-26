@@ -203,3 +203,10 @@ def test_ratio_and_coordinated_title_comparisons():
     assert explicit_comparison("Patients were randomly assigned in a 1:1 ratio to receive either TEER or medical therapy.",("TEER",),"medical therapy")
     assert not explicit_comparison("T-TEER plus medical therapy versus medical therapy alone",("T-TEER",),"medical therapy")
     assert not explicit_comparison("We randomized patients to aspirin or placebo in addition to ticagrelor",("ticagrelor",),"placebo")
+
+
+def test_shared_head_title_with_own_method_population_and_intervention():
+    r=SearchRecord("PubMed","37634148","Pulsed Field or Conventional Thermal Ablation for Paroxysmal Atrial Fibrillation",year=2023,metadata={"pubtype":["Randomized Controlled Trial"],"abstractText":"METHODS: This randomized, single-blind, noninferiority trial assigned patients with paroxysmal atrial fibrillation to pulsed field ablation or thermal techniques."})
+    p=("atrial fibrillation","pulsed field ablation",(),())
+    _,b=comparison_rows(p,rows([r]),comparator="conventional thermal ablation")
+    assert len(b["conventional thermal ablation"])==1
