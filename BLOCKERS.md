@@ -20,3 +20,8 @@
   four direct review leads. Do not rerun the same resolver unchanged.
   Investigate DOI/publisher Methods, then preserve each source-specific
   date. Keep access and missing statements distinct.
+
+- The alternate NCBI PMC OAI route also produced no exact Methods cutoff.
+  EFetch recovered the four publisher DOIs, but the local proxy denied
+  DOI resolution. Try the publisher pages on an authorized hosted runner
+  before treating full-text access as exhausted. [OAI and DOI audit](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892819750)

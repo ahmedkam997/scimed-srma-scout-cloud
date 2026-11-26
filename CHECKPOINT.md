@@ -43,3 +43,21 @@ specific PMIDs and reconcile the remaining non-PubMed comparison
 records. Independently sample an alternate fixed-anchor surgical rotation
 to recover from out-of-specialty drift while the cardiology reviews are
 pending. Neither cardiology lead has an adjudicable seven-trial dossier.
+
+The reconciliation run `45892703433` recovered three Europe PMC-indexed
+PMIDs per cardiology comparison. Ticagrelor/clopidogrel has seven distinct
+registration links, making exact PICO and endpoint mapping the immediate
+priority. The OAI/DOI run is `45892819750`, the abstract outcome run is
+`45892886088`, and the alternate specialty discovery run is
+`45892703407`. Inspect their artifacts or annotations before reissuing
+queries. Keep the shortlist provisional and the goal active.
+
+The outcome inventory exposes incompatible intervention schedules, strata
+and report roles among the previous shortlist. Prioritize alternate
+candidate `RCT-8C63D3F7D7C752A7` (renal denervation vs sham, ten
+bibliographic family leads) from discovery run `45892703407` and check
+that run for the fixed-anchor surgery result. Verify prospective trial
+independence, compatible ambulatory blood-pressure outcomes and competing
+review cutoffs before pursuing adjudication. Publisher DOI retrieval from
+this machine is blocked. The exact identifiers for a hosted publisher
+audit are preserved in [EVIDENCE.md](EVIDENCE.md).

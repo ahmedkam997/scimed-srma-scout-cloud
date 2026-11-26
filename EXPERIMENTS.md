@@ -28,3 +28,12 @@
   ledgers. The rerun exited nonzero because no Methods cutoffs resolved.
   Ten resolver and family tests passed locally, as did a synthetic EFetch
   linkage check. [Audit rerun](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892409004)
+
+- Reconciled Europe PMC and PubMed by explicit PMID, rejecting conflicting
+  identifiers within a source record. Added opt-in PMC OAI Methods retrieval
+  and preserved exact DOI publisher leads. Thirty targeted tests passed;
+  a synthetic OAI fixture recovered a dated Methods statement and rejected
+  an identity mismatch.
+- The outcome inventory records only explicit abstract count and ratio
+  cues, preserving their original context in the artifact. It keeps
+  independent usable trial counts unknown.

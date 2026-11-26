@@ -69,3 +69,23 @@ The open-access Methods resolver did not establish a cutoff for any of the
 four target reviews (PMIDs 42985463, 42499063, 42201709 and 43090943).
 This does not invalidate the abstract excerpts or show that full text is
 unavailable from every authorized source. [Hosted family and Methods audit](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892409004)
+
+### Cross-source reconciliation
+
+The Europe PMC records in both cardiology shortlist rows carried exact
+PubMed identifiers. Three additional reports per comparison were recovered
+with PubMed EFetch. For ticagrelor/clopidogrel this added PMIDs 40886179,
+38006237 and 38224415, with registrations NCT03465644, NCT02701140 and
+NCT05516784. Seven distinct registration IDs are now observed in the sampled
+report set. For TAVR/SAVR, PMID 40884768 added NCT02825134, PMID 27541162
+shared NCT01240902 with PMID 32997095, and PMID 42032736 was unlinked.
+TAVR/SAVR now has six registration-linked groups and three unlinked reports
+in this set. Eligibility, participant independence and outcome
+compatibility remain unverified. [Reconciled ledger](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892703433)
+
+The PMC OAI audit returned publisher identifiers without establishing a
+Methods cutoff. These exact DOI routes are now available for the hosted
+publisher audit. [Pediatric appendicitis review](https://doi.org/10.3390/jcm15228910)
+[Three-agent PCI synthesis](https://doi.org/10.1001/jamacardio.2026.1128)
+[STEMI post-PCI review](https://doi.org/10.1097/md.0000000000049923)
+[TAVR/SAVR stroke review](https://doi.org/10.31083/rcm49672)

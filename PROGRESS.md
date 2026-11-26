@@ -19,3 +19,9 @@
 - Hosted historical PubMed, native Aviary/LDP and external-data workflows
   completed successfully. Focused competitor and recent-trial retrieval
   was then queued for the two cardiology leads and appendicitis.
+
+- Cross-source identifier reconciliation recovered six additional reports.
+  Ran the abstract outcome inventory and the alternate OAI Methods route.
+  The existing two cardiology leads remain provisional. The alternate
+  cardiology rotation surfaced new candidates for targeted triage.
+  All 571 Python tests passed with the development dependencies installed.

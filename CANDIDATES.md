@@ -30,3 +30,26 @@ reports. Ticagrelor/clopidogrel had four registration-linked reports.
 Usable and independently eligible counts remain unknown for both. The
 published opportunity counts also include other sources that have yet to
 be reconciled. [Report-to-registry ledger](EVIDENCE.md)
+
+Cross-source reconciliation raised the ticagrelor/clopidogrel inventory to
+seven distinct registry links. That justifies checking all seven original
+trial reports against the same clinical setting, maintenance strategy and
+endpoint. It does not establish that all seven meet any such PICO. TAVR/SAVR
+has six registry links and three unlinked reports after reconciliation.
+[Source ledger](EVIDENCE.md)
+
+The seven ticagrelor/clopidogrel registrations do not form a single
+verified treatment contrast. GLOBAL LEADERS includes mixed comparator
+agents and a different aspirin schedule, TALOS-AMI evaluates
+de-escalation, SWAP-AC-2 involves oral anticoagulation, and TADCLOT compares
+twice-daily clopidogrel. Two of seven reports had explicit abstract ratio
+cues. Keep a narrow PICO-specific recovery path, with the original broad
+lead remaining provisional. TAVR/SAVR likewise includes combination
+revascularization, restricted subgroups and later follow-ups. [Outcome inventory](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892886088)
+
+The alternate cardiology sample surfaced renal denervation versus sham in
+hypertension (`RCT-8C63D3F7D7C752A7`, ten family leads), sacubitril/valsartan
+versus enalapril in heart failure (seven) and catheter ablation versus
+medical treatment for atrial fibrillation (seven). Prioritize the sham
+comparison for a device, medication status, endpoint and competitor
+cutoff audit. These are bibliographic shortlist leads. [Alternate rotation](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892703407)
