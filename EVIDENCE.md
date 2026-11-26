@@ -127,3 +127,44 @@ an atrial fibrillation protocol, so it is not an eligible-trial list.
 The workflow remained nonzero because the competitor Methods audit was
 incomplete. [Post-cutoff run](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45893375836)
 [RDN-CKD report](https://pubmed.ncbi.nlm.nih.gov/42937114/)
+
+### RDN-CKD primary report check
+
+PMID 42937114 describes a multicentre, blinded, randomized comparison of
+ultrasound renal denervation versus sham in stage 3 CKD with uncontrolled
+hypertension. The abstract reports early trial termination and 20
+six-month completers (10 per arm). Six-month ambulatory and office BP are
+reported outcome types. The 24-hour systolic ambulatory contrast is stated
+as −5.60 mmHg (95% CI −10.7 to −0.54 mmHg; P=0.170). The interval excludes
+zero while the reported P value exceeds 0.05. This could reflect different
+analyses or an error and requires verification against the primary Methods,
+tables or correction. Do not derive variance or pool that contrast from
+the abstract alone. The abstract also reports diastolic contrasts, which
+cannot substitute for systolic BP in a synthesis. Registration,
+randomized denominators and independence remain unresolved.
+[Source report](https://pubmed.ncbi.nlm.nih.gov/42937114/)
+[Retrieval audit](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45893689730)
+
+ClinicalTrials.gov acronym and clinical-scope recovery surfaced
+NCT04264403 (RDN-CKD, internal protocol RDN2019CKD). A same-titled record
+also appeared for NCT07742787 (RDN-CKD GR, internal protocol
+RDN2022CKDGR). Both are leads. Neither is counted as another trial.
+The first hosted public annotation truncated the result; the next run
+fetches and reports each exact registry record separately.
+[Registry search](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45893775017)
+[Exact registry comparison](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45893883613)
+
+The two exact registry records both list a randomized crossover design
+and six-month change in 24-hour ambulatory systolic BP. NCT04264403 is a
+completed multicentre German study with 44 actual enrollees.
+NCT07742787 is an Athens study with 20 actual enrollees, listed as
+active, not recruiting. Neither record cited PMID 42937114 or supplied
+posted results in the retrieved data. The multicentre German record
+matches more of the published abstract's design cues. Its 44 enrolled
+participants and the abstract's 20 six-month completers are different
+denominators. Verify the publication linkage, pre-crossover allocation,
+analysis denominator and missing participant handling before classifying
+the estimate. No registry lead qualifies under the current strict
+parallel-randomization gate. [Exact registry records audit](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45893883613)
+[German registry](https://clinicaltrials.gov/study/NCT04264403)
+[Greek registry](https://clinicaltrials.gov/study/NCT07742787)

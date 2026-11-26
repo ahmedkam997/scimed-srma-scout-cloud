@@ -66,3 +66,15 @@ audit includes overlap or uncertainty within named trial families,
 mixed device modalities and medication status. No common usable
 ambulatory blood-pressure endpoint or update value has been established.
 [Renal Methods and report ledger](EVIDENCE.md)
+
+RDN-CKD provides a stage 3 CKD ultrasound-versus-sham lead, with 20
+six-month completers and a six-month ambulatory BP endpoint. The abstract's
+systolic CI and P value require reconciliation before extraction.
+Two same-titled registry records require source linkage and cohort
+disambiguation. No pooling, new independent trial count or scientific
+qualification has been established. [Report audit](EVIDENCE.md)
+
+Both RDN-CKD registry leads have a crossover design. The German study
+is the stronger identity lead, with no exact publication citation in
+the registry. Keep the report outside the confirmed parallel RCT count.
+The systolic analysis remains unresolved. [Registry and outcome evidence](EVIDENCE.md)

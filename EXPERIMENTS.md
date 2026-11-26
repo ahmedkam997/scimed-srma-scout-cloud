@@ -43,3 +43,9 @@
   review query to renal denervation, sham and synthesis terminology, samples
   six review hits, and preserves missing Methods and family uncertainty.
   [Renal triage run](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45893203803)
+
+- Exact-PMID RDN-CKD audit `45893689730` recovered the abstract but exited
+  nonzero because no registration identifier was observed in source
+  metadata. The alternate lookup queries the trial acronym and clinical
+  scope in ClinicalTrials.gov and PubMed. Synthetic checks covered exact ID,
+  mismatch, and unverified search candidates. [Registry recovery run](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45893775017)

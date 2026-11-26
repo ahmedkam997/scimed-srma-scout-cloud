@@ -31,3 +31,7 @@
   three dated Methods statements and an unresolved exact-PICO comparator.
   Queued bounded post-cutoff retrieval using the sampled network review's
   date as an exploratory anchor.
+
+- Verified the RDN-CKD abstract and recovered exact details of two
+  candidate registry records. Neither established publication linkage
+  or a usable parallel-trial estimate. Fifteen targeted tests passed.

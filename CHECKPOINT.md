@@ -77,3 +77,26 @@ families. Assess whether the CKD population, device modality, medication
 policy and ambulatory BP measure fit one defensible comparison. Verify
 the directly overlapping sham-controlled review's cutoff before claiming
 new evidence. Do not count this lead as a new eligible RCT yet.
+
+RDN-CKD abstract audit `45893689730` retrieved the source text but could
+not establish a registration. Its six-month systolic CI and P value
+require checking against the published analysis before using the effect.
+The alternative registry/acronym lookup is run `45893775017`. If that
+run yields a plausible identifier, compare protocol, sites, eligibility,
+arms and enrollment with the report. A search hit alone does not
+establish identity or an independent eligible RCT.
+
+The alternate search surfaced `NCT04264403` (RDN-CKD) and a same-titled
+`NCT07742787` (RDN-CKD GR). Inspect exact registry comparison run
+`45893883613` for PMID linkage and protocol differences before associating
+either with the publication. Compare participant recruitment and cohort
+overlap separately. The reported 24-hour systolic effect requires
+full-text reconciliation before any use.
+
+The exact lookup `45893883613` retrieved both registry records. Both
+classify the design as crossover and neither cites the PMID. Preserve
+the German registry as a plausible identity lead and hold the result
+outside the strict parallel-trial count. The next feasible action is to
+triage the alternate cardiology shortlist (sacubitril/valsartan versus
+enalapril and AF ablation versus medical treatment) while the report's
+original Methods and corrected analysis remain unavailable locally.
