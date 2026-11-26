@@ -39,3 +39,19 @@ def test_invalid_tool_request_truncates():
         _,reward,done,trunc=await env.step(ToolRequestMessage(tool_calls=[ToolCall.from_name("invalid")]))
         assert reward==-1 and not done and trunc
     asyncio.run(check())
+
+def test_second_review_queries_exclude_gold_identifiers():
+    from scripts.v2_aviary_gym import HF_REFERENCE, HF_STRATEGIES
+    for routes in HF_STRATEGIES.values():
+        assert sum(slots for _,slots in routes)==100
+        for q,_ in routes:
+            assert "2021/09/30" in q
+            assert all(p not in q for p in HF_REFERENCE["linked_reports"])
+            assert HF_REFERENCE["review_pmid"] not in q
+
+def test_policy_transfer_uses_separate_case_cache():
+    from scripts.v2_aviary_gym import HF_REFERENCE, HF_STRATEGIES
+    a=RetrievalGym(None,REF,{"dual_ids":(frozenset({"101","102"}),[],True)})
+    b=RetrievalGym(None,HF_REFERENCE,{"dual_ids":(frozenset({"31535829"}),[],True)},HF_STRATEGIES)
+    assert asyncio.run(episode(a,"dual_ids"))["relative_recall"]==1
+    assert asyncio.run(episode(b,"dual_ids"))["relative_recall"]==.25
