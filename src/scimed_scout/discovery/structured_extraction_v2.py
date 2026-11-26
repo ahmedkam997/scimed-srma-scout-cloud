@@ -19,6 +19,41 @@ def abstract_counts(row):
                         "context":raw[max(0,m.start()-65):min(len(raw),m.end()+65)],"arm_mapping_verified":False})
     return out[:30]
 
+
+def abstract_ratios(row):
+    """Explicitly reported contrast estimates; never infer direction or pooling."""
+    raw=abstract(row)
+    num=r"(?:\d+(?:[.·]\d+)?|[.·]\d+)"
+    measure=r"hazard ratio(?:\s*\[HR\])?|risk ratio(?:\s*\[RR\])?|relative risk|odds ratio(?:\s*\[OR\])?|HR|RR|OR"
+    pat=rf"\b(?P<m>{measure})\s*(?:[,=:]\s*)?(?P<value>{num})\s*[,;]?\s*[\[(]?\s*(?P<pct>{num})\s*%\s*(?:confidence interval(?:\s*\[CI\])?|CI)\s*[,;:]?\s*(?P<lo>{num})\s*(?:to|[-–—−])\s*(?P<hi>{num})(?![\d.·])"
+    norm={"hr":"hazard ratio","rr":"risk ratio","or":"odds ratio"}
+    results=[]
+    for m in re.finditer(pat,raw,re.I):
+        v,lo,hi,pct=(float(m[k].replace("·",".")) for k in ("value","lo","hi","pct"))
+        if not all(math.isfinite(x) for x in (v,lo,hi,pct)) or not 0<lo<=v<=hi or lo==hi or not 0<pct<100:continue
+        typ=re.sub(r"\s*\[[A-Z]+\]$","",m["m"],flags=re.I).casefold()
+        results.append({"measure":norm.get(typ,typ),"ratio":v,"reported_ci":[lo,hi],"ci_percent":pct,
+                        "locator":f"abstract:characters:{m.start()}-{m.end()}","context":raw[max(0,m.start()-80):min(len(raw),m.end()+45)],
+                        "direction_verified":False,"endpoint_verified":False,"wald_interval_verified":False,"pooling_allowed":False})
+        if len(results)>=30:break
+    return results
+
+def report_role_cues(row):
+    """Publication role cues, never automatic exclusion or independent RCT proof."""
+    p=row.get("payload") or {};meta=p.get("metadata") or {}
+    from scimed_scout.sources.base import SearchRecord
+    from .evidence_classification import _types,classify_review_search_hit
+    r=SearchRecord(str(row.get("source") or ""),str(row.get("source_record_id") or ""),str(row.get("title") or ""),metadata=meta)
+    types=set(_types(r));title=str(row.get("title") or "");a=abstract(row)
+    cues=[]
+    if types.intersection({"clinical trial protocol","study protocol"}) or re.search(r"\b(?:rationale and design|design and rationale|study protocol|trial protocol)\b",title,re.I):
+        cues.append("PROTOCOL_CUE")
+    if re.search(r"\b(?:post[- ]hoc|secondary analysis|subgroup analysis|prespecified analysis|pre-specified analysis|substudy|learning effects)\b",title+" "+a[:1500],re.I):
+        cues.append("SECONDARY_ANALYSIS_CUE")
+    if "randomized controlled trial" in types or "randomised controlled trial" in types:cues.append("RCT_PUBLICATION_TYPE_CUE")
+    if classify_review_search_hit(r)=="CONFIRMED_REVIEW_CUE":cues.append("REVIEW_CUE")
+    return {"cues":cues,"primary_result_confirmed":False,"independence_confirmed":False,"eligibility_confirmed":False}
+
 def registry_leads(study,nct):
     p=study.get("protocolSection") or {}
     if (p.get("identificationModule") or {}).get("nctId")!=nct:return {"status":"IDENTITY_MISMATCH","pooling_allowed":False}
@@ -94,7 +129,7 @@ def collect(rows,*,fetcher=None,previous=None,max_fulltexts=3,check=None):
     results=[];calls=0
     ordered=sorted(rows,key=lambda r:(bool(prior.get((r["source"],r["source_record_id"]),{}).get("fulltext")),not bool(_pmcid(r)),r["source"],r["source_record_id"]))
     for r in ordered:
-        k=(r["source"],r["source_record_id"]);entry={"source":k[0],"record_id":k[1],"url":(r.get("payload") or {}).get("url"),"registration_ids":sorted(registration_signals(r)),"abstract_count_leads":abstract_counts(r)}
+        k=(r["source"],r["source_record_id"]);entry={"source":k[0],"record_id":k[1],"url":(r.get("payload") or {}).get("url"),"registration_ids":sorted(registration_signals(r)),"abstract_count_leads":abstract_counts(r),"abstract_ratio_leads":abstract_ratios(r),"report_role_cues":report_role_cues(r)}
         old=prior.get(k,{})
         pmc=_pmcid(r)
         if old.get("pmcid")!=pmc:old={}
@@ -144,7 +179,12 @@ def recover_pubmed_abstracts(ledger,candidate_id,client,*,previous=None,fetcher=
             for k,v in metadata.items():
                 if v:meta[k]=v
             payload.update(url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",metadata=meta)
-            ledger.upsert_external_evidence(candidate_id,"PRIMARY_STUDY",pmid,source="PubMed",title=title,payload=payload)
+            from .evidence_classification import classify_review_search_hit
+            from scimed_scout.sources.base import SearchRecord
+            cue=classify_review_search_hit(SearchRecord("PubMed",pmid,title,metadata=meta))
+            kind="PUBLISHED_REVIEW" if cue=="CONFIRMED_REVIEW_CUE" else "PRIMARY_STUDY"
+            payload.update(citation_classification=cue,originally_requested_evidence_type="PRIMARY_STUDY")
+            ledger.upsert_external_evidence(candidate_id,kind,pmid,source="PubMed",title=title,payload=payload)
             result["retrieved"]+=1
         result.update(status="SEARCHED_POSITIVE" if len(found)==len(ids) and not any(diag.values()) else "PARTIAL",**diag)
         result["attempted_pmids"]=sorted(prior|set(ids))

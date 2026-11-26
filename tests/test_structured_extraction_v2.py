@@ -96,3 +96,29 @@ def test_surgical_query_preserves_aliases():
     c=CandidateRecord("c","p","Q","General Surgery",population="rectal cancer",intervention_exposure_index_test="robotic surgery")
     q=focused_review_query(c)
     assert all(x in q for x in ('"rectal cancer"[ti]','"robotic surgery"[ti]','"robotic"[ti]','"robot-assisted"[ti]'))
+
+
+@pytest.mark.parametrize("phrase,kind,ratio,lo,hi",[
+    ("hazard ratio, 0.74; 95% confidence interval [CI], 0.65 to 0.85","hazard ratio",.74,.65,.85),
+    ("hazard ratio, 0.82; 95% confidence interval [CI], 0.73 to 0.92","hazard ratio",.82,.73,.92),
+    ("adjusted odds ratio = 0.61 [95% CI, 0.31 to 1.21]","odds ratio",.61,.31,1.21),
+    ("HR 0·75 [95% CI 0·65-0·86]","hazard ratio",.75,.65,.86)])
+def test_reported_ratio_only(phrase,kind,ratio,lo,hi):
+    from scimed_scout.discovery.structured_extraction_v2 import abstract_ratios
+    r=report();r["payload"]["metadata"]["abstractText"]=phrase
+    rows=abstract_ratios(r)
+    assert len(rows)==1
+    assert rows[0]["measure"]==kind and rows[0]["ratio"]==ratio and rows[0]["reported_ci"]==[lo,hi]
+    assert not rows[0]["pooling_allowed"] and not rows[0]["wald_interval_verified"]
+@pytest.mark.parametrize("phrase",["HR 0.7; p=0.01", "risk ratio 0.2; 95% CI 0.4-0.8", "hazard ratio 0; 95% CI 0-1", "odds ratio 1.1; 95% CI 0.8", "19 of 236 patients; 95% CI 2-10"])
+def test_ratio_rejects_ambiguous_or_invalid(phrase):
+    from scimed_scout.discovery.structured_extraction_v2 import abstract_ratios
+    r=report();r["payload"]["metadata"]["abstractText"]=phrase
+    assert not abstract_ratios(r)
+def test_protocol_and_secondary_role_never_confirm_eligibility():
+    from scimed_scout.discovery.structured_extraction_v2 import report_role_cues
+    r=report();r["payload"]["metadata"]["pubtype"]=["Clinical Trial Protocol"]
+    assert "PROTOCOL_CUE" in report_role_cues(r)["cues"]
+    r["title"]="Post-hoc analysis of a randomized trial"
+    assert "SECONDARY_ANALYSIS_CUE" in report_role_cues(r)["cues"]
+    assert not report_role_cues(r)["eligibility_confirmed"]
