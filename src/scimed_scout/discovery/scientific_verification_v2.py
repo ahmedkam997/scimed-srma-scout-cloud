@@ -241,6 +241,8 @@ def evaluate(packet,bundle,keys,coverage,policy):
             "unique_primary_study_candidates":structural["valid_study_rows"],"complete_literature_sources":complete,
             "sources":[{"source":n,"status":coverage.source_statuses[n].value} for n in sorted(names) if n in coverage.source_statuses],
             "unresolved_type_a":errors})
+        gate["verification_method"]=VERSION
+        gate["snapshot_sha256"]=binding["snapshot_sha256"]
         passed=gate["all_discovery_gates_passed"] and not errors
         if not gate["all_discovery_gates_passed"]:
             errors.extend("gate failed: "+g["name"] for g in gate["gates"] if not g["passed"])

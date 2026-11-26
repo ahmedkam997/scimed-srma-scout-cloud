@@ -10,3 +10,5 @@ Operator workflow: each reviewer signs the identical reconciled submission after
 References: Cochrane Handbook ch4,5,10,IV; MECIR C43–51; Garner et al BMJ 2016 doi:10.1136/bmj.i3507; ASReview LAB (prioritization only).
 
 Search completeness must be independently adjudicated against the exact search-log digest; API success alone is insufficient. External numerical regression: CRAN metafor README dat.bcg 13-study table, all log RR and variances and published Q=152.2330. Only seven rows carry random allocation labels, and the example is not an eligibility or novelty test.
+
+Joint cue triage now counts the intersection at report-group level rather than the minimum of unrelated counts. A one-time same-comparison PubMed recovery runs on resumption when comparison cues are sufficient but joint cues are not. All counts remain unconfirmed. Separate unresolved storage integrity issue: SQLite external_evidence currently keys on candidate/type/record ID without source, so source-native identifier collisions can overwrite rows; a backward-compatible key migration is required before hosted V2 deployment.

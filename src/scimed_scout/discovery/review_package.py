@@ -93,10 +93,10 @@ def build_discovery_review_package(
             "evidence_first_link": dict((candidate.metadata or {}).get("evidence_first_link") or {}),
             "adaptive_search_audit": dict((candidate.metadata or {}).get("adaptive_search_audit") or {}),
             "triage": discovery_triage(verification),
-            "qualification_status": "FULLY_QUALIFIED" if (candidate.metadata or {}).get("scientific_verification_v2",{}).get("qualification_granted") else "QUALIFIED_DISCOVERY_ONLY",
+            "qualification_status": "FULLY_QUALIFIED" if (gate_result.get("verification_method")=="SCIENTIFIC_VERIFICATION_V2_PHASE1") else "QUALIFIED_DISCOVERY_ONLY",
             "research_dossier": _build_research_dossier(
                 ledger, candidate, verification,
-                "FULLY_QUALIFIED_V2" if (candidate.metadata or {}).get("scientific_verification_v2",{}).get("qualification_granted") else "QUALIFIED_DISCOVERY_ONLY",
+                "FULLY_QUALIFIED_V2" if (gate_result.get("verification_method")=="SCIENTIFIC_VERIFICATION_V2_PHASE1") else "QUALIFIED_DISCOVERY_ONLY",
             ),
             "primary_study_screening_queue": _primary_screening_queue(
                 candidate, primary,
@@ -348,7 +348,7 @@ def _build_research_dossier(
     latest = ledger.list_decisions(candidate.candidate_id)
     from .scientific_verification_v2 import snapshot as build_v2_packet
     v2=meta.get('scientific_verification_v2') or {}
-    v2_pass=verification.candidate_status.value=='QUALIFIED' and v2.get('qualification_granted') is True
+    v2_pass=(verification.candidate_status.value=="QUALIFIED" and v2.get("qualification_granted") is True and (verification.final_gate_result or {}).get("verification_method")=="SCIENTIFIC_VERIFICATION_V2_PHASE1" and (verification.final_gate_result or {}).get("snapshot_sha256")==v2.get("snapshot_sha256"))
     return {
         "schema_version": 1,
         "candidate_id": candidate.candidate_id,

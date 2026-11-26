@@ -186,3 +186,25 @@ def test_external_metafor_bcg_effects_and_q():
     assert pool(rows)["q"]==pytest.approx(152.2330,abs=.001)
     assert sum(x[-1] for x in data)==7
     # This external numerical fixture never supplies reviewer approval or GO.
+
+
+def test_joint_cue_intersection_not_minimum_of_independent_counts():
+    from scimed_scout.discovery.rct_first import joint_cue_audit
+    c=CandidateRecord("c","p","Q","Cardiology",population="heart failure",intervention_exposure_index_test="drug A",comparator_reference="placebo",eligible_designs=["randomized controlled trials"])
+    def r(i,title):
+        return {"source":"PubMed","source_record_id":str(i),"title":title,"payload":{}}
+    # Seven comparison-linked citations, seven other PICO/RCT citations;
+    # no actual overlap. The old min(7,7) could falsely indicate readiness.
+    comparison=[r(i,"Drug A versus placebo for kidney disease") for i in range(1,8)]
+    pico=[r(i,"Randomized trial of drug A in heart failure "+str(i)) for i in range(8,15)]
+    joint=joint_cue_audit(c,comparison+pico,comparison)
+    assert joint["joint_comparison_pico_family_leads"]==0 and not joint["joint_cues_confirm_eligibility"]
+
+def test_disagreement_resume_once_not_infinite():
+    from scimed_scout.cloud.rct_worker import recovery_reasons
+    from scimed_scout.discovery.models import DiscoveryCandidateResult,DiscoveryEvidenceSnapshot
+    from scimed_scout.verification.coverage import VerificationCoverage
+    r=DiscoveryCandidateResult("c",1,VerificationCoverage({},()),DiscoveryEvidenceSnapshot(14,14,2,("PubMed","Europe PMC"),pico_audit={"pico_design_family_leads":8}),["pending"],"pending",CandidateStatus.PROVISIONAL_BACKUP)
+    meta={"rct_first_final_audit":{"family_leads":12,"joint_comparison_pico_family_leads":5}}
+    assert recovery_reasons(r,meta)==["PICO_COMPARISON_DISAGREEMENT"]
+    assert recovery_reasons(r,{**meta,"v2_disagreement_recovery_attempted":True})==[]

@@ -76,7 +76,8 @@ def recovery_reasons(result,metadata):
     if not result.coverage.complete:
         return ["MANDATORY_SOURCE_COVERAGE"]
     strict=metadata.get("rct_first_final_audit") or {}
-    if strict.get("family_leads",0)<MIN_FAMILIES or result.evidence.pico_audit.get("pico_design_family_leads",0)<MIN_FAMILIES:
+    joint=strict.get("joint_comparison_pico_family_leads",min(strict.get("family_leads",0),result.evidence.pico_audit.get("pico_design_family_leads",0)))
+    if strict.get("family_leads",0)<MIN_FAMILIES or joint<MIN_FAMILIES:
         # Disagreement is actionable, not scientific exclusion. Avoid endless
         # retries: one bounded recovery pass after the initial adaptive audit.
         if strict.get("family_leads",0)>=MIN_FAMILIES and not metadata.get("v2_disagreement_recovery_attempted"):
@@ -188,8 +189,6 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     adaptive_retrieval=True,strict_rct_minimum=MIN_FAMILIES,scientific_verifier=trusted_verifier)
                 result=engine.verify_candidate(c.candidate_id,ranking_score=rank.score,limit_per_query=min(12,job.limit_per_query),recover_only=bool(previous))
                 assessed=ledger.get_candidate(c.candidate_id)
-                if previous and "PICO_COMPARISON_DISAGREEMENT" in recovery_reasons(result,assessed.metadata or {}):
-                    assessed.metadata["v2_disagreement_recovery_attempted"]=True
                 assessed.metadata["opportunity_mcda"]=profile(assessed,ledger.list_external_evidence(c.candidate_id,"PUBLISHED_REVIEW"),opportunity=assessed.metadata.get("discovery_review_opportunity"),scorecard=assessed.metadata.get("discovery_gate_inputs"),primary_records=ledger.list_external_evidence(c.candidate_id,"PRIMARY_STUDY"))
                 ledger.upsert_candidate(assessed)
                 checked.append(result)
@@ -205,6 +204,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     "competitor_audit":{"published_reviews_discovered":m.get("discovery_competitor_records_discovered",0),
                     "unassessed_reviews":m.get("discovery_unassessed_review_count"),"unassessed_registrations":m.get("discovery_unassessed_registration_count"),"total_pending_reviews":m.get("discovery_pending_review_count"),"total_pending_registrations":m.get("discovery_pending_registration_count")},
                     "scientific_verification_v2":m.get("scientific_verification_v2") or {},
+                    "joint_comparison_recovery":m.get("v2_joint_recovery_audit") or {},
                     "scorecard":m.get("discovery_gate_inputs") or {},"scoring_deferred_reason":m.get("discovery_scoring_deferred_reason",""),"registry_result_reference_audit":m.get("registry_result_reference_audit") or {},"registration_enrichment_audit":m.get("registration_enrichment_audit") or {},"opportunity_mcda":m.get("opportunity_mcda") or {}})
             recovery_queue=[{"candidate_id":x.candidate_id,"reasons":recovery_reasons(x,ledger.get_candidate(x.candidate_id).metadata or {})} for x in checked]
             recovery_queue=[x for x in recovery_queue if x["reasons"]]
