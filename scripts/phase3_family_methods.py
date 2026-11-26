@@ -43,7 +43,7 @@ def as_row(pmid, metadata):
 
 
 def audit(client, candidates, *, fetch=_fetch, resolver=None):
-    resolver = resolver or OpenAccessSearchDateResolver()
+    resolver = resolver or OpenAccessSearchDateResolver(include_pmc_oai=True)
     identities = {
         row["candidate_id"]: comparison_identities(row["metadata"]["rct_first"]["comparison_records"])
         for row in candidates if row["candidate_id"] in TARGETS
@@ -59,6 +59,10 @@ def audit(client, candidates, *, fetch=_fetch, resolver=None):
         "qualification_granted": False,
         "missing_pubmed_ids": sorted(set(ids) - set(rows)),
         "pubmed_diagnostics": diagnostics,
+        "competitor_identities": {pmid: {
+            "pmcid": found[pmid].get("pmcid"),
+            "doi": found[pmid].get("doi"),
+        } for pmid in REVIEWS if pmid in found},
         "competitor_methods": {pmid: resolver.resolve(rows[pmid]) if pmid in rows else None
                                for pmid in REVIEWS},
         "candidates": {
@@ -82,7 +86,9 @@ def main():
     result = audit(PubMedSource(), json.loads(source.read_text())["candidates"])
     Path("phase3-family-methods.json").write_text(json.dumps(result, indent=2) + "\n")
     for pmid, methods in result["competitor_methods"].items():
-        notice(f"Full Methods PMID {pmid}", methods)
+        notice(f"Full Methods PMID {pmid}", {
+            "identity": result["competitor_identities"].get(pmid), "methods": methods,
+        })
     for cid, row in result["candidates"].items():
         families = row["families"]
         notice(f"Family ledger {cid}", {
