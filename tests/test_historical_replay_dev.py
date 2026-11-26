@@ -30,3 +30,21 @@ def test_access_failure_is_unresolved_not_zero_recall():
     r=evaluate(set(),audit("ACCESS_FAILED"),REFERENCE)
     assert r["relative_recall"] is None
     assert not r["qualification_granted"]
+
+def test_diagnostic_separates_ranking_from_query_gap():
+    from scripts.v2_historical_replay_dev import diagnose
+    d=diagnose({"9613910"},{"9613910","15325833"},[{"complete":True}],REFERENCE)
+    assert d["matched_but_outside_top_k"]==["15325833"]
+    assert "12114036" in d["not_matching_any_query"]
+    assert d["full_relative_recall"]==2/12
+    d=diagnose(set(),set(),[{"complete":False}],REFERENCE)
+    assert d["not_matching_any_query"] is None and d["full_relative_recall"] is None
+
+def test_full_diagnostic_rejects_truncated_response():
+    from scripts.v2_historical_replay_dev import full_id_diagnostic
+    class Fake:
+        base="https://example.invalid/"
+        def _params(self, params): return params
+        http=SimpleNamespace(get_json=lambda *args: {"esearchresult":{"count":"2","idlist":["1"]}})
+    ids,audit=full_id_diagnostic(Fake(),"test")
+    assert ids=={"1"} and not audit["complete"]
