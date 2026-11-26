@@ -166,11 +166,18 @@ def control_terms(control):
 
 # Bibliographic variants are supplementary retrieval terms, not arm-equivalence rules.
 REVIEW_INTERVENTION_ALIASES={"pulsed field ablation":("pulse field ablation","pulsed-field ablation")}
-REVIEW_COMPARATOR_ALIASES={"thermal ablation":("thermal techniques","radiofrequency ablation","cryoablation","thermal energy")}
+REVIEW_COMPARATOR_GROUPS=(("thermal ablation","conventional thermal ablation","conventional thermal techniques","thermal techniques","radiofrequency ablation","cryoablation","thermal energy"),)
+
+def review_control_terms(comparator):
+    """Retrieval-only variants; never used to establish clinical arm equivalence."""
+    normalized=_normalize(comparator)
+    extra=next((group for group in REVIEW_COMPARATOR_GROUPS if normalized in {_normalize(x) for x in group}),())
+    return phrases(comparator,(*control_terms(comparator),*extra))
+
 def review_title_query(pair, comparator):
     _,inter,_,aliases=pair
     i=phrases(inter,(*aliases,*REVIEW_INTERVENTION_ALIASES.get(inter.casefold(),())))
-    c=phrases(comparator,(*control_terms(comparator),*REVIEW_COMPARATOR_ALIASES.get(comparator.casefold(),())))
+    c=review_control_terms(comparator)
     # Omit mandatory population only in this supplementary route. Every hit
     # remains a review lead requiring original PICO assessment.
     return _query(i,"[ti]")+" AND "+_query(c,"[tiab]")+" AND "+REVIEW_FILTER
@@ -490,7 +497,7 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
         if p["direct_comparison_review_sample"]:continue
         if review_recoveries>=MAX_REVIEW_COMPARISON_RECOVERIES:break
         pair=info["pair"];control=row["comparator_reference"];before=len(p["direct_comparison_review_sample"])
-        query=query_pair(pair,review=True)+" AND "+_query(control_terms(control))
+        query=query_pair(pair,review=True)+" AND "+_query(review_control_terms(control))
         extra=_search(pubmed,query,15,"REVIEW_COMPARISON_RECOVERY",report["queries"],check)
         supplement_status=report["queries"][-1]["status"]
         if extra and abstract_enricher:
