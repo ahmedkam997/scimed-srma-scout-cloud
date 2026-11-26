@@ -28,13 +28,13 @@ class ProsperoCliSource:
     name: str = "PROSPERO"
     max_pages: int = 5
 
-    def search_recovery(self, query: str, *, limit: int = 20) -> SearchResult:
-        return self._search(query,limit=limit,page_cap=10)
+    def search_recovery(self, query: str, *, limit: int = 20, checkpoint=None, previous_records=()) -> SearchResult:
+        return self._search(query,limit=limit,page_cap=10,checkpoint=checkpoint,previous_records=previous_records)
 
     def search(self, query: str, *, limit: int = 20) -> SearchResult:
         return self._search(query,limit=limit,page_cap=min(5,max(1,self.max_pages)))
 
-    def _search(self, query: str, *, limit: int, page_cap: int) -> SearchResult:
+    def _search(self, query: str, *, limit: int, page_cap: int, checkpoint=None, previous_records=()) -> SearchResult:
         node_entry = os.getenv("PROSPERO_CLI_JS", "").strip() if self.runner is None else ""
         if self.runner is None and not (node_entry and os.path.isfile(node_entry)) and shutil.which(self.executable) is None:
             return SearchResult(
@@ -54,7 +54,28 @@ class ProsperoCliSource:
         page_integrity_failed = False
         duplicate_count = 0
         malformed_count = 0
-        for page in range(1, max_pages + 1):
+        # A checkpoint is worker-owned; the actual earlier records must still
+        # exist in the durable ledger. Verify the first and last page of the
+        # saved prefix before continuing, and never clear a drifting index.
+        previous={r.record_id:r for r in previous_records if r.source==self.name}
+        anchor_pages=set()
+        prior_ids=[]
+        if isinstance(checkpoint,dict) and checkpoint.get("version")==1 and checkpoint.get("query")==query and checkpoint.get("page_size")==page_size:
+            ids=checkpoint.get("ordered_ids")
+            last=checkpoint.get("last_page")
+            saved_total=checkpoint.get("total")
+            if (type(last) is int and last>=1 and type(saved_total) is int
+                    and isinstance(ids,list) and len(ids)==last*page_size
+                    and len(ids)<saved_total and all(isinstance(i,str) and i in previous for i in ids)
+                    and len(set(ids))==len(ids)):
+                prior_ids=ids
+                all_records={i:previous[i] for i in ids}
+                total=saved_total
+                pages_fetched=last
+                anchor_pages={1,last}
+        starting_page=pages_fetched+1
+        page_order=sorted(anchor_pages)+list(range(starting_page,starting_page+max_pages))
+        for page in page_order:
             prefix = ["node", node_entry] if node_entry and os.path.isfile(node_entry) else [self.executable]
             command = [
                 *prefix, "search", query,
@@ -94,6 +115,9 @@ class ProsperoCliSource:
                     raise ValueError("invalid negative PROSPERO total_hits")
                 if total is None:
                     total = reported
+                elif page in anchor_pages and total != reported:
+                    return SearchResult(self.name,query,SourceStatus.PARTIAL,list(all_records.values()),max(total,reported),
+                                        message="PROSPERO continuation rejected: index total changed; retry full scope")
                 elif total != reported:
                     # A changing remote index must not discard earlier pages
                     # or be declared an exhaustive successful search.
@@ -115,8 +139,17 @@ class ProsperoCliSource:
                     message=f"PROSPERO page {page} malformed: {type(exc).__name__}: {str(exc)[:160]}",
                 )
 
-            pages_fetched += 1
             expected_count = min(page_size, max(0, reported - (page - 1) * page_size))
+            if page in anchor_pages:
+                observed=[]
+                for h in hits:
+                    if not isinstance(h,dict) or not str(h.get("title") or "").strip():break
+                    observed.append(str(h.get("accession_number") or h.get("record_id") or "").strip())
+                if len(hits)!=expected_count or observed!=prior_ids[(page-1)*page_size:page*page_size]:
+                    return SearchResult(self.name,query,SourceStatus.PARTIAL,list(all_records.values()),total,
+                                        message="PROSPERO continuation rejected: boundary page changed; retry full scope")
+                continue
+            pages_fetched = page
             if len(hits) != expected_count:
                 page_integrity_failed = True
             for hit in hits:
@@ -158,9 +191,16 @@ class ProsperoCliSource:
         complete = (not count_changed and not page_integrity_failed and not duplicate_count
                     and not malformed_count and total is not None and len(all_records) == total
                     and (self.runner is not None or os.getenv("PROSPERO_PAGINATION_CONTRACT") == "FIXED_LINE_V1"))
+        continuation=None
+        if (not complete and not count_changed and not page_integrity_failed
+                and not duplicate_count and not malformed_count and total is not None
+                and len(all_records)==pages_fetched*page_size and len(all_records)<total
+                and (self.runner is not None or os.getenv("PROSPERO_PAGINATION_CONTRACT")=="FIXED_LINE_V1")):
+            continuation={"version":1,"query":query,"page_size":page_size,"last_page":pages_fetched,
+                          "total":total,"ordered_ids":list(all_records)}
         supplemental = 0
         if not complete and pages_fetched and total and (
-            total > page_size * max_pages or count_changed
+            total > page_size * pages_fetched or count_changed
         ):
             # The index is too broad or changed while paginating. A bounded
             # title-only search identifies further directly relevant
@@ -207,12 +247,13 @@ class ProsperoCliSource:
         return SearchResult(
             self.name, query, status, list(all_records.values()), total,
             message=(
-                f"PROSPERO pages checked={pages_fetched}; retrieved={len(all_records)}; "
+                f"PROSPERO pages checked={pages_fetched}; resumed_prefix_pages={starting_page-1}; retrieved={len(all_records)}; "
                 f"total={total}; count_changed={count_changed}; "
                 f"page_integrity_failed={page_integrity_failed}; duplicates={duplicate_count}; malformed={malformed_count}; "
                 f"title_only_supplemental_records={supplemental}; "
                 f"{'complete response' if complete else 'additional matches not retrieved or index changed; manual verification required'}"
             ),
+            continuation=continuation,
         )
 
     def _run(self, command: list[str]) -> subprocess.CompletedProcess[str]:

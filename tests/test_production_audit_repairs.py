@@ -95,3 +95,27 @@ def test_registry_results_are_source_linked_without_automatic_arm_mapping():
     assert rows[0]["measurements"][0]["value"]=="2" and len(rows[0]["measurements"])==2
     assert rows[0]["denominators"][1]["value"]=="49" and not rows[0]["pooling_allowed"]
     assert not extract(study,"NCT00000002")
+
+
+def test_prospero_continuation_reuses_validated_prefix_and_rejects_drift():
+    total=1110;pages=[];changed=False
+    def run(cmd):
+        page=int(cmd[cmd.index("--page")+1]);pages.append(page)
+        ids=list(range((page-1)*50,min(total,page*50)))
+        if changed and page==1:ids[0]=99999
+        hits=[{"record_id":str(i),"title":"Review "+str(i)} for i in ids]
+        return subprocess.CompletedProcess(cmd,0,stdout=json.dumps({"ok":True,"data":{"page":page,"page_size":50,"total_hits":total,"hits":hits}}),stderr="")
+    src=ProsperoCliSource(runner=run)
+    first=src.search("q")
+    assert first.continuation["last_page"]==5
+    pages.clear()
+    second=src.search_recovery("q",checkpoint=first.continuation,previous_records=first.records)
+    assert second.continuation["last_page"]==15 and len(second.records)==750
+    assert pages[:2]==[1,5] and 2 not in pages and 6 in pages
+    pages.clear()
+    final=src.search_recovery("q",checkpoint=second.continuation,previous_records=second.records)
+    assert final.status==SourceStatus.SEARCHED_POSITIVE and len(final.records)==1110
+    assert final.continuation is None and len({x.record_id for x in final.records})==1110
+    changed=True
+    drift=src.search_recovery("q",checkpoint=first.continuation,previous_records=first.records)
+    assert drift.status==SourceStatus.PARTIAL and drift.continuation is None and "boundary page changed" in drift.message

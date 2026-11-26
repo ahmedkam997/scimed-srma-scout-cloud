@@ -509,6 +509,10 @@ class ReviewDiscoveryOrchestrator:
 
         configured: list[tuple[str, SourceClient]] = []
         source_queries: dict[str, tuple[str, ...]] = {}
+        from scimed_scout.sources.prospero import ProsperoCliSource
+        saved_pagination=dict((candidate.metadata or {}).get("source_pagination_checkpoints") or {})
+        pagination_inputs={}
+        pagination_changed=False
         latest = {(log.source, log.query): log.status
                   for log in self.ledger.list_search_log(candidate.candidate_id)} if recover_only else {}
         for source_name in source_names:
@@ -537,6 +541,14 @@ class ReviewDiscoveryOrchestrator:
                 continue
             configured.append((source_name, client))
             source_queries[source_name] = selected
+            if isinstance(client,ProsperoCliSource) and recover_only:
+                prior=[]
+                for row in self.ledger.list_external_evidence(candidate.candidate_id):
+                    if row.get("source")!=source_name:continue
+                    p=row.get("payload") or {}
+                    prior.append(SearchRecord(source_name,str(row["source_record_id"]),str(row.get("title") or ""),
+                        url=p.get("url") or "",year=p.get("year"),doi=p.get("doi") or "",metadata=p.get("metadata") or {}))
+                pagination_inputs[source_name]={q:{"checkpoint":saved_pagination.get(q),"previous_records":prior} for q in selected if saved_pagination.get(q)}
             for query in selected:
                 self.ledger.add_query(
                     candidate.project_id,
@@ -561,6 +573,7 @@ class ReviewDiscoveryOrchestrator:
                     source_queries[source_name],
                     limit_per_query,
                     recover_only,
+                    pagination_inputs.get(source_name),
                 )
                 for source_name, client in configured
             }
@@ -592,6 +605,11 @@ class ReviewDiscoveryOrchestrator:
                             message=message,
                         )
                     )
+                    if source_name=="PROSPERO":
+                        if result.continuation is not None:
+                            saved_pagination[query]=result.continuation;pagination_changed=True
+                        elif query in saved_pagination and result.status!=SourceStatus.NOT_SEARCHED:
+                            saved_pagination.pop(query);pagination_changed=True
                     for record in result.records:
                         record_type = evidence_type
                         classification = ""
@@ -648,6 +666,10 @@ class ReviewDiscoveryOrchestrator:
                         )
                 if self.progress_callback:
                     self.progress_callback(-1,"SOURCE_COMPLETE",f"{source_name}: {purpose}; {len(completed_results)} queries returned")
+        if pagination_changed:
+            # Refresh metadata to avoid overwriting prior evidence updates.
+            candidate.metadata={**((self.ledger.get_candidate(candidate.candidate_id) or candidate).metadata or {}),"source_pagination_checkpoints":saved_pagination}
+            self.ledger.upsert_candidate(candidate)
 
     def _adaptive_pubmed_retrieval(self,candidate,plan,limit_per_query):
         client=self.clients.get("PubMed")
@@ -774,12 +796,13 @@ def _run_source_queries(
     queries: tuple[str, ...],
     limit_per_query: int,
     recover_only: bool = False,
+    pagination_inputs=None,
 ) -> list[tuple[str, SearchResult]]:
     results: list[tuple[str, SearchResult]] = []
     for index, query in enumerate(queries):
         try:
             search=getattr(client,"search_recovery",client.search) if recover_only else client.search
-            result = search(query, limit=limit_per_query)
+            result = search(query, limit=limit_per_query,**((pagination_inputs or {}).get(query,{}) if recover_only else {}))
         except Exception as exc:
             result = SearchResult(
                 source=getattr(client, "name", "Unknown"),

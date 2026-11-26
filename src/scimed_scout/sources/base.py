@@ -25,6 +25,7 @@ class SearchResult:
     records: list[SearchRecord] = field(default_factory=list)
     total_count: int | None = None
     message: str = ""
+    continuation: dict[str, Any] | None = None
 
     @property
     def safe_negative(self) -> bool:
