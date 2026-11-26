@@ -1,5 +1,6 @@
 """Bounded public PubMed follow-up for Phase 3 opportunity leads."""
 
+import argparse
 import json
 import re
 from pathlib import Path
@@ -19,13 +20,32 @@ ROUTES = {
 }
 
 
-def run(client):
+HEART_FAILURE_QUESTIONS = {
+    "af-ablation-hfrhfmr": (
+        '"atrial fibrillation"[tiab] AND "catheter ablation"[tiab] '
+        'AND ("heart failure"[tiab] OR HFrEF[tiab] OR HFmrEF[tiab]) '
+        'AND (medical[tiab] OR "drug therapy"[tiab] OR "rate control"[tiab] OR antiarrhythmic[tiab])'
+    ),
+    "sacubitril-enalapril-adult-hfref": (
+        'sacubitril[tiab] AND enalapril[tiab] '
+        'AND ("heart failure with reduced ejection fraction"[tiab] OR HFrEF[tiab])'
+    ),
+}
+POST_FEBRUARY = (
+    '(randomized controlled trial[pt] OR random*[tiab]) '
+    'AND ("2026/02/01"[dp] : "3000/01/01"[dp])'
+)
+
+
+def run(client, *, questions=QUESTIONS, post_february=False):
     report = {}
-    for question, pico in QUESTIONS.items():
+    for question, pico in questions.items():
         routes = {}
         for name, filter_query in ROUTES.items():
             query = f"({pico}) AND ({filter_query})"
             if name == "recent_randomized_reports":
+                if post_february and question == "af-ablation-hfrhfmr":
+                    query = f"({pico}) AND ({POST_FEBRUARY})"
                 query += ' NOT (systematic review[pt] OR meta-analysis[pt] OR "meta-analysis"[ti] OR "systematic review"[ti])'
             result = client.search(query, limit=8)
             records = [
@@ -51,9 +71,9 @@ REVIEW_CONTROLS = ("42985463", "42499063", "42201709", "43090943", "42251641", "
 SEARCH_METHODS = re.compile(r"(?i)\b(?:searched|searches|search was|search date|search cutoff)\b")
 
 
-def retrieve_cutoff_cues(client):
+def retrieve_cutoff_cues(client, reviews=REVIEW_CONTROLS):
     try:
-        records, diagnostics = parse_efetch(_fetch(client, REVIEW_CONTROLS), REVIEW_CONTROLS)
+        records, diagnostics = parse_efetch(_fetch(client, reviews), reviews)
     except (OSError, ValueError, ParseError):
         return {"status": "ACCESS_FAILED", "records": {}, "actual_cutoffs_verified": False}
     cues = {}
@@ -63,7 +83,7 @@ def retrieve_cutoff_cues(client):
         matches = [sentence[:300] for sentence in sentences if SEARCH_METHODS.search(sentence)]
         cues[pmid] = {"search_methods_excerpt": matches[:2], "pmcid": row.get("pmcid")}
     return {
-        "status": "SEARCHED_POSITIVE" if len(records) == len(REVIEW_CONTROLS) else "PARTIAL",
+        "status": "SEARCHED_POSITIVE" if len(records) == len(reviews) else "PARTIAL",
         "records": cues,
         "diagnostics": diagnostics,
         "actual_cutoffs_verified": False,
@@ -71,9 +91,16 @@ def retrieve_cutoff_cues(client):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--heart-failure", action="store_true")
+    args = parser.parse_args()
     client = PubMedSource(sort="pub_date")
-    report = run(client)
-    cutoffs = retrieve_cutoff_cues(client)
+    if args.heart_failure:
+        report = run(client, questions=HEART_FAILURE_QUESTIONS, post_february=True)
+        cutoffs = retrieve_cutoff_cues(client, ("42769399", "42119914", "41773097"))
+    else:
+        report = run(client)
+        cutoffs = retrieve_cutoff_cues(client)
     Path("phase3-competitor-recovery.json").write_text(
         json.dumps({**report, "cutoff_cues": cutoffs}, indent=2) + "\n"
     )
