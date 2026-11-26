@@ -11,6 +11,11 @@ from scimed_scout.sources.pubmed import PubMedSource
 from scimed_scout.sources.pubmed_abstracts import _fetch, parse_efetch
 
 TARGETS = {"RCT-15364278DD7EDB7B", "RCT-2E9103FF7C89F52D"}
+RENAL = "RCT-8C63D3F7D7C752A7"
+RENAL_REVIEW_QUERY = (
+    '"renal denervation"[ti] AND sham[tiab] AND '
+    '(systematic review[pt] OR meta-analysis[pt] OR "meta-analysis"[ti])'
+)
 REVIEWS = ("42985463", "42499063", "42201709", "43090943")
 
 
@@ -42,14 +47,14 @@ def as_row(pmid, metadata):
     }
 
 
-def audit(client, candidates, *, fetch=_fetch, resolver=None):
+def audit(client, candidates, *, fetch=_fetch, resolver=None, targets=TARGETS, reviews=REVIEWS):
     resolver = resolver or OpenAccessSearchDateResolver(include_pmc_oai=True)
     identities = {
         row["candidate_id"]: comparison_identities(row["metadata"]["rct_first"]["comparison_records"])
-        for row in candidates if row["candidate_id"] in TARGETS
+        for row in candidates if row["candidate_id"] in targets
     }
     selected = {cid: pubmed_ids(records)[:30] for cid, records in identities.items()}
-    ids = list(dict.fromkeys([*REVIEWS, *(pmid for group in selected.values() for pmid in group)]))
+    ids = list(dict.fromkeys([*reviews, *(pmid for group in selected.values() for pmid in group)]))
     try:
         found, diagnostics = parse_efetch(fetch(client, ids), ids)
     except (OSError, ValueError, SyntaxError) as exc:
@@ -62,9 +67,9 @@ def audit(client, candidates, *, fetch=_fetch, resolver=None):
         "competitor_identities": {pmid: {
             "pmcid": found[pmid].get("pmcid"),
             "doi": found[pmid].get("doi"),
-        } for pmid in REVIEWS if pmid in found},
+        } for pmid in reviews if pmid in found},
         "competitor_methods": {pmid: resolver.resolve(rows[pmid]) if pmid in rows else None
-                               for pmid in REVIEWS},
+                               for pmid in reviews},
         "candidates": {
             cid: {
                 "source_identities": identities[cid],
@@ -91,8 +96,25 @@ def notice(title, value):
 
 def main():
     source = Path("inputs/phase3-opportunities-cardiology/opportunity.json")
-    result = audit(PubMedSource(), json.loads(source.read_text())["candidates"])
+    candidates = json.loads(source.read_text())["candidates"]
+    client = PubMedSource()
+    renal = any(row["candidate_id"] == RENAL for row in candidates)
+    targets, reviews = TARGETS, REVIEWS
+    review_search = None
+    if renal:
+        targets = {RENAL}
+        search = client.search(RENAL_REVIEW_QUERY, limit=6)
+        reviews = tuple(str(row.record_id) for row in search.records)
+        review_search = {
+            "query": RENAL_REVIEW_QUERY, "status": search.status.value,
+            "reported_total": search.total_count,
+            "reports": [{"pmid": str(row.record_id), "title": row.title} for row in search.records],
+        }
+    result = audit(client, candidates, targets=targets, reviews=reviews)
+    result["bounded_review_search"] = review_search
     Path("phase3-family-methods.json").write_text(json.dumps(result, indent=2) + "\n")
+    if review_search is not None:
+        notice("Renal competitor search", review_search)
     for pmid, methods in result["competitor_methods"].items():
         notice(f"Full Methods PMID {pmid}", {
             "identity": result["competitor_identities"].get(pmid), "methods": methods,
@@ -115,7 +137,7 @@ def main():
             }
             for pmid, evidence in row["outcome_cues"].items()
         })
-    if result["missing_pubmed_ids"] or set(result["candidates"]) != TARGETS or not all(result["competitor_methods"].values()):
+    if result["missing_pubmed_ids"] or set(result["candidates"]) != targets or not reviews or not all(result["competitor_methods"].values()):
         raise SystemExit("Family or full-text Methods audit remains incomplete")
 
 

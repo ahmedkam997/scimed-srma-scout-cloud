@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 7
     env:
-      DISCOVERY_RUN: ${{ inputs.discovery_run || '45891271291' }}
+      DISCOVERY_RUN: ${{ inputs.discovery_run || '45892703407' }}
     steps:
       - uses: actions/checkout@v6
         with: {persist-credentials: false}
@@ -101,6 +101,7 @@ jobs:
           path: phase3-family-methods.json
           retention-days: 14
   competitor-recovery:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[family-only]')
     runs-on: ubuntu-latest
     timeout-minutes: 6
     env:
