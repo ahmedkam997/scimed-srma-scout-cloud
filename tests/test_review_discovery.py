@@ -368,3 +368,35 @@ def test_companion_publications_do_not_pass_minimum_family_lead_gate(tmp_path):
         assert result.evidence.conservative_family_lead_count == 1
         assert result.candidate_status == CandidateStatus.PROVISIONAL_BACKUP
         assert "TRIAL-FAMILY" in result.decision
+
+def test_audit_strict_rct_final_decision_unreachable_even_with_ideal_cues(tmp_path, monkeypatch):
+    """Diagnostic-only controlled experiment; not real clinical validation."""
+    import scimed_scout.discovery.orchestrator as orchestrator
+    import scimed_scout.discovery.rct_first as rct_first
+    monkeypatch.setattr(orchestrator,"assess_pico",lambda c,r:({"pico_design_family_leads":10},r))
+    monkeypatch.setattr(rct_first,"strict_candidate_audit",lambda c,r:{"family_leads":10})
+    results={}
+    for strict in (0,7):
+        with SQLiteLedger(tmp_path/f"reachability-{strict}.sqlite") as ledger:
+            ledger.upsert_project(ProjectRecord("P1","Radiology",question_type="DIAGNOSTIC_ACCURACY"))
+            ledger.upsert_candidate(candidate())
+            r=ReviewDiscoveryOrchestrator(ledger,clients(n=10),strict_rct_minimum=strict).verify_candidate("C1")
+            assert r.coverage.complete
+            assert r.evidence.unique_primary_study_candidates==10
+            results[strict]=r
+    assert results[0].candidate_status==CandidateStatus.QUALIFIED
+    assert results[7].candidate_status==CandidateStatus.PROVISIONAL_BACKUP
+    assert results[7].pending==["TYPE-A: independent eligibility, exact arms and extractable outcomes for at least 7 RCTs require independent adjudication; bibliography is not a final GO"]
+    assert results[7].final_gate_result is None
+
+
+def test_audit_novelty_math_and_score_upper_bound():
+    from scimed_scout.discovery.evidence_metrics import OVERLAP_SEVERITY,composite_score
+    from scimed_scout.discovery.gates import evaluate_discovery_gates
+    assert round(5*(1-OVERLAP_SEVERITY["HIGH"]),2)==1
+    assert 5*(1-OVERLAP_SEVERITY["ESSENTIALLY_IDENTICAL"])==0
+    assert composite_score(novelty=0,information_gain=0,clinical_importance=5,feasibility="HIGH",publication_potential=5)["publication_oriented_score"]==45
+    assert composite_score(novelty=1,information_gain=5,clinical_importance=5,feasibility="HIGH",publication_potential=5)["publication_oriented_score"]==76
+    data={**gate_inputs(),"overall_novelty":1,"new_information_gain":5,"publication_oriented_score":76}
+    gate=next(g for g in evaluate_discovery_gates(data) if g.name=="Overall novelty")
+    assert not gate.passed
