@@ -166,7 +166,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     provider.begin(c.candidate_id)
                     provider.reserved=1
                 novelty=DiscoveryNoveltyService(ledger,SemanticCompetitorAssessor(provider),max_reviews=12,max_registrations=8,batch_size=5,
-                    search_date_resolver=OpenAccessSearchDateResolver(),max_fulltext_reviews=2,enrichment_client=EuropePMCSource(),max_enrichment_lookups=1) if provider else None
+                    search_date_resolver=OpenAccessSearchDateResolver(),max_fulltext_reviews=2,enrichment_client=EuropePMCSource(),max_enrichment_lookups=1,bounded_recovery=True) if provider else None
                 scoring=ReservedScoring(provider) if provider else None
                 engine=ReviewDiscoveryOrchestrator(ledger,clients,novelty_service=novelty,scoring_service=scoring,
                     cancellation_check=check,require_pico_signals=True,optimize_literature_queries=True,adaptive_search=True,
@@ -184,7 +184,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     "source_statuses":{k:v.value for k,v in item.coverage.source_statuses.items()},"coverage_blockers":list(item.coverage.blockers),
                     "pico_design_family_leads":item.evidence.pico_audit.get("pico_design_family_leads"),
                     "rct_first_final_audit":a,"review_opportunity":m.get("discovery_review_opportunity") or {},
-                    "adaptive_retrieval_audit":m.get("adaptive_retrieval_audit") or [],"fulltext_search_date_resolutions":m.get("discovery_fulltext_search_date_resolutions") or [],
+                    "adaptive_retrieval_audit":m.get("adaptive_retrieval_audit") or [],"adaptive_search_audit":m.get("adaptive_search_audit") or {},"fulltext_search_date_resolutions":m.get("discovery_fulltext_search_date_resolutions") or [],
                     "competitor_audit":{"published_reviews_discovered":m.get("discovery_competitor_records_discovered",0),
                     "unassessed_reviews":m.get("discovery_unassessed_review_count",0),"unassessed_registrations":m.get("discovery_unassessed_registration_count",0)},
                     "scorecard":m.get("discovery_gate_inputs") or {},"opportunity_mcda":m.get("opportunity_mcda") or {}})
@@ -200,7 +200,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
             package["unverified_generated_options"]=[_draft(c) for c in candidates if c.candidate_id not in ids]
             package["unverified_generated_options_are_not_qualified"]=True
             package["rct_first"]={"version":VERSION,"minimum_comparison_family_leads":MIN_FAMILIES,"seed_status":seed["status"],
-                "seed_queries":seed["queries"],"dynamic_discovery":seed.get("dynamic_discovery",{}),"comparison_recovery":seed.get("comparison_recovery",[]),"review_comparison_recovery":seed.get("review_comparison_recovery",[]),"cells":[{k:v for k,v in x.items() if k!="source_records"} for x in seed.get("cells",[])],
+                "seed_queries":seed["queries"],"citation_recovery":seed.get("citation_recovery",{}),"dynamic_discovery":seed.get("dynamic_discovery",{}),"comparison_recovery":seed.get("comparison_recovery",[]),"review_comparison_recovery":seed.get("review_comparison_recovery",[]),"cells":[{k:v for k,v in x.items() if k!="source_records"} for x in seed.get("cells",[])],
                 "deep_limit":MAX_DEEP,"confirmed_independent_eligible_trials":None,"novelty_confirmed_by_seed":False,
                 "scope_note":"Unsupported specialties return explicit diagnostic instead of switching to mixed-design AI generation. Bounded samples do not establish absence.",
                 "selected_for_deep_verification":len(selected),"source_linked_candidates":len(candidates)}

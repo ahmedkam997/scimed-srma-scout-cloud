@@ -31,6 +31,7 @@ class DiscoveryNoveltyService:
         max_fulltext_reviews: int = 2,
         enrichment_client=None,
         max_enrichment_lookups: int = 2,
+        bounded_recovery: bool = False,
     ):
         self.ledger = ledger
         self.assessor = assessor
@@ -41,6 +42,7 @@ class DiscoveryNoveltyService:
         self.max_fulltext_reviews = max(0, min(4, int(max_fulltext_reviews)))
         self.enrichment_client = enrichment_client
         self.max_enrichment_lookups = max(0,min(4,int(max_enrichment_lookups)))
+        self.bounded_recovery=bool(bounded_recovery)
 
     def assess_candidate(
         self, candidate_id: str, *, force: bool = False, allow_ai: bool = True,
@@ -54,8 +56,9 @@ class DiscoveryNoveltyService:
         all_registrations = self.ledger.list_external_evidence(candidate_id, "REGISTRATION")
 
         # Expand only the best candidate during recovery, not every draft.
-        review_cap = min(36, max(self.max_reviews, 30)) if recovery else self.max_reviews
-        registry_cap = min(30, max(self.max_registrations, 24)) if recovery else self.max_registrations
+        expand=recovery and not self.bounded_recovery
+        review_cap = min(36, max(self.max_reviews, 30)) if expand else self.max_reviews
+        registry_cap = min(30, max(self.max_registrations, 24)) if expand else self.max_registrations
         select = _select_incremental if allow_ai else _select_records
         review_records = select(candidate, all_reviews, review_cap, force=force) if allow_ai else select(candidate, all_reviews, review_cap)
         registration_records = select(candidate, all_registrations, registry_cap, force=force) if allow_ai else select(candidate, all_registrations, registry_cap)
@@ -71,16 +74,18 @@ class DiscoveryNoveltyService:
                 review_records=select(candidate,all_reviews,review_cap,force=force)
                 cached_reviews=sum(_valid_cached(candidate,r) for r in review_records) if not force else 0
         resolved_dates = self._resolve_search_dates(candidate_id, review_records)
-        if resolved_dates:
+        if self.search_date_resolver is not None and self.max_fulltext_reviews:
+            # Refresh even when no cutoff was found: attempt counters were
+            # persisted and must survive later semantic-assessment writes.
             all_reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
             review_records = select(candidate, all_reviews, review_cap, force=force) if allow_ai else select(candidate, all_reviews, review_cap)
             cached_reviews = sum(_valid_cached(candidate,r) for r in review_records) if allow_ai and not force else 0
         if allow_ai:
             review_assessments = self._assess_records(candidate, review_records, force=force,
-                                                       repair_budget=3 if recovery else 0)
+                                                       repair_budget=3 if expand else 0)
             registration_assessments = self._assess_records(
                 candidate, registration_records, force=force,
-                repair_budget=2 if recovery else 0,
+                repair_budget=2 if expand else 0,
             )
         else:
             # No amount of AI scoring repairs incomplete mandatory registry
@@ -152,7 +157,7 @@ class DiscoveryNoveltyService:
             "discovery_competitor_identity_audit": identity_audit(all_reviews),
             "discovery_competitor_enrichment": enrichment,
             "discovery_incremental_competitor_budget": {"version":"INCREMENTAL_V1",
-                "new_review_limit":review_cap,"new_registration_limit":registry_cap,
+                "new_review_limit":review_cap,"new_registration_limit":registry_cap,"bounded_recovery":self.bounded_recovery,
                 "cached_review_assessments_reused":cached_reviews,
                 "cached_registration_assessments_reused":cached_registrations,
                 "selected_uncached_reviews":len(review_records)-cached_reviews if allow_ai else 0,
@@ -213,20 +218,26 @@ class DiscoveryNoveltyService:
             return []
         found: list[dict[str, Any]] = []
         attempted = 0
-        for record in records:
+        from .review_opportunity import _cutoff
+        def attempts(record):
+            value=(record.get("payload") or {}).get("discovery_search_date_attempts",0)
+            return value if isinstance(value,int) and value>=0 else 0
+        # An unsupported bare date is not a resolved cutoff. Rotate failed
+        # lookups behind previously unattempted reviews on subsequent resumes.
+        for record in sorted(records,key=attempts):
             meta = _metadata(record)
-            if any(meta.get(k) for k in (
-                "last_search_date", "date_last_searched", "search_end_date",
-                "date_of_last_search", "search_cutoff",
-            )):
+            if _cutoff(record):
                 continue
             if attempted >= self.max_fulltext_reviews:
                 break
             attempted += 1
+            payload = dict(record.get("payload") or {})
+            payload["discovery_search_date_attempts"]=attempts(record)+1
             evidence = self.search_date_resolver.resolve(record)
             if evidence is None:
+                self.ledger.upsert_external_evidence(candidate_id,"PUBLISHED_REVIEW",record["source_record_id"],
+                    source=record.get("source",""),title=record.get("title",""),payload=payload)
                 continue
-            payload = dict(record.get("payload") or {})
             updated = dict(meta)
             updated["last_search_date"] = evidence["date"]
             updated["search_date_evidence_quote"] = evidence["quote"]

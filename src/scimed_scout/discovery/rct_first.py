@@ -28,6 +28,7 @@ MAX_EUROPE_SUPPLEMENTS=2
 MAX_REVIEW_PREFLIGHTS=4
 MAX_REVIEW_COMPARISON_RECOVERIES=2
 MAX_COMPARISON_RECOVERIES=3
+MAX_CITATION_CELLS=2
 # Clinical search vocabulary; no claim that any pair is novel or eligible.
 # Each tuple has a population phrase, intervention phrase and optional aliases.
 ANCHORS={
@@ -303,7 +304,7 @@ def _search(client,query,cap,stage,audits,check):
     audits.append({"source":client.name,"query":query,"stage":stage,"status":r.status.value,"total":r.total_count,"retrieved":len(r.records),"message":str(r.message or "")[:240]})
     return [_record(x) for x in r.records if x.title.strip()]
 
-def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),year=None,max_pairs=MAX_PAIRS,abstract_enricher=None,dynamic=None,registry_lookup=None):
+def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),year=None,max_pairs=MAX_PAIRS,abstract_enricher=None,dynamic=None,registry_lookup=None,citation=None):
     key=str(specialty).strip().casefold()
     year=year or datetime.now(timezone.utc).year
     if key=="all":key=tuple(ANCHORS)[rotation%len(ANCHORS)]
@@ -340,6 +341,9 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
         report["dynamic_discovery"]["anchors"]=proposed
         report["dynamic_discovery"]["anchor_status"]="ANCHORS_RETRIEVED" if proposed else "NO_ANCHORS_IN_BOUNDED_SAMPLE"
         pairs.extend(tuple(x["pair"]) for x in proposed)
+    citation_enabled=(isinstance(europe,EuropePMCSource) and europe.http.loader is None) if citation is None else bool(citation)
+    report["citation_recovery"]={"status":"NOT_SEARCHED","cells":[],"source_calls":0,"coverage_clearance_allowed":False}
+    graph_reviews={}
     samples=[]
     for pair in pairs:
         rows=_search(pubmed,query_pair(pair),MAX_SEED_RECORDS,"RCT_SEED",report["queries"],check)
@@ -377,6 +381,31 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
         rows.extend(additional)
         _,updated=comparison_rows(pair,rows,year=year,extra_controls=dynamic_controls.get(tuple(pair[:2]),()))
         report.setdefault("comparison_recovery",[]).append({"population":pair[0],"intervention":pair[1],"comparator":control,"before_family_cues":before,"after_family_cues":family_summary(updated.get(control,[]))["family_leads"],"confirmed_independent_eligible_trials":None})
+    # A single bounded citation hop supplements keyword retrieval before
+    # shortlist selection. Prioritize dynamic and near-threshold cells.
+    if citation_enabled:
+        from .adaptive_search import citation_neighbors,_pmid
+        from .evidence_classification import classify_review_search_hit
+        ranked_cells=[]
+        for i,(pair,rows,_) in enumerate(samples):
+            matched,buckets=comparison_rows(pair,rows,year=year,extra_controls=dynamic_controls.get(tuple(pair[:2]),()))
+            if matched:
+                best=max(buckets.values(),key=lambda x:family_summary(x)["family_leads"],default=[])
+                n=family_summary(best)["family_leads"]
+                seed=next((_pmid(x) for x in [*best,*matched] if _pmid(x)),"")
+                if seed:ranked_cells.append((i,seed,n))
+        ranked_cells.sort(key=lambda x:(not (x[0]>=len(pairs)-len(report["dynamic_discovery"]["anchors"])),not (2<=x[2]<MIN_FAMILIES),-x[2],x[0]))
+        for i,seed,n in ranked_cells[:MAX_CITATION_CELLS]:
+            pair,rows,_=samples[i]
+            audit,records=citation_neighbors(europe,[seed],rows,check=check)
+            linked=[_record(x) for x in records]
+            rows.extend(linked)
+            graph_reviews[tuple(pair[:2])]=[_record(x) for x in records if classify_review_search_hit(x)=="CONFIRMED_REVIEW_CUE" and any_term(x.title+" "+str(x.metadata.get("abstractText") or ""),phrases(pair[0],pair[2])) and any_term(x.title+" "+str(x.metadata.get("abstractText") or ""),phrases(pair[1],pair[3]))]
+            _,updated=comparison_rows(pair,rows,year=year,extra_controls=dynamic_controls.get(tuple(pair[:2]),()))
+            report["citation_recovery"]["cells"].append({"population":pair[0],"intervention":pair[1],"before_max_comparison_cues":n,"after_max_comparison_cues":max((family_summary(v)["family_leads"] for v in updated.values()),default=0),"review_leads":len(graph_reviews[tuple(pair[:2])]),**audit})
+            report["citation_recovery"]["source_calls"]+=audit["source_calls"]
+            if any(e.get("rate_limited") for e in audit["citation_search"]):break
+        report["citation_recovery"]["status"]="BOUNDED_ATTEMPT" if report["citation_recovery"]["cells"] else "NO_SOURCE_LINKED_SEED"
     for pair,rows,_ in samples:
         all_rows,buckets=comparison_rows(pair,rows,year=year,extra_controls=dynamic_controls.get(tuple(pair[:2]),()))
         primary=family_summary(all_rows)
@@ -409,20 +438,25 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
     # distinct cells for competing reviews BEFORE model calls. Publication
     # chronology is not a search cutoff and never clears novelty.
     report["candidates"].sort(key=lambda c:(-c["metadata"]["rct_first"]["family_leads"],-c["metadata"]["rct_first"]["population_intervention_family_leads"],c["candidate_id"]))
-    seen=set()
+    seen={}
     from .evidence_classification import classify_review_search_hit
     from scimed_scout.sources.base import SearchRecord
     for c in report["candidates"]:
         info=c["metadata"]["rct_first"];pair=info["pair"];key2=tuple(pair[:2])
-        if key2 in seen or not info["shortlist_eligible"]:continue
-        if len(seen)>=MAX_REVIEW_PREFLIGHTS:break
-        seen.add(key2)
-        reviews=_search(pubmed,query_pair(pair,review=True),15,"REVIEW_PREFLIGHT",report["queries"],check)
-        review_status=report["queries"][-1]["status"]
-        if reviews and abstract_enricher:
-            if check:check()
-            reviews,abstract_audit=abstract_enricher(reviews)
-            report["queries"].append({**abstract_audit,"stage":"REVIEW_ABSTRACT_ENRICHMENT"})
+        if not info["shortlist_eligible"]:continue
+        if key2 not in seen:
+            if len(seen)>=MAX_REVIEW_PREFLIGHTS:continue
+            reviews=_search(pubmed,query_pair(pair,review=True),15,"REVIEW_PREFLIGHT",report["queries"],check)
+            review_status=report["queries"][-1]["status"]
+            if reviews and abstract_enricher:
+                if check:check()
+                reviews,abstract_audit=abstract_enricher(reviews)
+                report["queries"].append({**abstract_audit,"stage":"REVIEW_ABSTRACT_ENRICHMENT"})
+            # Keep keyword records and exact citation discoveries; one source
+            # query per cell, independent mutable lists for each comparator.
+            seen[key2]=(review_status,[*reviews,*graph_reviews.get(key2,[])])
+        review_status,reviews=seen[key2]
+        reviews=list(reviews)
         info["competing_review_preflight"]={"status":review_status,"records":reviews,"actual_search_dates_verified":False,"novelty_confirmed":False}
         dates=[r["payload"]["year"] for r in reviews if isinstance(r["payload"].get("year"),int) and classify_review_search_hit(SearchRecord(r["source"],r["source_record_id"],r["title"],metadata=r["payload"].get("metadata") or {}))=="CONFIRMED_REVIEW_CUE"]
         info["latest_sampled_review_publication_year"]=max(dates,default=None)
@@ -441,7 +475,7 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
         info=row["metadata"]["rct_first"];p=row["metadata"]["opportunity_mcda"]
         pre=info.get("competing_review_preflight")
         if not pre or pre.get("status") not in ("SEARCHED_POSITIVE","SEARCHED_NEGATIVE","PARTIAL"):continue
-        if p["source_linked_gap_cues"] or p["post_cutoff_report_cues"] or p["correction_method_cues"]:continue
+        if p["direct_comparison_review_sample"]:continue
         if review_recoveries>=MAX_REVIEW_COMPARISON_RECOVERIES:break
         pair=info["pair"];control=row["comparator_reference"];before=len(p["direct_comparison_review_sample"])
         query=query_pair(pair,review=True)+" AND "+_query(control_terms(control))
