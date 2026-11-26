@@ -5,7 +5,7 @@ from pathlib import Path
 
 from scimed_scout.discovery.competitor_records import identifiers
 from scimed_scout.discovery.open_access_dates import OpenAccessSearchDateResolver
-from scimed_scout.discovery.structured_extraction_v2 import report_role_cues
+from scimed_scout.discovery.structured_extraction_v2 import abstract_counts, abstract_ratios, report_role_cues
 from scimed_scout.discovery.trial_family import audit_trial_families
 from scimed_scout.sources.pubmed import PubMedSource
 from scimed_scout.sources.pubmed_abstracts import _fetch, parse_efetch
@@ -70,6 +70,14 @@ def audit(client, candidates, *, fetch=_fetch, resolver=None):
                 "source_identities": identities[cid],
                 "families": audit_trial_families([rows[pmid] for pmid in group if pmid in rows]),
                 "role_cues": {pmid: report_role_cues(rows[pmid])["cues"] for pmid in group if pmid in rows},
+                "outcome_cues": {
+                    pmid: {
+                        "title": rows[pmid]["title"],
+                        "count_leads": abstract_counts(rows[pmid]),
+                        "ratio_leads": abstract_ratios(rows[pmid]),
+                    }
+                    for pmid in group if pmid in rows
+                },
                 "usable_independent_trial_count": None,
             }
             for cid, group in selected.items()
@@ -98,6 +106,14 @@ def main():
             "ambiguous": [report["report_id"] for report in families["ambiguous_reports"]],
             "role_cues": row["role_cues"],
             "non_pubmed_identities": [item for item in row["source_identities"] if item["source"] != "PubMed"],
+        })
+        notice(f"Outcome cue inventory {cid}", {
+            pmid: {
+                "title": evidence["title"],
+                "count_leads": len(evidence["count_leads"]),
+                "ratio_leads": len(evidence["ratio_leads"]),
+            }
+            for pmid, evidence in row["outcome_cues"].items()
         })
     if result["missing_pubmed_ids"] or set(result["candidates"]) != TARGETS or not all(result["competitor_methods"].values()):
         raise SystemExit("Family or full-text Methods audit remains incomplete")
