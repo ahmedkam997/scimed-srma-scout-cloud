@@ -1,0 +1,89 @@
+{
+  "schema": "SCIMED_ACADEMY_CPU_SCREENING_V1",
+  "scope": "DEVELOPMENT_ONLY",
+  "dataset": "Filtered SYNERGY+ Muthu_2020",
+  "asreview": "3.0.8",
+  "seeds": [
+    17,
+    73
+  ],
+  "oracle_priors_per_seed": {
+    "positive": 1,
+    "negative": 1
+  },
+  "qualification_granted": false,
+  "runs": [
+    {
+      "model": "elas_u4",
+      "seed": 17,
+      "sha256": "09acfeee00a0e6bcd25937b3a7eafc5e4bbd095443807f3833039a67dc26c017",
+      "total": 923,
+      "reference_positive": 20,
+      "screened": 906,
+      "found_positive": 20,
+      "reference_recall": 1.0,
+      "recall_at_budget_percent": {
+        "10": 0.35,
+        "25": 0.55,
+        "50": 0.8
+      },
+      "screened_at_95": 699,
+      "random_expected_screened_at_95": 836.0,
+      "wss95": 0.1926868905742145
+    },
+    {
+      "model": "elas_u3",
+      "seed": 17,
+      "sha256": "09acfeee00a0e6bcd25937b3a7eafc5e4bbd095443807f3833039a67dc26c017",
+      "total": 923,
+      "reference_positive": 20,
+      "screened": 840,
+      "found_positive": 20,
+      "reference_recall": 1.0,
+      "recall_at_budget_percent": {
+        "10": 0.45,
+        "25": 0.6,
+        "50": 0.85
+      },
+      "screened_at_95": 590,
+      "random_expected_screened_at_95": 836.0,
+      "wss95": 0.3107800650054171
+    },
+    {
+      "model": "elas_u4",
+      "seed": 73,
+      "sha256": "09acfeee00a0e6bcd25937b3a7eafc5e4bbd095443807f3833039a67dc26c017",
+      "total": 923,
+      "reference_positive": 20,
+      "screened": 906,
+      "found_positive": 20,
+      "reference_recall": 1.0,
+      "recall_at_budget_percent": {
+        "10": 0.3,
+        "25": 0.55,
+        "50": 0.8
+      },
+      "screened_at_95": 703,
+      "random_expected_screened_at_95": 836.0,
+      "wss95": 0.18835319609967494
+    },
+    {
+      "model": "elas_u3",
+      "seed": 73,
+      "sha256": "09acfeee00a0e6bcd25937b3a7eafc5e4bbd095443807f3833039a67dc26c017",
+      "total": 923,
+      "reference_positive": 20,
+      "screened": 840,
+      "found_positive": 20,
+      "reference_recall": 1.0,
+      "recall_at_budget_percent": {
+        "10": 0.5,
+        "25": 0.6,
+        "50": 0.75
+      },
+      "screened_at_95": 602,
+      "random_expected_screened_at_95": 836.0,
+      "wss95": 0.2977789815817984
+    }
+  ]
+}

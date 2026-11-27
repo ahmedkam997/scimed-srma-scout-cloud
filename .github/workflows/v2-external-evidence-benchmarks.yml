@@ -1,0 +1,132 @@
+name: v2-external-evidence-benchmarks
+on:
+  workflow_dispatch:
+  push:
+    branches: [scientific-verification-v2-phase3-replay]
+    paths:
+      - '.github/workflows/v2-external-evidence-benchmarks.yml'
+      - 'scripts/asreview_screening_audit.py'
+  pull_request:
+    branches: [scientific-verification-v2-phase1]
+    paths:
+      - '.github/workflows/v2-external-evidence-benchmarks.yml'
+      - 'scripts/asreview_screening_audit.py'
+permissions:
+  contents: read
+jobs:
+  trialreviewbench:
+    if: github.event_name != 'pull_request' || github.head_ref != 'scientific-verification-v2-phase3-replay'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - name: Download pinned external benchmark
+        run: |
+          base=https://huggingface.co/datasets/zifeng-ai/TrialReviewBench/resolve/6dfc322004341212eb905a6874ccfae416b9f9f5
+          curl --fail --location --retry 2 --max-time 60 "$base/TrialReviewBench-reviews.csv" -o reviews.csv
+          curl --fail --location --retry 2 --max-time 60 "$base/TrialReviewBench-study-search-screening.jsonl" -o screening.jsonl
+      - name: Verify external dataset structure without using test labels for training
+        run: |
+          python - <<'PY'
+          import csv, json, hashlib
+          from pathlib import Path
+          rows=list(csv.DictReader(open("reviews.csv", encoding="utf-8-sig")))
+          records=[json.loads(s) for s in Path("screening.jsonl").read_text().splitlines() if s.strip()]
+          ids=[str(r["PMID"]).strip() for r in rows]
+          assert rows and len(ids)==len(set(ids)) and all(x.isdigit() for x in ids)
+          assert all(r.get("PICO") and r.get("Title") for r in rows)
+          assert records and all(isinstance(r,dict) for r in records)
+          report={"revision":"6dfc322004341212eb905a6874ccfae416b9f9f5","role":"external evaluation only; not training","review_rows":len(rows),"screening_jsonl_rows":len(records),"screening_key_sets":sorted({tuple(sorted(r)) for r in records}),"first_row_types":{k:type(v).__name__ for k,v in records[0].items()},"topic_counts":dict(__import__("collections").Counter(r["Topic"] for r in rows)),"sha256":{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in ("reviews.csv","screening.jsonl")},"rct_only_eligibility_verified":False,"qualification_granted":False}
+          print("EXTERNAL_DATASET_AUDIT "+json.dumps(report))
+          Path("external-dataset-audit.json").write_text(json.dumps(report,indent=2))
+          PY
+      - uses: actions/upload-artifact@v6
+        with:
+          name: external-dataset-audit
+          path: external-dataset-audit.json
+  asreview:
+    if: github.event_name != 'pull_request' || github.head_ref != 'scientific-verification-v2-phase3-replay'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - name: Install published ASReview release
+        run: python -m pip install 'asreview==3.0.8'
+      - name: Download published clinical screening data
+        run: |
+          curl --fail --location --retry 2 --max-time 60 'https://raw.githubusercontent.com/asreview/systematic-review-datasets/38b35218e4d0f99621cec5a8a25a0147bb88c654/datasets/Cohen_2006/output/online/Statins.csv' -o statins.csv
+          echo 'd880b79bef64296a57ee8f0b886ae1f7a7267ce12a3f7a8596ad77539210b470  statins.csv' | sha256sum --check
+      - name: Run upstream simulation without altering SciMed production
+        run: |
+          asreview simulate statins.csv -o statins.asreview --seed 42 --prior-seed 42 --n-prior-included 1 --n-prior-excluded 1
+      - name: Audit screening decisions and expanded duplicate coverage
+        run: python -m scripts.asreview_screening_audit statins.csv statins.asreview --seed 42 --output asreview-external-benchmark.json
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: asreview-external-benchmark
+          path: |
+            asreview-external-benchmark.json
+            statins.asreview
+  synergy-plus:
+    if: github.event_name != 'pull_request' || github.head_ref != 'scientific-verification-v2-phase3-replay'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: python -m pip install 'asreview==3.0.8' 'synergy-dataset==2.2'
+      - name: Download and verify the pinned SYNERGY+ cohort
+        run: |
+          base=https://raw.githubusercontent.com/asreview/synergy-dataset/d6c46f32bd0e325a64eafa9da6dd3bdb9db5579f/Muthu_2020
+          mkdir -p Muthu_2020
+          for file in metadata.json labels.csv works_1.zip; do
+            curl --fail --location --retry 2 --max-time 45 "$base/$file" -o "Muthu_2020/$file"
+          done
+          sha256sum --check <<'HASHES'
+          a8d94627257d8beeb978b54bcfd30a671f747ebd94f281b6c582e9963cdbe35e  Muthu_2020/metadata.json
+          0797ea2f25a1d532a6108f2d3f8b5539cdcfbcd010499bdb8dac7af0abc64e87  Muthu_2020/labels.csv
+          23843fe4520b8c1a30e829e71b2c635baa5f903b508ce4b2d43ddbec84da5577  Muthu_2020/works_1.zip
+          HASHES
+      - name: Record the corpus and positive-label attrition before screening
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+          from synergy_dataset import Dataset
+
+          dataset = Dataset("Muthu_2020", path=Path("Muthu_2020"))
+          frame = dataset.to_frame()
+          assert frame.index.is_unique and set(frame["label_included"]) == {0, 1}
+          assert frame["title"].notna().all() and frame["abstract"].notna().all()
+          frame[["title", "abstract", "label_included"]].to_csv("muthu.csv", index=False)
+          report = {
+              "all_labels": dict(Counter(row["label_included"] for row in dataset.labels.values())),
+              "exported_labels": dict(Counter(int(label) for label in frame["label_included"])),
+              "qualification_granted": False,
+          }
+          Path("muthu-corpus.json").write_text(json.dumps(report, indent=2) + "\n")
+          PY
+      - name: Compare published TF-IDF SVM and naive Bayes CPU profiles
+        run: |
+          for model in elas_u4 elas_u3; do
+            asreview simulate muthu.csv -o "$model.asreview" --ai "$model" --seed 42 --prior-seed 42 --n-prior-included 1 --n-prior-excluded 1
+            python -m scripts.asreview_screening_audit muthu.csv "$model.asreview" --seed 42 --output "$model-audit.json"
+          done
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: synergy-plus-cpu-screening
+          path: |
+            muthu-corpus.json
+            elas_*-audit.json

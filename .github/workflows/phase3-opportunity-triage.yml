@@ -1,0 +1,185 @@
+name: phase3-opportunity-triage
+on:
+  workflow_dispatch:
+    inputs:
+      discovery_run:
+        description: Run ID of the Phase 3 opportunity discovery workflow
+        required: true
+        type: string
+      alternate:
+        description: Audit sacubitril/valsartan and AF ablation candidates
+        type: boolean
+        default: false
+  push:
+    branches: [scientific-verification-v2-phase3-replay]
+    paths:
+      - '.github/workflows/phase3-opportunity-triage.yml'
+      - 'scripts/phase3_competitor_recovery.py'
+      - 'scripts/phase3_family_methods.py'
+permissions:
+  actions: read
+  contents: read
+jobs:
+  triage:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[replay-alt]') && !contains(github.event.head_commit.message, '[heart-failure]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      DISCOVERY_RUN: ${{ inputs.discovery_run || (contains(github.event.head_commit.message, '[academy-live]') && '45956744925') || '45892703407' }}
+    steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
+      - name: Wait for and verify the Phase 3 discovery run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$DISCOVERY_RUN" =~ ^[0-9]+$ ]]
+          for attempt in {1..18}; do
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$DISCOVERY_RUN")
+            jq -e --arg repo "$GITHUB_REPOSITORY" '
+              .path == ".github/workflows/phase3-opportunity-discovery.yml"
+              and .head_branch == "scientific-verification-v2-phase3-replay"
+              and .head_repository.full_name == $repo
+            ' <<< "$run" > /dev/null
+            if jq -e '.status == "completed"' <<< "$run" > /dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          exit 1
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ env.DISCOVERY_RUN }}
+          pattern: phase3-opportunities-*
+          path: inputs
+      - name: Record coverage and lead counts for each specialty
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          results = {}
+          for path in sorted(Path("inputs").glob("phase3-opportunities-*/opportunity.json")):
+              report = json.loads(path.read_text())
+              specialty = path.parent.name.removeprefix("phase3-opportunities-")
+              candidates = []
+              for row in report["candidates"]:
+                  hints = row["metadata"]["rct_first"]
+                  candidates.append({
+                      "id": row["candidate_id"],
+                      "title": row["title"],
+                      "family_leads": hints["family_leads"],
+                      "shortlist_eligible": hints["shortlist_eligible"],
+                  })
+              results[specialty] = {
+                  "coverage": report["status"],
+                  "total_candidate_leads": len(candidates),
+                  "candidates": candidates,
+                  "qualification_granted": False,
+              }
+              summary = json.dumps({**results[specialty], "candidates": candidates[:6]})
+              print(f"::notice title={specialty} discovery leads::{summary.replace('%', '%25')}")
+          if results:
+              Path("phase3-triage.json").write_text(json.dumps(results, indent=2) + "\n")
+          if set(results) != {"cardiology", "general-surgery"}:
+              raise SystemExit("One or more specialty artifacts are unavailable")
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: phase3-opportunity-triage
+          path: phase3-triage.json
+          retention-days: 14
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e .
+      - name: Audit source-linked trial families and full-text Methods
+        env:
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+          AUDIT_ACADEMY_LIVE: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[academy-live]') }}
+          AUDIT_ALTERNATE: ${{ inputs.alternate || (github.event_name == 'push' && contains(github.event.head_commit.message, '[alternate]')) }}
+        run: |
+          args=()
+          if [[ "$AUDIT_ACADEMY_LIVE" == true ]]; then
+            args+=(--academy-live)
+          elif [[ "$AUDIT_ALTERNATE" == true ]]; then
+            args+=(--alternate)
+          fi
+          python -m scripts.phase3_family_methods "${args[@]}"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: phase3-family-methods
+          path: phase3-family-methods.json
+          retention-days: 14
+  competitor-recovery:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[family-only]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e .
+      - name: Run bounded competitor recovery
+        env:
+          CAMERA_TRACE: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[camera]') }}
+          HF_TRIAL_LINKS: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[trace-trials]') }}
+          HF_FOLLOWUP: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[heart-failure]') }}
+        run: |
+          args=()
+          if [[ "$CAMERA_TRACE" == true ]]; then
+            args+=(--camera-only)
+          elif [[ "$HF_TRIAL_LINKS" == true ]]; then
+            args+=(--trace-trial-reports)
+          elif [[ "$HF_FOLLOWUP" == true ]]; then
+            args+=(--heart-failure)
+          fi
+          python -m scripts.phase3_competitor_recovery "${args[@]}"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: phase3-competitor-recovery
+          path: phase3-competitor-recovery.json
+          retention-days: 14
+  replay-alternate-ledger:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[replay-alt]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: '45894079291'
+          name: phase3-family-methods
+          path: recovery
+      - name: Expose bounded family evidence from the preserved artifact
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          result = json.loads(Path("recovery/phase3-family-methods.json").read_text())
+          for candidate, evidence in result["candidates"].items():
+              ledger = evidence["families"]
+              summary = {
+                  "linked_pmids": {
+                      group["registration_id"]: [row["report_id"] for row in group["reports"]]
+                      for group in ledger["families"]
+                  },
+                  "unlinked": [row["report_id"] for row in ledger["unlinked_reports"]],
+                  "ambiguous": [row["report_id"] for row in ledger["ambiguous_reports"]],
+                  "reports": {
+                      pmid: [record["title"], len(record["count_leads"]), len(record["ratio_leads"])]
+                      for pmid, record in evidence["outcome_cues"].items()
+                  },
+                  "qualification_granted": False,
+              }
+              print(f"::notice title=Recovered family ledger {candidate}::{json.dumps(summary).replace('%', '%25')}")
+          PY

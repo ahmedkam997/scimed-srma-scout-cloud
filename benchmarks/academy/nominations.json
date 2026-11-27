@@ -1,0 +1,547 @@
+{
+  "schema": "SCIMED_ACADEMY_NOMINATION_QUEUE_V1",
+  "scope": "Thirty source-linked development-exposed nominations for three appraisal directions. No opportunity labels, temporal cutoffs, split assignments, adjudications or qualification are asserted.",
+  "independent_test_use": "EXCLUDED_DEVELOPMENT_EXPOSURE",
+  "qualification_granted": false,
+  "interpretation": {
+    "UPDATE_ASSESSMENT": "Find and adjudicate the historical review and subsequent evidence. A proposed update test is not a positive update label.",
+    "INITIAL_REVIEW_RECONSTRUCTION": "Reconstruct conditions before the earliest exact matching review after verifying its chronology. A currently published topic is not evidence of historical novelty.",
+    "NEGATIVE_CONTROL_HYPOTHESIS": "Adjudicate the specific role, population, comparator or design challenge. A control hypothesis is not a candidate-level negative label or proof of no eligible trials."
+  },
+  "reviewer_requirements": [
+    "Find the exact prespecified PICO and original sources for pre-index evidence, comparator searches and later outcomes. Do not infer the index date from publication year.",
+    "Keep later review and trial identifiers unavailable to discovery and fitting until scoring.",
+    "Resolve shared topic, trial, publication and review identities independently. Hints are incomplete and are not proof of disjoint study families.",
+    "Recruit fresh private cases from unexposed review and study families for the independent test panel. This public queue has no signed labels and must not enter that panel."
+  ],
+  "cases": [
+    {
+      "nomination_id": "aspirin-primary-update",
+      "proposed_evaluation_direction": "UPDATE_ASSESSMENT",
+      "topic_family_hint": "aspirin-primary-cvd",
+      "question": "Would newer randomized evidence change the synthesis of aspirin versus placebo or no aspirin for primary cardiovascular prevention?",
+      "repository_evidence": "benchmarks/scientific_v1.json#ASPIRIN_PRIMARY",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/25360605/",
+        "https://pubmed.ncbi.nlm.nih.gov/30146931/",
+        "https://pubmed.ncbi.nlm.nih.gov/30158069/",
+        "https://pubmed.ncbi.nlm.nih.gov/30667501/"
+      ],
+      "observed_basis": "A 2014 review, ASCEND and ARRIVE reports, and a later synthesis are already linked.",
+      "next_evidence_needed": "Confirm the exact older search cutoff, review eligibility and included trial families, and quantify any change in cardiovascular and major bleeding outcomes.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "appendicitis-adults-update",
+      "proposed_evaluation_direction": "UPDATE_ASSESSMENT",
+      "topic_family_hint": "appendicitis-antibiotics-surgery",
+      "question": "Would new randomized evidence change estimates for initial antibiotics versus appendectomy in adults with acute uncomplicated appendicitis?",
+      "repository_evidence": "benchmarks/scientific_v2_development.json#APPENDICITIS",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/35971796/",
+        "https://pubmed.ncbi.nlm.nih.gov/39827891/",
+        "https://pubmed.ncbi.nlm.nih.gov/26080338/",
+        "https://pubmed.ncbi.nlm.nih.gov/33017106/",
+        "https://pubmed.ncbi.nlm.nih.gov/41563747/"
+      ],
+      "observed_basis": "Two reviews, APPAC and CODA primary reports, and a repeat APPAC report are identified.",
+      "next_evidence_needed": "Recover actual review cutoffs and adjudicate uncomplicated eligibility, outcome horizons, participant overlap and incremental information.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "pediatric-appendicitis-update",
+      "proposed_evaluation_direction": "UPDATE_ASSESSMENT",
+      "topic_family_hint": "appendicitis-antibiotics-surgery",
+      "question": "Does later evidence materially change antibiotics versus appendectomy estimates in children with uncomplicated appendicitis?",
+      "repository_evidence": "EVIDENCE.md",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/43090943/",
+        "https://pubmed.ncbi.nlm.nih.gov/42384223/",
+        "https://pubmed.ncbi.nlm.nih.gov/42976577/"
+      ],
+      "observed_basis": "A directly titled pediatric review, a living evidence map, and a report described as secondary analysis are available.",
+      "next_evidence_needed": "Verify the exact pediatric comparisons and source-specific search dates; recover original randomized populations and decide whether follow-up outcomes change the synthesis.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "af-heart-failure-ablation-update",
+      "proposed_evaluation_direction": "UPDATE_ASSESSMENT",
+      "topic_family_hint": "af-ablation-medical-treatment",
+      "question": "After the last matching review, does catheter ablation versus medical treatment add useful evidence in AF with reduced or mildly reduced EF?",
+      "repository_evidence": "EVIDENCE.md",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/42769399/",
+        "https://pubmed.ncbi.nlm.nih.gov/42119914/",
+        "https://pubmed.ncbi.nlm.nih.gov/42246906/",
+        "https://pubmed.ncbi.nlm.nih.gov/30874766/"
+      ],
+      "observed_basis": "A related review reports searching through February 2026, alongside primary and potentially repeated trial reports.",
+      "next_evidence_needed": "Verify the exact phenotype and comparator, original trial dates and cohort ownership, and compatible endpoints.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "renal-denervation-sham-update",
+      "proposed_evaluation_direction": "UPDATE_ASSESSMENT",
+      "topic_family_hint": "renal-denervation-sham",
+      "question": "Would post-cutoff trials alter six-month ambulatory systolic blood pressure estimates for sham-controlled renal denervation?",
+      "repository_evidence": "EVIDENCE.md",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/40022571/",
+        "https://pubmed.ncbi.nlm.nih.gov/41205197/",
+        "https://pubmed.ncbi.nlm.nih.gov/42937114/",
+        "https://clinicaltrials.gov/study/NCT04264403"
+      ],
+      "observed_basis": "A direct competitor and a wider network review are linked; RDN-CKD is a potentially relevant report with unresolved eligibility.",
+      "next_evidence_needed": "Verify matching review Methods, device and medication strata, crossover and cohort linkage, and 24-hour systolic outcome compatibility.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "tavr-savr-stroke-update",
+      "proposed_evaluation_direction": "UPDATE_ASSESSMENT",
+      "topic_family_hint": "tavr-vs-savr",
+      "question": "Does later randomization change short-term stroke estimates for TAVR versus SAVR in comparable lower-risk populations?",
+      "repository_evidence": "EVIDENCE.md",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/42985463/",
+        "https://pubmed.ncbi.nlm.nih.gov/43053874/",
+        "https://pubmed.ncbi.nlm.nih.gov/40884768/",
+        "https://pubmed.ncbi.nlm.nih.gov/42032736/"
+      ],
+      "observed_basis": "A short-term stroke comparator and subsequent or related TAVR reports are already known.",
+      "next_evidence_needed": "Confirm procedure-only comparisons, actual competitor cutoff, original enrollment and matched stroke windows before estimating incremental evidence.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "chagas-arni-update",
+      "proposed_evaluation_direction": "UPDATE_ASSESSMENT",
+      "topic_family_hint": "chagas-hf-sacubitril-enalapril",
+      "question": "Would an update to a directly overlapping Chagas heart failure review add independent randomized evidence for sacubitril/valsartan versus enalapril?",
+      "repository_evidence": "EVIDENCE.md",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/41941460/",
+        "https://pubmed.ncbi.nlm.nih.gov/41923142/",
+        "https://pubmed.ncbi.nlm.nih.gov/41396086/",
+        "https://pubmed.ncbi.nlm.nih.gov/41335448/"
+      ],
+      "observed_basis": "Two review leads and distinct ANSWER-HF and PARACHUTE-HF registrations are documented.",
+      "next_evidence_needed": "Verify the review Methods cutoffs, trial inclusion and outcome compatibility before any claim of a positive update.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "rectal-robotic-update",
+      "proposed_evaluation_direction": "UPDATE_ASSESSMENT",
+      "topic_family_hint": "rectal-robotic-vs-laparoscopic",
+      "question": "Would later randomized comparisons change the synthesis of robotic versus laparoscopic rectal cancer surgery?",
+      "repository_evidence": "docs/SCIENTIFIC_VERIFICATION_V2.md",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/29067426/",
+        "https://pubmed.ncbi.nlm.nih.gov/40022103/",
+        "https://pubmed.ncbi.nlm.nih.gov/40770525/",
+        "https://pubmed.ncbi.nlm.nih.gov/42223567/"
+      ],
+      "observed_basis": "ROLARR and review priority references are documented in the earlier source challenge.",
+      "next_evidence_needed": "Inspect the review Methods and arms, determine which reports are ROLARR follow-ups, and recover new primary trials with compatible clinical outcomes.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "txa-postpartum-prevention-update",
+      "proposed_evaluation_direction": "UPDATE_ASSESSMENT",
+      "topic_family_hint": "txa-postpartum-prevention",
+      "question": "Would later prevention trials change postpartum hemorrhage estimates for prophylactic tranexamic acid versus placebo?",
+      "repository_evidence": "benchmarks/scientific_v2_development.json#TXA_PREVENT",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/38001439/",
+        "https://pubmed.ncbi.nlm.nih.gov/30134136/",
+        "https://pubmed.ncbi.nlm.nih.gov/33913639/",
+        "https://pubmed.ncbi.nlm.nih.gov/39461792/",
+        "https://pubmed.ncbi.nlm.nih.gov/39461793/"
+      ],
+      "observed_basis": "An earlier prevention review, TRAAP, TRAAP2, WOMAN-2 and a broader IPD synthesis are linked.",
+      "next_evidence_needed": "Verify actual cutoffs, treatment versus prophylaxis, delivery and anemia strata, study independence and incremental outcome information.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "appendectomy-approach-update",
+      "proposed_evaluation_direction": "UPDATE_ASSESSMENT",
+      "topic_family_hint": "appendectomy-lap-vs-open",
+      "question": "Does randomized evidence after the historical laparoscopic versus open appendectomy review change a prespecified clinical outcome?",
+      "repository_evidence": "scripts/v2_adaptive_gym.py#SURG_REF",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/28588886/"
+      ],
+      "observed_basis": "The existing Table 1 replay observes a review with a March 2016 search month and a partial report reference set.",
+      "next_evidence_needed": "Verify the date boundary from Methods, recover eligible primary trials beyond the benchmark sample and audit later matching reviews.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "statins-primary-reconstruction",
+      "proposed_evaluation_direction": "INITIAL_REVIEW_RECONSTRUCTION",
+      "topic_family_hint": "statins-primary-prevention",
+      "question": "Could an earlier evidence snapshot have supported a first review of statins for primary cardiovascular prevention?",
+      "repository_evidence": "scripts/v2_historical_replay_dev.py#REFERENCE",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/30834266/",
+        "https://pubmed.ncbi.nlm.nih.gov/9613910/",
+        "https://pubmed.ncbi.nlm.nih.gov/12686036/",
+        "https://pubmed.ncbi.nlm.nih.gov/7566020/"
+      ],
+      "observed_basis": "The development replay documents a completed review with selected linked reports and a 2017 cutoff.",
+      "next_evidence_needed": "Find the earliest matching synthesis and prior registrations. Verify a genuinely earlier snapshot and all opportunity gates; the 2017 review is only an anchor.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "digital-gdmt-reconstruction",
+      "proposed_evaluation_direction": "INITIAL_REVIEW_RECONSTRUCTION",
+      "topic_family_hint": "digital-hf-gdmt",
+      "question": "Could source-linked early evidence have supported an initial review of digital consultations versus usual care for HFrEF medication optimization?",
+      "repository_evidence": "benchmarks/scientific_validation_v2.json#DIGITAL_CONSULTS",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/39217271/",
+        "https://pubmed.ncbi.nlm.nih.gov/38146630/",
+        "https://pubmed.ncbi.nlm.nih.gov/39367252/"
+      ],
+      "observed_basis": "ADMINISTER has distinct primary, protocol and correction records in the development pilot.",
+      "next_evidence_needed": "Find initial review and registry dates, distinguish repeated publications, and locate enough independently eligible comparisons and compatible evidence.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "pfa-thermal-reconstruction",
+      "proposed_evaluation_direction": "INITIAL_REVIEW_RECONSTRUCTION",
+      "topic_family_hint": "af-pfa-vs-thermal",
+      "question": "Before the earliest matching review, was pulsed-field versus thermal ablation an evaluable initial randomized-review opportunity in paroxysmal AF?",
+      "repository_evidence": "benchmarks/scientific_validation_v2.json#PFA_THERMAL",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/37634148/",
+        "https://pubmed.ncbi.nlm.nih.gov/37323994/",
+        "https://pubmed.ncbi.nlm.nih.gov/41651311/",
+        "https://pubmed.ncbi.nlm.nih.gov/41714974/"
+      ],
+      "observed_basis": "ADVENT and related comparative review leads are already tracked.",
+      "next_evidence_needed": "Find the earliest exact review and registration, verify roles of ADVENT records and other independent trials, and date eligible outcomes before the anchor.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "tricuspid-teer-reconstruction",
+      "proposed_evaluation_direction": "INITIAL_REVIEW_RECONSTRUCTION",
+      "topic_family_hint": "tricuspid-teer-vs-medical",
+      "question": "Before a matching synthesis, was transcatheter tricuspid edge-to-edge repair versus medical treatment an evaluable initial opportunity?",
+      "repository_evidence": "benchmarks/scientific_validation_v2.json#TRICUSPID_TEER",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/36876753/",
+        "https://pubmed.ncbi.nlm.nih.gov/39602173/",
+        "https://pubmed.ncbi.nlm.nih.gov/40735794/"
+      ],
+      "observed_basis": "TRILUMINATE, Tri.Fr and a review lead are documented.",
+      "next_evidence_needed": "Verify the first matching review, eligibility and randomized comparisons, and avoid double counting the follow-up or subgroup publications.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "empa-preserved-reconstruction",
+      "proposed_evaluation_direction": "INITIAL_REVIEW_RECONSTRUCTION",
+      "topic_family_hint": "sglt2-heart-failure",
+      "question": "Could an earlier review have isolated empagliflozin versus placebo in a prespecified preserved-EF population?",
+      "repository_evidence": "benchmarks/scientific_v1.json#HFPEF_EMPA",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/34449189/",
+        "https://pubmed.ncbi.nlm.nih.gov/37252111/",
+        "https://pubmed.ncbi.nlm.nih.gov/32865377/",
+        "https://pubmed.ncbi.nlm.nih.gov/36027570/"
+      ],
+      "observed_basis": "EMPEROR-Preserved and a broader SGLT2 class review are linked, with known population and drug controls.",
+      "next_evidence_needed": "Verify the phenotype threshold and first exact comparator review; broader class evidence cannot establish either novelty or eligible trial count.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "adult-meningitis-dexamethasone-reconstruction",
+      "proposed_evaluation_direction": "INITIAL_REVIEW_RECONSTRUCTION",
+      "topic_family_hint": "adult-meningitis-steroids",
+      "question": "Before the first matching synthesis, could randomized comparisons of adjunctive dexamethasone versus placebo support an initial adult bacterial meningitis review?",
+      "repository_evidence": "benchmarks/scientific_v2_development.json#MENINGITIS",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/12432041/",
+        "https://pubmed.ncbi.nlm.nih.gov/18077808/",
+        "https://pubmed.ncbi.nlm.nih.gov/18077809/",
+        "https://pubmed.ncbi.nlm.nih.gov/14998499/"
+      ],
+      "observed_basis": "European, Vietnamese and Malawian trial leads and an adult review lead are tracked.",
+      "next_evidence_needed": "Find the earliest matching review, apply the correct as-of boundary, and compare etiology, setting and prespecified clinical outcomes.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "endoscopic-cabg-harvest-reconstruction",
+      "proposed_evaluation_direction": "INITIAL_REVIEW_RECONSTRUCTION",
+      "topic_family_hint": "cabg-vein-harvest",
+      "question": "Was endoscopic versus open vein harvesting in CABG supported before the first exact matching review?",
+      "repository_evidence": "CANDIDATES.md#hosted-triage",
+      "source_urls": [
+        "https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45891617031",
+        "https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45891271291"
+      ],
+      "observed_basis": "Hosted triage exposed two bibliographic family leads.",
+      "next_evidence_needed": "Recover the primary identifiers from the archived workflow, find the earliest matching reviews and verify randomized populations and common outcomes.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "arni-adult-hfref-reconstruction",
+      "proposed_evaluation_direction": "INITIAL_REVIEW_RECONSTRUCTION",
+      "topic_family_hint": "sacubitril-enalapril-adult-hfref",
+      "question": "Before the earliest matching synthesis, was sacubitril/valsartan versus enalapril in chronic adult HFrEF a feasible initial review question?",
+      "repository_evidence": "EVIDENCE.md",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/41773097/",
+        "https://pubmed.ncbi.nlm.nih.gov/38588927/",
+        "https://pubmed.ncbi.nlm.nih.gov/30415601/",
+        "https://pubmed.ncbi.nlm.nih.gov/39319469/"
+      ],
+      "observed_basis": "A directly titled HFrEF synthesis and differently scoped trial and analysis records were recovered.",
+      "next_evidence_needed": "Verify the first exact review and as-of cutoff, adult phenotype, care setting, trial independence and outcome compatibility.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "ticagrelor-maintenance-reconstruction",
+      "proposed_evaluation_direction": "INITIAL_REVIEW_RECONSTRUCTION",
+      "topic_family_hint": "ticagrelor-vs-clopidogrel",
+      "question": "Was a review of matched-maintenance ticagrelor versus clopidogrel after PCI supported before the earliest matching synthesis?",
+      "repository_evidence": "EVIDENCE.md",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/43022463/",
+        "https://pubmed.ncbi.nlm.nih.gov/40892606/",
+        "https://pubmed.ncbi.nlm.nih.gov/38597172/",
+        "https://pubmed.ncbi.nlm.nih.gov/34627490/"
+      ],
+      "observed_basis": "Indexed reports span different maintenance regimens, de-escalation and oral anticoagulation contexts.",
+      "next_evidence_needed": "Locate the earliest exact PICO review and check time-aligned primary randomized arms, background therapy and shared outcomes.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "ards-prone-reconstruction",
+      "proposed_evaluation_direction": "INITIAL_REVIEW_RECONSTRUCTION",
+      "topic_family_hint": "ards-proning",
+      "question": "Before the earliest matching synthesis, did prone versus supine ventilation in intubated adults with ARDS have enough pre-cutoff randomized evidence for an initial review?",
+      "repository_evidence": "benchmarks/scientific_v1.json#ARDS_PRONE",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/29068269/",
+        "https://pubmed.ncbi.nlm.nih.gov/23688302/",
+        "https://pubmed.ncbi.nlm.nih.gov/18427774/",
+        "https://pubmed.ncbi.nlm.nih.gov/19903918/",
+        "https://pubmed.ncbi.nlm.nih.gov/16556697/"
+      ],
+      "observed_basis": "A historical cutoff and selected randomized references are tracked.",
+      "next_evidence_needed": "Establish the actual first matching review, trial availability and common mortality windows. Selected citations do not establish evidence completeness.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "left-main-dta-scope-control",
+      "proposed_evaluation_direction": "NEGATIVE_CONTROL_HYPOTHESIS",
+      "topic_family_hint": "left-main-ctffr-dta",
+      "question": "Does the strict RCT-only review pipeline keep left-main CT-FFR diagnostic-accuracy evidence out of randomized intervention counts?",
+      "repository_evidence": "research_audits/2026-11-24_CTFFR_Left_Main_DTA_preflight.md",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/34383150/",
+        "https://pubmed.ncbi.nlm.nih.gov/42019375/"
+      ],
+      "observed_basis": "The audited question estimates accuracy against an invasive reference, with unresolved left-main-specific diagnostic counts.",
+      "next_evidence_needed": "Adjudicate the study designs against the strict effectiveness scope without inferring absence of suitable DTA evidence.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "laao-dialysis-comparator-control",
+      "proposed_evaluation_direction": "NEGATIVE_CONTROL_HYPOTHESIS",
+      "topic_family_hint": "laao-dialysis-vs-anticoagulation",
+      "question": "Does a dialysis LAAO-versus-DOAC screen distinguish directly compared observational cohorts, mixed oral anticoagulants and warfarin controls?",
+      "repository_evidence": "research_audits/2026-11-24_LAAO_DOAC_ESRD_primary_study_audit.md",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/41085503/",
+        "https://pubmed.ncbi.nlm.nih.gov/32535831/",
+        "https://pubmed.ncbi.nlm.nih.gov/38046009/"
+      ],
+      "observed_basis": "The prior audit documents comparator and design mismatches and potential overlap of renal cohorts.",
+      "next_evidence_needed": "Verify arm-level comparator and trial design from full text and reconcile repeated cohorts. Do not use absence of verified randomized evidence as a negative search result.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "appendicitis-duplicate-followup-control",
+      "proposed_evaluation_direction": "NEGATIVE_CONTROL_HYPOTHESIS",
+      "topic_family_hint": "appendicitis-antibiotics-surgery",
+      "question": "Do the APPAC primary report and ten-year report count as the same family when comparing antibiotics with appendectomy?",
+      "repository_evidence": "benchmarks/scientific_v2_development.json#APPENDICITIS",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/26080338/",
+        "https://pubmed.ncbi.nlm.nih.gov/41563747/",
+        "https://pubmed.ncbi.nlm.nih.gov/38630471/"
+      ],
+      "observed_basis": "The development set identifies the ten-year follow-up and contrasts APPAC II's antibiotic-regimen question.",
+      "next_evidence_needed": "Review enrollment and registration to distinguish the repeated population and separate comparator, retaining any new outcome data as such.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "deliver-subgroup-control",
+      "proposed_evaluation_direction": "NEGATIVE_CONTROL_HYPOTHESIS",
+      "topic_family_hint": "sglt2-heart-failure",
+      "question": "Does trial-family linkage prevent DELIVER's primary and NYHA analysis publications from increasing the independent study count?",
+      "repository_evidence": "benchmarks/BENCHMARK_FINDINGS_2026-11-25.md",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/36027570/",
+        "https://pubmed.ncbi.nlm.nih.gov/36054231/",
+        "https://clinicaltrials.gov/study/NCT03619213"
+      ],
+      "observed_basis": "The repository reports that the Methods and registry corroborated a shared registration.",
+      "next_evidence_needed": "Independently verify the cohorts and specific outcome contribution. A secondary analysis can still add usable data.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "administer-protocol-control",
+      "proposed_evaluation_direction": "NEGATIVE_CONTROL_HYPOTHESIS",
+      "topic_family_hint": "digital-hf-gdmt",
+      "question": "Does screening avoid counting a design paper and author correction as independent randomized trials for digital HFrEF medication optimization?",
+      "repository_evidence": "benchmarks/scientific_validation_v2.json#DIGITAL_CONSULTS",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/39217271/",
+        "https://pubmed.ncbi.nlm.nih.gov/38146630/",
+        "https://pubmed.ncbi.nlm.nih.gov/39367252/"
+      ],
+      "observed_basis": "The development references separate the ADMINISTER primary, design and correction records.",
+      "next_evidence_needed": "Confirm these linked roles from their source documents. Do not interpret the fixture as an opportunity-level negative verdict.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "ards-awake-scope-control",
+      "proposed_evaluation_direction": "NEGATIVE_CONTROL_HYPOTHESIS",
+      "topic_family_hint": "ards-proning",
+      "question": "Does a prone-versus-supine ARDS review exclude an awake nonintubated COVID-19 synthesis from an exact population match?",
+      "repository_evidence": "benchmarks/scientific_v1.json#ARDS_PRONE",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/38597483/",
+        "https://pubmed.ncbi.nlm.nih.gov/29068269/",
+        "https://pubmed.ncbi.nlm.nih.gov/23688302/"
+      ],
+      "observed_basis": "The existing pilot records an awake COVID-19 review as a different-population control.",
+      "next_evidence_needed": "Verify the actual population and eligibility of both reviews and confirm the mismatch independently.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "txa-treatment-scope-control",
+      "proposed_evaluation_direction": "NEGATIVE_CONTROL_HYPOTHESIS",
+      "topic_family_hint": "txa-postpartum-prevention",
+      "question": "Does screening distinguish the WOMAN treatment trial from trials of prophylactic tranexamic acid at delivery?",
+      "repository_evidence": "benchmarks/scientific_v2_development.json#TXA_PREVENT",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/28456509/",
+        "https://pubmed.ncbi.nlm.nih.gov/30134136/",
+        "https://pubmed.ncbi.nlm.nih.gov/33913639/"
+      ],
+      "observed_basis": "The development references separate WOMAN treatment from TRAAP and TRAAP2 prevention.",
+      "next_evidence_needed": "Document the timing, inclusion triggers and intervention intent from the primary trials before recording benchmark control labels.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "rdn-ckd-eligibility-control",
+      "proposed_evaluation_direction": "NEGATIVE_CONTROL_HYPOTHESIS",
+      "topic_family_hint": "renal-denervation-sham",
+      "question": "Does the strict parallel-RCT gate keep RDN-CKD outside the confirmed count while registry linkage and its reported systolic contrast remain uncertain?",
+      "repository_evidence": "EVIDENCE.md#rdn-ckd-primary-report-check",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/42937114/",
+        "https://clinicaltrials.gov/study/NCT04264403",
+        "https://clinicaltrials.gov/study/NCT07742787"
+      ],
+      "observed_basis": "Both plausible registries list crossover design, neither explicitly cites the report, and the reported systolic confidence interval and P value need checking.",
+      "next_evidence_needed": "Resolve identity, design period, participant denominators and statistical analysis before treating any result as usable.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "ablation-economic-report-control",
+      "proposed_evaluation_direction": "NEGATIVE_CONTROL_HYPOTHESIS",
+      "topic_family_hint": "af-ablation-medical-treatment",
+      "question": "Does AF ablation evidence screening keep economic evaluation and secondary CABANA or CASTLE-HTx reports out of the independent primary-RCT count?",
+      "repository_evidence": "EVIDENCE.md#alternate-cardiology-shortlist",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/30874766/",
+        "https://pubmed.ncbi.nlm.nih.gov/39528205/",
+        "https://pubmed.ncbi.nlm.nih.gov/42531097/",
+        "https://pubmed.ncbi.nlm.nih.gov/42162774/"
+      ],
+      "observed_basis": "Archived triage exposed a primary CABANA paper, follow-up trial analyses and an economic report.",
+      "next_evidence_needed": "Confirm the report roles and distinct randomized populations before recording reference labels; retain the economic result for a separate evaluation.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    },
+    {
+      "nomination_id": "chagas-duplicate-publication-control",
+      "proposed_evaluation_direction": "NEGATIVE_CONTROL_HYPOTHESIS",
+      "topic_family_hint": "chagas-hf-sacubitril-enalapril",
+      "question": "Does the PARACHUTE-HF protocol, baseline and outcome series collapse to one family while the distinct ANSWER-HF registration is preserved?",
+      "repository_evidence": "EVIDENCE.md",
+      "source_urls": [
+        "https://pubmed.ncbi.nlm.nih.gov/39111953/",
+        "https://pubmed.ncbi.nlm.nih.gov/40916703/",
+        "https://pubmed.ncbi.nlm.nih.gov/41335448/",
+        "https://pubmed.ncbi.nlm.nih.gov/41396086/",
+        "https://clinicaltrials.gov/study/NCT04023227",
+        "https://clinicaltrials.gov/study/NCT04853758"
+      ],
+      "observed_basis": "The hosted trace linked PARACHUTE-HF protocol and outcomes to one registration and ANSWER-HF to another.",
+      "next_evidence_needed": "Check original randomized populations and report variants independently. Different registrations alone do not exclude participant overlap.",
+      "adjudication_status": "PENDING",
+      "verified_opportunity_label": null,
+      "split": null
+    }
+  ]
+}

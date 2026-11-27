@@ -96,8 +96,9 @@ def _fetch_xml(url: str) -> bytes:
 
 
 class OpenAccessSearchDateResolver:
-    def __init__(self, fetcher: Callable[[str], bytes] | None = None):
+    def __init__(self, fetcher: Callable[[str], bytes] | None = None, *, include_pmc_oai=False):
         self.fetcher = fetcher or _fetch_xml
+        self.include_pmc_oai = include_pmc_oai
 
     def resolve(self, review: dict) -> dict | None:
         pmcid = _pmcid(review)
@@ -110,13 +111,27 @@ class OpenAccessSearchDateResolver:
         expected=pmcid.removeprefix("PMC")
         urls=[("EUROPE_PMC_OPEN_ACCESS_FULL_TEXT_METHODS",f"https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML"),
               ("NCBI_BIOC_OPEN_ACCESS_FULL_TEXT_METHODS",f"https://www.ncbi.nlm.nih.gov/research/bionlp/RESTful/pmcoa.cgi/BioC_json/{pmcid}/unicode")]
+        if self.include_pmc_oai:
+            from .registration_enrichment import _routes
+            urls.extend(("NCBI_PMC_OAI_OPEN_ACCESS_FULL_TEXT_METHODS", url)
+                        for route, url in _routes(pmcid) if route == "NCBI_PMC_OAI")
         for source,url in urls:
             try:
                 raw=self.fetcher(url)
                 if not isinstance(raw,bytes) or len(raw)>1_500_000:continue
-                if source.startswith("EUROPE"):
+                if source.startswith(("EUROPE", "NCBI_PMC_OAI")):
                     if b"<!ENTITY" in raw.upper() or re.search(br"<!DOCTYPE[^>]*\[",raw,re.I):continue
                     root=ET.fromstring(raw)
+                    if source.startswith("NCBI_PMC_OAI"):
+                        from .registration_enrichment import OAI_NS
+                        ns = {"oai": OAI_NS}
+                        metadata = root.find("./oai:GetRecord/oai:record/oai:metadata", ns)
+                        if root.tag != f"{{{OAI_NS}}}OAI-PMH" or metadata is None or len(metadata) != 1:
+                            continue
+                        root = metadata[0]
+                        for element in root.iter():
+                            if element.tag.startswith(f"{{{OAI_NS}}}"):
+                                element.tag = element.tag.split("}", 1)[1]
                     if root.tag!="article":continue
                     front=root.find("./front/article-meta")
                     if front is None:continue
