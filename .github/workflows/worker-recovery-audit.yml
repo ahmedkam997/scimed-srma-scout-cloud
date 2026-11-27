@@ -1,0 +1,101 @@
+name: worker-recovery-and-scheduler-audit
+on:
+  pull_request:
+    branches: [autonomous-scientist-v10]
+    paths:
+      - '.github/workflows/worker-recovery-audit.yml'
+      - 'scripts/scimed_autonomous_worker_v2.py'
+      - 'src/scimed_scout/discovery/registration_enrichment.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: worker-recovery-audit
+  cancel-in-progress: false
+jobs:
+  scheduler:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Inspect actual scheduler run inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/scimed-autonomous-scheduler.yml/runs?per_page=30" > runs.json
+          jq '{total_count, recent:[.workflow_runs[]|{id,event,status,conclusion,created_at,head_sha}]}' runs.json
+          prior=$(jq -r '[.workflow_runs[]|select(.conclusion=="success")][0].id // empty' runs.json)
+          if [[ -n "$prior" ]]; then
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$prior/artifacts" --jq '[.artifacts[]|{name,expired,size_in_bytes,expires_at}]'
+            if gh run download "$prior" --repo "$GITHUB_REPOSITORY" --name scimed-autonomous-checkpoint --dir previous; then
+              jq '{cycles,qualification_granted,ledger_count:(.ledger|length),task_counts:.scientist.task_counts}' previous/worker-state.json
+            else
+              echo "CHECKPOINT_NOT_RETRIEVABLE"
+            fi
+          else
+            echo "NO_SUCCESSFUL_SCHEDULER_RUN_IN_LATEST_30"
+          fi
+  recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e '.[dev]'
+      - run: python -m pytest -q tests/test_registration_enrichment.py tests/test_discovery_intelligence.py tests/test_autonomous_worker_v2.py
+      - name: Compare retrieval routes and actual primary/secondary controls
+        env:
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts.scimed_autonomous_worker_v2 import search,fetch_rows,audit_recovered_comparisons,accumulate_comparison_audit
+          from scimed_scout.discovery.registration_enrichment import enrich_fair
+          from scimed_scout.discovery.competitor_records import identifiers
+          from scimed_scout.discovery.trial_family import registration_signals
+          from scimed_scout.sources.pubmed import PubMedSource
+          c=PubMedSource(sort="relevance")
+          groups=[
+            ({"population":"heart failure","intervention":"dapagliflozin","comparator":"placebo"},["31535829","36027570"],["30895697","33787831","36054231"]),
+            ({"population":"heart failure","intervention":"empagliflozin","comparator":"placebo"},["32865377"],["34861154"])]
+          results=[]
+          for scope,primary,other in groups:
+              refs=set(primary); routes={}; combined=set()
+              for route in ("exact","broad","stratified"):
+                  try:
+                      result=search(c,scope,"families",route)
+                      ids={p for row in result["rows"] for p in identifiers(row)["pmid"]}
+                      combined |= ids
+                      routes[route]={"status":result["status"],"retrieved":len(ids),"reference_hits":sorted(ids&refs),"reported_total":result.get("reported_total")}
+                  except Exception as exc:
+                      routes[route]={"status":"ACCESS_UNRESOLVED","error_type":type(exc).__name__}
+              ids=primary+other;found,diag=fetch_rows(c,ids)
+              job={}; audit1=audit_recovered_comparisons(scope,found,ids)
+              cumulative=accumulate_comparison_audit(job,audit1,found,scope)
+              matched=set(audit1["source_pmids"])
+              result={"scope":scope,"routes":routes,"union_reference_hits":sorted(combined&refs),"primary_reference_count":len(refs),"exact_reference_retrieved":sorted(found),"primary_matches":sorted(matched&refs),"missed_primary":sorted(refs-matched),"nonprimary_matches":sorted(matched&set(other)),"cumulative":cumulative,"diagnostics":diag,"qualification_granted":False}
+              if "36054231" in found:
+                  rows=[found["36054231"]];prev=None
+                  for i in range(3):
+                      rows,prev=enrich_fair(rows,max_lookups=1,previous=prev)
+                  result["secondary_link_recovery"]={"signals":registration_signals(rows[0]),"audit":prev}
+                  fresh,replay=enrich_fair([found["36054231"]],max_lookups=0,previous=prev)
+                  result["secondary_link_cache_replay"]={"signals":registration_signals(fresh[0]),"source_calls":replay["source_calls"]}
+              results.append(result)
+              print("RECOVERY_BENCHMARK",json.dumps(result,default=str),flush=True)
+          Path("recovery-benchmark.json").write_text(json.dumps({"split":"development","results":results,"qualification_granted":False},indent=2))
+          # Separate evidence coverage from code correctness; any nonprimary
+          # cue is a regression, unresolved primary matching stays visible.
+          assert not any(r["nonprimary_matches"] for r in results), "Nonprimary comparison incorrectly matched"
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: recovery-development-benchmark
+          path: recovery-benchmark.json
+          retention-days: 14
