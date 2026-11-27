@@ -70,3 +70,9 @@ def test_query_is_bounded_scope():
     broad=w.query_for(row,"families","broad")
     assert '"sham"[tiab]' in exact and '"sham"[tiab]' not in broad
     assert '"renal denervation"[tiab]' in exact and '"renal denervation"[tiab]' in broad
+
+def test_stratified_route_is_retained_after_text_routes():
+    s=v1.initial();ext=w.extend(s);j=w.job_for(ext,"RCT-X")
+    j["family_routes"]={"exact":{"cycle":1,"status":"SEARCHED_POSITIVE"},"broad":{"cycle":2,"status":"SEARCHED_POSITIVE"}}
+    assert w.choose_route(ext,j,"families")=="stratified"
+    assert '"sham"[tiab]' not in w.query_for(lead(),"families","stratified")
