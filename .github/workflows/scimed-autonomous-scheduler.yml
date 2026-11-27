@@ -20,7 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
-      WORKER_REF: '0eaf2aae2579e0a481cb4c56b7b5df08331a5882'
+      WORKER_REF: '2f714c9e179a1a583504fb2dc1c56bdd9a0191dc'
+      BOOTSTRAP_REF: '0eaf2aae2579e0a481cb4c56b7b5df08331a5882'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -29,7 +30,7 @@ jobs:
       - uses: actions/setup-python@v6
         with: {python-version: '3.12'}
       - run: python -m pip install -e '.[dev]'
-      - run: python -m pytest -q tests/test_autonomous_worker.py tests/test_autonomous_worker_v2.py tests/test_autonomous_scientist.py
+      - run: python -m pytest -q tests/test_autonomous_worker.py tests/test_autonomous_worker_v2.py tests/test_autonomous_scientist.py tests/test_discovery_intelligence.py tests/test_registration_enrichment.py
       - name: Restore verified checkpoint from previous successful scheduled cycle
         id: restore
         env:
@@ -43,7 +44,7 @@ jobs:
             gh run download "$prior" --repo "$GITHUB_REPOSITORY" --name scimed-autonomous-checkpoint --dir previous
           else
             # One-time bootstrap from verified integrated V10 validation.
-            gh api "repos/$GITHUB_REPOSITORY/actions/runs/45971778309" | jq -e --arg repo "$GITHUB_REPOSITORY" --arg ref "$WORKER_REF" '.head_repository.full_name == $repo and .head_sha == $ref and .conclusion == "success"' >/dev/null
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/45971778309" | jq -e --arg repo "$GITHUB_REPOSITORY" --arg ref "$BOOTSTRAP_REF" '.head_repository.full_name == $repo and .head_sha == $ref and .conclusion == "success"' >/dev/null
             gh run download 45971778309 --repo "$GITHUB_REPOSITORY" --name autonomous-scientist-validation --dir previous
             cp previous/audit-cycle/worker-state.json previous/worker-state.json
           fi
