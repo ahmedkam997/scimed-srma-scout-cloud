@@ -124,3 +124,31 @@ def test_frozen_scoring_and_tampered_predictions_synthetic_only():
     assert result["independent_validation_passed"] is False
     predictions[0]["prediction"]="NOVEL"
     with pytest.raises(ValueError):evaluate_frozen(m,KEYS,predictions,frozen)
+
+def test_automatic_exact_id_recovery_rejects_wrong_identity():
+    class EPMC:
+        name="Europe PMC"
+        def search(self,q,limit):
+            pid=q.split(":")[1].split()[0]
+            result=SearchRecord(self.name,pid if pid=="111" else "999","Known report",metadata={"source":"MED"})
+            return SearchResult(self.name,q,SourceStatus.SEARCHED_POSITIVE,[result],1)
+    found,audit=s.fetch_with_recovery(None,["111","222"],fetcher=lambda c,ids:({},{}),alternate=EPMC())
+    assert set(found)=={"111"} and audit["missing_after_recovery"]==["222"]
+    assert audit["alternate_attempts"][0]["exact_recovered"] is True
+    assert audit["alternate_attempts"][1]["exact_recovered"] is False
+
+def test_recover_private_uses_strict_existing_engine_and_never_signs(tmp_path,monkeypatch):
+    from test_scientific_verification_v2 import make_ledger
+    from scripts.scimed_private_review import recover_private
+    from scimed_scout.discovery.orchestrator import ReviewDiscoveryOrchestrator
+    db=tmp_path/"recover.sqlite"
+    with make_ledger(db)[0]:pass
+    observed={}
+    def recover(self,cid,**kwargs):
+        observed.update(minimum=self.strict_rct_minimum,verifier=self.scientific_verifier,**kwargs)
+        raise TimeoutError()
+    monkeypatch.setattr(ReviewDiscoveryOrchestrator,"verify_candidate",recover)
+    result=recover_private(db,"c",30)
+    assert result["recovery_status"]=="TIME_BUDGET_CHECKPOINT"
+    assert observed=={"minimum":7,"verifier":None,"limit_per_query":40,"recover_only":True}
+    assert result["qualification_granted"] is False
