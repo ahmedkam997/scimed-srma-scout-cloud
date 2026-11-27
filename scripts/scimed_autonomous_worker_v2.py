@@ -55,7 +55,13 @@ def choose_job(state,kind):
     # All high-priority leads stay eligible for later surveillance. No negative inference.
     eligible=[(cid,row) for cid,row in state["ledger"].items() if row.get("shortlist_cue")
               and (cid in ext["jobs"] or len(ext["jobs"])<MAX_JOBS)]
-    due=[(cid,row) for cid,row in eligible if now-ext["jobs"].get(cid,{}).get(last,-1000)>=8]
+    def cooldown(cid):
+        j=ext["jobs"].get(cid,{})
+        routes=j.get("family_routes" if kind=="families" else "competitor_routes",{})
+        # Work through alternate routes before surveillance. Do not re-query unchanged
+        # literature every half hour. Partial samples stay unresolved even after cooldown.
+        return 48 if len(routes)==len(ROUTES) and all(v["status"] in OK for v in routes.values()) else 8
+    due=[(cid,row) for cid,row in eligible if now-ext["jobs"].get(cid,{}).get(last,-1000)>=cooldown(cid)]
     if not due:return None
     return min(due,key=lambda x:(ext["jobs"].get(x[0],{}).get(last,-1000),-x[1]["family_leads"],x[0]))
 
@@ -146,6 +152,12 @@ def recover(state,kind,client,*,searcher=search,fetcher=fetch_rows,resolver=None
             out.update(registration_links_in_page=families["registry_linked_families"],
                        outcome_report_cues=sum(bool(x["ratios"] or x["counts"]) for x in cues.values()),
                        missing_pmids=raw["missing_pmids"])
+            memory=j.setdefault("report_cues",{})
+            links={r["report_id"]:f["registration_id"] for f in families["families"] for r in f["reports"]}
+            for pid,x in cues.items():
+                # Keep compact source-linked cues even after short-lived artifacts expire.
+                memory[pid]={"registry":links.get(pid),"role_cues":x["roles"]["cues"],
+                             "ratio_count":len(x["ratios"]),"count_cues":len(x["counts"])}
             j["family_audits"]+=1
         else:
             from scimed_scout.discovery.open_access_dates import OpenAccessSearchDateResolver
@@ -229,6 +241,12 @@ def cycle(state,collect,client,*,live_ai=False,recoverer=recover,learner=learnin
     ext["history"]=(ext["history"]+[{"cycle":state["cycles"],"task":out["task"],"status":out.get("source_status",out.get("coverage",out.get("status","RECORDED"))),"candidate_id":out.get("candidate_id")}])[-MAX_HISTORY:]
     # Drop only recovery extensions for leads already removed by V1 bounded ledger.
     ext["jobs"]={k:v for k,v in ext["jobs"].items() if k in state["ledger"]}
+    # The scheduler hard-caps serialized state; compact only verbose cue fields,
+    # retaining the full raw audit in the cycle artifact. Never silently clear IDs.
+    for j in ext["jobs"].values():
+        for entry in j["methods"].values():
+            cue=entry.get("date_cue")
+            if cue:entry["date_cue"]={k:cue[k] for k in ("date","year","quote","source_url","source_type","full_text_eligibility_verified") if k in cue}
     return out,raw
 
 def main():
