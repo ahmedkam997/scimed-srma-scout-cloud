@@ -238,7 +238,8 @@ def recover(state,kind,client,*,searcher=search,fetcher=fetch_rows,resolver=None
             raw["registration_recovery"]=registration_audit
             families=audit_trial_families(list(found.values()))
             cues={pid:{"roles":report_role_cues(r),"ratios":abstract_ratios(r),"counts":abstract_counts(r)} for pid,r in found.items()}
-            raw.update(families=families,outcomes=cues,missing_pmids=sorted(set(ids)-set(found)),diagnostics=diag)
+            raw.update(families=families,outcomes=cues,missing_pmids=sorted(set(ids)-set(found)),diagnostics=diag,
+                       recovered_rows=[r for pid,r in found.items() if pid in ids and r.get("source")=="PubMed" and r.get("payload",{}).get("metadata",{}).get("pubmed_efetch_identity")=="EXACT_PMID" and identifiers(r)["pmid"]=={pid} and len(identifiers(r)["doi"])<=1])
             out.update(registration_links_in_page=families["registry_linked_families"],
                        outcome_report_cues=sum(bool(x["ratios"] or x["counts"]) for x in cues.values()),
                        missing_pmids=raw["missing_pmids"])
