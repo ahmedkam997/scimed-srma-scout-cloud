@@ -56,3 +56,31 @@ def test_hypothesis_cache_distinct_from_candidate_ledger():
     assert len(s["idea_hypotheses"])==1 and not s["ledger"]
     assert report["first_choice_count"]==0
     assert next(iter(s["idea_hypotheses"].values()))["qualification_granted"] is False
+
+def test_exact_efetch_year_is_preserved_and_not_invented():
+    from scimed_scout.sources.pubmed_abstracts import parse_efetch
+    from scripts.phase3_family_methods import as_row
+    xml=b"""<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>12345</PMID><Article><ArticleTitle>Trial</ArticleTitle><Journal><JournalIssue><PubDate><Year>2023</Year></PubDate></JournalIssue></Journal></Article></MedlineCitation></PubmedArticle><PubmedArticle><MedlineCitation><PMID>12346</PMID><Article><ArticleTitle>Unknown date</ArticleTitle></Article></MedlineCitation></PubmedArticle></PubmedArticleSet>"""
+    found,_=parse_efetch(xml,["12345","12346"])
+    assert as_row("12345",found["12345"])["payload"]["year"]==2023
+    assert as_row("12346",found["12346"])["payload"]["year"] is None
+
+def test_recovered_comparison_audit_keeps_exact_scope_and_family_identity():
+    from scripts.phase3_family_methods import as_row
+    lead={"population":"hypertension","intervention":"renal denervation","comparator":"sham"}
+    def trial(pid,nct,title="Renal denervation versus sham in hypertension: a randomized trial",year=2023):
+        return as_row(pid,{"pubmed_efetch_title":title,"publication_year":year,
+                           "pubmed_efetch_identity":"EXACT_PMID","pubtype":["Randomized Controlled Trial"],
+                           "trial_registration_ids":[nct]})
+    rows={str(i):trial(str(i),"NCT%08d"%i) for i in range(1,8)}
+    rows["8"]=trial("8","NCT00000001")
+    rows["9"]=trial("9","NCT00000009",title="Secondary analysis of renal denervation versus sham in hypertension")
+    rows["10"]=trial("10","NCT00000010",title="Renal denervation in hypertension: a randomized trial")
+    rows["11"]=trial("11","NCT00000011",year=None)
+    rows["12"]=trial("12","NCT00000012")
+    audit=v2.audit_recovered_comparisons(lead,rows,list(rows)[:-1])
+    assert audit["family_leads"]==7 and audit["shortlist_signal"]
+    assert set(audit["source_pmids"])==set(str(i) for i in range(1,9))
+    assert audit["confirmed_independent_eligible_trials"] is None
+    assert audit["qualification_granted"] is False
+    assert not v2.audit_recovered_comparisons(lead,rows,["1","8","9","10","11"])["shortlist_signal"]
