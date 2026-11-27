@@ -349,7 +349,7 @@ def review_title_recovery(client,pair,control,audits,check):
         first.extend(x for x in second if str(x["source_record_id"]) not in seen)
     return first
 
-def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),year=None,max_pairs=MAX_PAIRS,abstract_enricher=None,dynamic=None,registry_lookup=None,citation=None):
+def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),year=None,max_pairs=MAX_PAIRS,abstract_enricher=None,dynamic=None,registry_lookup=None,citation=None,exploratory=False):
     key=str(specialty).strip().casefold()
     year=year or datetime.now(timezone.utc).year
     if key=="all":key=tuple(ANCHORS)[rotation%len(ANCHORS)]
@@ -383,6 +383,12 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
             report["dynamic_discovery"]["registry_anchor_audit"]=registry_audit
             proposed.extend(registry_proposed)
             for x in registry_proposed:dynamic_controls[tuple(x["pair"][:2])]=(x["comparator"],)
+        if exploratory and not proposed:
+            # The strict dynamic and registry paths returned no anchor. Try
+            # one source-corroborated P/I search hypothesis, not a verified PICO.
+            fallback=derive(recent,anchors,year=year,limit=1,allow_single=True,specialty=key,exploratory=True)
+            proposed.extend(fallback)
+            report["dynamic_discovery"]["exploratory_pi_fallback"]=fallback
         report["dynamic_discovery"]["anchors"]=proposed
         report["dynamic_discovery"]["anchor_status"]="ANCHORS_RETRIEVED" if proposed else "NO_ANCHORS_IN_BOUNDED_SAMPLE"
         pairs.extend(tuple(x["pair"]) for x in proposed)
