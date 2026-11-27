@@ -180,17 +180,25 @@ def enrich_fair(rows,*,fetcher=None,max_lookups=3,previous=None,check=None):
     fetcher=fetcher or _fetch_xml
     cap=max(0,min(3,int(max_lookups)))
     old=(previous or {}).get("attempts",[])
-    counts={}
+    counts={};cached={}
     for a in old:
         k=(a.get("pmid"),a.get("pmcid"));counts[k]=len(a.get("routes",[]))
+        e=a.get("evidence") or {}
+        # Reapply previously source-verified evidence only to the identical article.
+        if (a.get("status")=="LINK_FOUND" and e.get("pmid")==k[0] and e.get("pmcid")==k[1]
+            and k[0] and k[1] and _ids(e.get("quote"))=={e.get("registration_id")}
+            and any(p.search(e.get("quote","")) for p in (OWN,OWN_AS))
+            and e.get("source_url") in {url for _,url in _routes(k[1])}):
+            cached[k]=e
     eligible={}
     for i,r in enumerate(rows):
         if registration_signals(r):continue
         p,m=_pmid(r),_pmcid(r)
         if p and m:eligible.setdefault((p,m),(i,r))
     ordered=sorted(eligible,key=lambda k:(counts.get(k,0),not bool(re.search(r"\b(?:analysis|subgroup|follow.up|secondary)\b",str(eligible[k][1].get("title") or ""),re.I)),k))
-    out=list(rows);audit=[];calls=0;linked={}
+    out=list(rows);audit=[];calls=0;linked={k:cached[k] for k in eligible if k in cached}
     for k in ordered:
+        if k in linked:continue
         if calls>=cap:break
         # Each report receives at most one route per pass. Previously
         # attempted reports use next route; no repeat of exhausted routes.
