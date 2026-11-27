@@ -132,6 +132,7 @@ def audit_recovered_comparisons(row,found,requested):
     """
     from scimed_scout.discovery.rct_first import ANCHORS, comparison_rows, family_summary, MIN_FAMILIES
     from scimed_scout.discovery.competitor_records import identifiers
+    from scimed_scout.discovery.trial_family import registration_signals
     pop,inter,comp=(row.get(k) for k in ("population","intervention","comparator"))
     if not all(isinstance(x,str) and x.strip() for x in (pop,inter,comp)):
         return {"status":"SCOPE_UNRESOLVED","family_leads":None,"qualification_granted":False}
@@ -140,16 +141,58 @@ def audit_recovered_comparisons(row,found,requested):
     for pid,r in found.items():
         if pid not in requested or r.get("source")!="PubMed":continue
         if r.get("payload",{}).get("metadata",{}).get("pubmed_efetch_identity")!="EXACT_PMID":continue
-        if identifiers(r)["pmid"]!={pid}:continue
+        identity=identifiers(r)
+        if identity["pmid"]!={pid} or len(identity["doi"])>1:continue
         exact.append(r)
     _,buckets=comparison_rows(pair,exact,comparator=comp)
     matched=buckets.get(comp,[])
     audit=family_summary(matched)
     return {"status":"BOUNDED_EXACT_PAGE","family_leads":audit["family_leads"],
         "source_pmids":sorted(str(x["source_record_id"]) for x in matched),
+        "matched_evidence":[{"pmid":str(x["source_record_id"]),"doi":next(iter(identifiers(x)["doi"]),None),
+          "registration_signals":registration_signals(x),"excerpt":x.get("comparison_excerpt","")[:240],
+          "year":x["payload"].get("year")} for x in matched],
         "registry_linked_families":audit["registry_linked_families"],
         "shortlist_signal":audit["family_leads"]>=MIN_FAMILIES,
         "confirmed_independent_eligible_trials":None,"qualification_granted":False}
+
+def accumulate_comparison_audit(job,audit,found,scope):
+    """Persist matched cues across pages, deduplicate registry IDs and withhold
+    conflicting identity. Unlinked records are not cumulative shortlist credit.
+    """
+    from scimed_scout.discovery.rct_first import MIN_FAMILIES
+    from scimed_scout.discovery.trial_family import registration_signals
+    from scimed_scout.discovery.competitor_records import identifiers
+    key=[scope.get(k) for k in ("population","intervention","comparator")]
+    previous=job.get("comparison_inventory",{})
+    if previous.get("scope")!=key:previous={"scope":key,"reports":{}}
+    memory=previous["reports"]
+    matched={x["pmid"]:x for x in audit.get("matched_evidence",[])}
+    # A later exact record can invalidate an old cue; never silently retain it.
+    for pid,row in found.items():
+        if row.get("source")!="PubMed" or row.get("payload",{}).get("metadata",{}).get("pubmed_efetch_identity")!="EXACT_PMID":continue
+        if identifiers(row)["pmid"]!={pid}:continue
+        old=memory.get(pid)
+        if pid not in matched:
+            memory.pop(pid,None)
+            continue
+        entry=matched[pid]
+        if old:
+            ids=sorted(set(old["registration_signals"])|set(entry["registration_signals"]))
+            entry={**entry,"registration_signals":{k:sorted(set(old["registration_signals"].get(k,[]))|set(entry["registration_signals"].get(k,[]))) for k in ids}}
+            if old.get("doi_conflict") or (old.get("doi") and entry.get("doi") and old["doi"]!=entry["doi"]):entry["doi_conflict"]=True
+            if not entry.get("doi"):entry["doi"]=old.get("doi")
+        if pid in memory or len(memory)<MAX_IDS:memory[pid]=entry
+        else:previous["truncated"]=True
+    job["comparison_inventory"]=previous
+    doi_counts=Counter(x["doi"] for x in memory.values() if x.get("doi"))
+    accepted=[x for x in memory.values() if not x.get("doi_conflict") and len(x["registration_signals"])==1 and (not x.get("doi") or doi_counts[x["doi"]]==1)]
+    families={next(iter(x["registration_signals"])) for x in accepted}
+    return {"status":"CUMULATIVE_BIBLIOGRAPHIC_CUES_ONLY","distinct_matched_reports":len(memory),
+       "distinct_registered_family_cues":len(families),"registration_ids":sorted(families),
+       "source_pmids":sorted(x["pmid"] for x in accepted),"withheld_reports":len(memory)-len(accepted),
+       "truncated":bool(previous.get("truncated")),"shortlist_signal":len(families)>=MIN_FAMILIES,
+       "confirmed_independent_eligible_trials":None,"qualification_granted":False}
 
 def recover(state,kind,client,*,searcher=search,fetcher=fetch_rows,resolver=None):
     ext=extend(state)
@@ -187,6 +230,12 @@ def recover(state,kind,client,*,searcher=search,fetcher=fetch_rows,resolver=None
             ids=j[field][page:page+30]
             found,diag=fetcher(client,ids)
             j["family_cursor"]=(page+len(ids))%max(1,len(j[field]))
+            from scimed_scout.discovery.registration_enrichment import enrich_fair
+            # Existing identity-checked full-text recovery, at most one call per cycle.
+            enriched,registration_audit=enrich_fair(list(found.values()),max_lookups=1,previous=j.get("registration_recovery"))
+            found={str(r["source_record_id"]):r for r in enriched}
+            j["registration_recovery"]=registration_audit
+            raw["registration_recovery"]=registration_audit
             families=audit_trial_families(list(found.values()))
             cues={pid:{"roles":report_role_cues(r),"ratios":abstract_ratios(r),"counts":abstract_counts(r)} for pid,r in found.items()}
             raw.update(families=families,outcomes=cues,missing_pmids=sorted(set(ids)-set(found)),diagnostics=diag)
@@ -203,12 +252,15 @@ def recover(state,kind,client,*,searcher=search,fetcher=fetch_rows,resolver=None
             raw["comparison_audit"]=comparison_audit
             out["comparison_audit"]=comparison_audit
             j["latest_comparison_audit"]=comparison_audit
+            cumulative=accumulate_comparison_audit(j,comparison_audit,{pid:r for pid,r in found.items() if pid in ids},row)
+            raw["cumulative_comparison_audit"]=cumulative
+            out["cumulative_comparison_audit"]=cumulative
             # Only a matched exact comparison page can raise the bibliographic
             # triage priority. Keep all scientific qualification gates intact.
-            if comparison_audit.get("shortlist_signal") and not row.get("shortlist_cue"):
-                row["family_leads"]=comparison_audit["family_leads"]
+            if (comparison_audit.get("shortlist_signal") or cumulative["shortlist_signal"]) and not row.get("shortlist_cue"):
+                row["family_leads"]=max(comparison_audit["family_leads"],cumulative["distinct_registered_family_cues"])
                 row["shortlist_cue"]=True
-                row["shortlist_basis"]="RECOVERED_BIBLIOGRAPHIC_PAGE_ONLY"
+                row["shortlist_basis"]="RECOVERED_REGISTERED_CUMULATIVE_CUES" if cumulative["shortlist_signal"] else "RECOVERED_BIBLIOGRAPHIC_PAGE_ONLY"
                 row["qualification_granted"]=False
                 out["recovery_shortlist_signal_added"]=True
             j["family_audits"]+=1
