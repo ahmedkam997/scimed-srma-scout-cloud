@@ -133,6 +133,10 @@ RCT_FILTER='(randomized controlled trial[pt] OR controlled clinical trial[pt] OR
 REVIEW_FILTER='(systematic[sb] OR meta-analysis[pt] OR systematic review[tiab])'
 # Ratios are removed from an allocation passage only, not from clinical terms.
 ALLOCATION=r"(?:randomi[sz]ed|randomly (?:assigned|allocated))(?:\s*\(\s*\d+\s*:\s*\d+\s*\))?(?:\s+in\s+(?:a\s+)?\d+\s*:\s*\d+\s+ratio)?(?:\s+(?:(?:\d+[\s,]+)?(?:patients|participants|subjects|individuals|adults|children|women|men|people|infants)|\d+)(?:\s+[\w-]+){0,12}?)?\s+(?:to|into)\s+"
+# Explicit receive-clause route: allow long, numeric eligibility descriptions
+# without absorbing them into the treatment arms. Bound to a single passage.
+ALLOCATION_RECEIVE=r"(?:randomi[sz]ed|randomly (?:assigned|allocated))\s+(?:\d[\d,]*\s+)?(?:patients|participants|subjects|individuals|adults|children|women|men|people|infants)\b[^.;!?\n]{0,220}?\bto\s+receive\s+"
+ALLOCATION="(?:"+ALLOCATION_RECEIVE+"|"+ALLOCATION+")"
 OWN_ASSIGN=re.compile(r"\b(?:randomi[sz]ed(?:\s*,\s*[\w-]+){0,4}\s+(?:controlled )?(?:trial|study)|placebo.controlled|sham.controlled|"+ALLOCATION+r")",re.I)
 SECONDARY=re.compile(r"\b(?:secondary analysis|post.hoc|subgroup analysis|sub.study|subanalysis|pooled analysis|individual patient data|insights from|rationale and design|trial protocol|study protocol|retracted publication|extended follow.up|author correction|erratum)\b",re.I)
 COMPARE=re.compile(r"\b(?:versus|vs\.?|compared (?:with|to)|randomi[sz]ed (?:to|into)|randomly (?:assigned|allocated)|placebo.controlled|sham.controlled)\b",re.I)
