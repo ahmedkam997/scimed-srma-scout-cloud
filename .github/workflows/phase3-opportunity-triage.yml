@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 7
     env:
-      DISCOVERY_RUN: ${{ inputs.discovery_run || '45892703407' }}
+      DISCOVERY_RUN: ${{ inputs.discovery_run || (contains(github.event.head_commit.message, '[academy-live]') && '45956744925') || '45892703407' }}
     steps:
       - uses: actions/checkout@v6
         with: {persist-credentials: false}
@@ -98,10 +98,15 @@ jobs:
         env:
           NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
           SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+          AUDIT_ACADEMY_LIVE: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[academy-live]') }}
           AUDIT_ALTERNATE: ${{ inputs.alternate || (github.event_name == 'push' && contains(github.event.head_commit.message, '[alternate]')) }}
         run: |
           args=()
-          if [[ "$AUDIT_ALTERNATE" == true ]]; then args+=(--alternate); fi
+          if [[ "$AUDIT_ACADEMY_LIVE" == true ]]; then
+            args+=(--academy-live)
+          elif [[ "$AUDIT_ALTERNATE" == true ]]; then
+            args+=(--alternate)
+          fi
           python -m scripts.phase3_family_methods "${args[@]}"
       - uses: actions/upload-artifact@v6
         if: always()

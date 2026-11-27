@@ -33,6 +33,12 @@ ALTERNATE_QUERIES = {
         'AND (systematic review[pt] OR meta-analysis[pt] OR "meta-analysis"[ti])'
     ),
 }
+ACADEMY_LIVE_QUERIES = {
+    "RCT-309DA630FCC385BE": (
+        'bempedoic[ti] AND (placebo[tiab] OR statin[tiab] OR statins[tiab]) '
+        'AND (systematic review[pt] OR meta-analysis[pt] OR "meta-analysis"[ti])'
+    ),
+}
 REVIEWS = ("42985463", "42499063", "42201709", "43090943")
 
 
@@ -124,6 +130,7 @@ def search_review_leads(client, query, limit):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--alternate", action="store_true", help="Audit the two alternate cardiology candidates.")
+    parser.add_argument("--academy-live", action="store_true", help="Audit the latest live trial shortlist.")
     args = parser.parse_args()
     source = Path("inputs/phase3-opportunities-cardiology/opportunity.json")
     candidates = json.loads(source.read_text())["candidates"]
@@ -133,11 +140,12 @@ def main():
     review_search = None
     update_search = None
     alternate_searches = {}
-    if args.alternate:
-        targets = set(ALTERNATE_QUERIES)
+    if args.alternate or args.academy_live:
+        queries = ACADEMY_LIVE_QUERIES if args.academy_live else ALTERNATE_QUERIES
+        targets = set(queries)
         alternate_searches = {
             cid: search_review_leads(client, query, limit=4)
-            for cid, query in ALTERNATE_QUERIES.items()
+            for cid, query in queries.items()
         }
         reviews = tuple(dict.fromkeys(
             row["pmid"] for result in alternate_searches.values() for row in result["reports"]
