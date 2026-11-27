@@ -4,6 +4,9 @@ on:
     branches: [autonomous-scientist-v10]
     paths:
       - '.github/workflows/worker-checkpoint-migration.yml'
+      - 'scripts/scimed_autonomous_worker_v2.py'
+      - 'scripts/scimed_autonomous_scientist.py'
+      - 'tests/test_autonomous_scientist.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -47,6 +50,30 @@ jobs:
           assert set(old["ledger"])<=set(new["ledger"])
           assert Path("worker-output/worker-state.json").stat().st_size<=8388608
           print("MIGRATION_VERIFIED",json.dumps({"old_cycles":old["cycles"],"new_cycles":new["cycles"],"old_ledger":len(old["ledger"]),"new_ledger":len(new["ledger"]),"task":report["task"],"status":report.get("source_status",report.get("coverage",report.get("status"))),"qualification_granted":False}))
+          PY
+      - name: Verify live family recovery reaches reviewer workspace
+        env:
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts import scimed_autonomous_worker as v1,scimed_autonomous_worker_v2 as v2,scimed_autonomous_scientist as s
+          from scimed_scout.sources.pubmed import PubMedSource
+          state=v1.load(Path("previous/worker-state.json"))
+          for j in v2.extend(state)["jobs"].values():j["last_family"]=-1000
+          report,raw=v2.recover(state,"families",PubMedSource(sort="relevance"))
+          s.ingest_recovery(state,report,raw)
+          rows=raw.get("recovered_rows",[])
+          w=s.workspace(state,report["candidate_id"])
+          saved={str(r["source_record_id"]):r for r in w["rows"].values() if r["source"]=="PubMed"}
+          assert rows,"No exact source reports retrieved"
+          assert all(str(r["source_record_id"]) in saved and saved[str(r["source_record_id"])]["payload"]["metadata"].get("pubmed_efetch_identity")=="EXACT_PMID" for r in rows)
+          assert report["qualification_granted"] is False
+          result={"candidate_id":report["candidate_id"],"exact_recovered":len(rows),"workspace_records":len(saved),"registration_recovery":raw.get("registration_recovery",{}),"qualification_granted":False}
+          print("LIVE_WORKSPACE_RECOVERY",json.dumps(result,default=str),flush=True)
+          Path("worker-output/live-workspace-recovery.json").write_text(json.dumps(result,indent=2,default=str))
           PY
       - uses: actions/upload-artifact@v6
         if: always()
