@@ -39,7 +39,8 @@ def seed_jobs(state,raw):
     ext=extend(state)
     for row in raw.get("candidates",[]):
         cid=row["candidate_id"]
-        if cid not in state["ledger"] or not state["ledger"][cid].get("shortlist_cue"):continue
+        # Store lower-count observed leads separately from scientific shortlist status.
+        if cid not in state["ledger"] or state["ledger"][cid].get("family_leads",0)<2:continue
         if cid not in ext["jobs"] and len(ext["jobs"])>=MAX_JOBS:continue
         j=job_for(ext,cid)
         hints=row["metadata"]["rct_first"]
@@ -53,7 +54,8 @@ def choose_job(state,kind):
     ext=extend(state); now=state["cycles"]
     last="last_family" if kind=="families" else "last_competitor"
     # All high-priority leads stay eligible for later surveillance. No negative inference.
-    eligible=[(cid,row) for cid,row in state["ledger"].items() if row.get("shortlist_cue")
+    eligible=[(cid,row) for cid,row in state["ledger"].items() if (row.get("shortlist_cue")
+              or (kind=="families" and row.get("family_leads",0)>=2))
               and (cid in ext["jobs"] or len(ext["jobs"])<MAX_JOBS)]
     def cooldown(cid):
         j=ext["jobs"].get(cid,{})
@@ -63,7 +65,13 @@ def choose_job(state,kind):
         return 48 if len(routes)==len(ROUTES) and all(v["status"] in OK for v in routes.values()) else 8
     due=[(cid,row) for cid,row in eligible if now-ext["jobs"].get(cid,{}).get(last,-1000)>=cooldown(cid)]
     if not due:return None
-    return min(due,key=lambda x:(ext["jobs"].get(x[0],{}).get(last,-1000),-x[1]["family_leads"],x[0]))
+    strong=[x for x in due if x[1].get("shortlist_cue")]
+    early=[x for x in due if not x[1].get("shortlist_cue")]
+    # Reserve one in four actual family recovery slots for exploration.
+    # No early lead is upgraded merely because another search returned records.
+    explore=kind=="families" and ext["task_counts"].get("families",0)%4==3
+    pool=(early if explore and early else strong) or due
+    return min(pool,key=lambda x:(ext["jobs"].get(x[0],{}).get(last,-1000),-x[1]["family_leads"],x[0]))
 
 def choose_route(ext,j,kind):
     field="family_routes" if kind=="families" else "competitor_routes"
