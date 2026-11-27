@@ -359,7 +359,7 @@ def collect(specialty,rotation=0,*,pubmed=None,europe=None,check=None,prior=(),y
     if abstract_enricher is None and isinstance(pubmed,PubMedSource) and pubmed.http.loader is None:
         abstract_enricher=lambda rows:enrich_rows(pubmed,rows)
     from .dynamic_anchors import query as dynamic_query,derive,VERSION as DYNAMIC_VERSION
-    anchors=ANCHORS[key];start=(int(rotation)*5)%len(anchors)
+    anchors=ANCHORS[key];start=(int(rotation)*(1 if max_pairs==1 else 5))%len(anchors)
     pairs=[anchors[(start+i)%len(anchors)] for i in range(min(max_pairs,len(anchors),MAX_PAIRS))]
     dynamic_enabled=bool(abstract_enricher and isinstance(pubmed,PubMedSource) and pubmed.http.loader is None) if dynamic is None else bool(dynamic)
     report["dynamic_discovery"]={"version":DYNAMIC_VERSION,"status":"NOT_SEARCHED","anchors":[],"qualification_granted":False}

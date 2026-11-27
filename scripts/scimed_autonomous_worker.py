@@ -114,8 +114,11 @@ def run(state,collect,triage,*,live_ai=False):
     deadline=time.monotonic()+360
     def check():
         if time.monotonic()>deadline: raise TimeoutError("bounded discovery budget")
+    # Explore recent source-backed novel anchors every second rotation per specialty.
+    # Fixed-anchor surveillance remains available; never treat dynamic cues as qualification.
+    dynamic=(rotation%2==0)
     try:
-        raw=collect(specialty,rotation,max_pairs=1,dynamic=False,citation=True,check=check)
+        raw=collect(specialty,rotation,max_pairs=1,dynamic=dynamic,citation=True,check=check)
         status=raw["status"]
         if status not in ("SAMPLED","PARTIAL_SAMPLE","ACCESS_UNRESOLVED"):raise ValueError("unexpected source status")
         rows=[candidate_summary(x) for x in raw["candidates"]]
@@ -137,6 +140,7 @@ def run(state,collect,triage,*,live_ai=False):
     advance(state,status)
     return {"schema":VERSION,"specialty":specialty,"rotation":rotation,"coverage":status,
             "candidates":rows,"advisory":advisory,"selected":selected,"audit":audit,
+            "dynamic_requested":dynamic,"dynamic_discovery":raw.get("dynamic_discovery",{}),
             "qualification_granted":False,"first_choice_count":0,"next":plan(state)},raw
 
 def triage_public(row):
