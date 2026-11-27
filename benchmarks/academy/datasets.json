@@ -48,8 +48,8 @@
       "source_families": ["trialreviewbench"],
       "license_evidence": "Apache-2.0 dataset card recorded in Phase 3. Oncology-heavy and not verified as RCT-only.",
       "artifacts": [
-        {"path": "trialreviewbench/reviews.csv", "url": "https://huggingface.co/datasets/zifeng-ai/TrialReviewBench/resolve/6dfc322004341212eb905a6874ccfae416b9f9f5/TrialReviewBench-reviews.csv", "sha256": null, "kind": "review_csv"},
-        {"path": "trialreviewbench/screening.jsonl", "url": "https://huggingface.co/datasets/zifeng-ai/TrialReviewBench/resolve/6dfc322004341212eb905a6874ccfae416b9f9f5/TrialReviewBench-study-search-screening.jsonl", "sha256": null, "kind": "review_jsonl"}
+        {"path": "trialreviewbench/reviews.csv", "url": "https://huggingface.co/datasets/zifeng-ai/TrialReviewBench/resolve/6dfc322004341212eb905a6874ccfae416b9f9f5/TrialReviewBench-reviews.csv", "sha256": "0d75c5e83038808908b3570006f9f632ae2561010d59375df20b3df60801ae41", "kind": "review_csv"},
+        {"path": "trialreviewbench/screening.jsonl", "url": "https://huggingface.co/datasets/zifeng-ai/TrialReviewBench/resolve/6dfc322004341212eb905a6874ccfae416b9f9f5/TrialReviewBench-study-search-screening.jsonl", "sha256": "71c0d1c6b28046bfd625e0156cf85e765be5f84fbc43fa2d32d7aa0ddf49aae0", "kind": "review_jsonl"}
       ]
     },
     {

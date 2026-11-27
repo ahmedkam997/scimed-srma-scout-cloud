@@ -200,9 +200,30 @@ jobs:
           --data-audit academy-diagnostics/data/academy-dataset-audit.json
           --replay academy-diagnostics/replay/academy-replay-live.json
           --output academy-diagnostics.json
+      - name: Reacquire the newly pinned TrialReviewBench bytes
+        run: >-
+          python -m scripts.academy_datasets --stage academy-data
+          --dataset trialreviewbench --fetch --strict
+          --output academy-trialreviewbench-pinned.json
+      - name: Expose pinned acquisition status
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("academy-trialreviewbench-pinned.json")
+          if path.is_file():
+              report = json.loads(path.read_text())["datasets"]["trialreviewbench"]
+              print("::notice title=Academy pinned TrialReviewBench::" + json.dumps({
+                  "status": report["status"], "artifacts": report["artifacts"],
+              }))
+          PY
       - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: academy-diagnostics
-          path: academy-diagnostics.json
+          path: |
+            academy-diagnostics.json
+            academy-trialreviewbench-pinned.json
           retention-days: 14
