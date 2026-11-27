@@ -115,7 +115,11 @@ def registry(state,clients):
         # use existing source-specific adapters
         from scimed_scout.discovery.evidence_first import _record
         result=client.search(q,limit=20)
-        rows=[_record(r) for r in result.records]
+        # Registry adapters may retrieve much more than the nominal limit.
+        # Keep cap status and aggregate, never call truncated results exhaustive.
+        rows=[_record(r) for r in result.records[:20]]
+        extra=max(0,len(result.records)-len(rows))
+        if extra:w["registry_truncated"]=True
         kind="ONGOING_STUDY" if source=="ClinicalTrials.gov" else ("PUBLISHED_REVIEW" if source=="Europe PMC" else "REGISTRATION")
         from scimed_scout.discovery.evidence_classification import classify_review_search_hit,classify_registration_search_hit
         from scimed_scout.sources.base import SearchRecord
@@ -129,13 +133,21 @@ def registry(state,clients):
         log(w,source,q,result.status,result.total_count)
         status=result.status.value
         w["registry_routes"][source]={"cycle":state["cycles"],"status":status,"records":len(rows)}
-        raw={"source":source,"query":q,"records":rows,"reported_total":result.total_count,"status":status}
+        raw={"source":source,"query":q,"records":rows,"reported_total":result.total_count,"status":status,"unpersisted_result_rows":extra}
+        if source=="ClinicalTrials.gov":
+            from scimed_scout.discovery.structured_extraction_v2 import registry_leads
+            leads=[registry_leads(r["payload"].get("metadata",{}),str(r["source_record_id"])) for r in rows]
+            raw["registry_result_cues"]=leads
+            w["registry_result_cues"]={**w.get("registry_result_cues",{}),**{x["registry_id"]:{"allocation":x.get("allocation"),"intervention_model":x.get("intervention_model"),"numeric_outcome_count":len(x.get("numeric_outcome_leads",[])),"ratio_count":len(x.get("reported_ratio_estimates",[]))} for x in leads if x.get("registry_id")}}
+            w["registry_result_cues"]={k:v for k,v in w["registry_result_cues"].items() if "ONGOING_STUDY|ClinicalTrials.gov|"+k in w["rows"]}
     except Exception as exc:
         status="ACCESS_FAILED"
         log(w,source,q,SourceStatus.ACCESS_FAILED,None)
         w["registry_routes"][source]={"cycle":state["cycles"],"status":status,"records":0}
         raw={"source":source,"query":q,"status":status,"error_type":type(exc).__name__}
-    return {"task":"registry","candidate_id":cid,"source":source,"source_status":status,"qualification_granted":False},raw
+    return {"task":"registry","candidate_id":cid,"source":source,"source_status":status,"records":len(raw.get("records",[])),
+            "unpersisted_result_rows":raw.get("unpersisted_result_rows",0),"registry_result_cues":len(raw.get("registry_result_cues",[])),
+            "qualification_granted":False},raw
 
 def prepare_packet(state,client,*,fetcher=v2.fetch_rows,fulltext=None):
     from scimed_scout.discovery.structured_extraction_v2 import collect as extract
@@ -184,6 +196,8 @@ def prepare_packet(state,client,*,fetcher=v2.fetch_rows,fulltext=None):
     packet=snapshot(led,c)
     blocked=["independent full-text review and signed approvals not submitted","bounded search is not independently adjudicated complete",*coverage.blockers]
     if w["missing"]:blocked.append("exact PMID retrieval incomplete")
+    if w.get("registry_truncated"):blocked.append("registry retrieval inventory truncated")
+    if w.get("inventory_cap_reached"):blocked.append("bounded workspace inventory cap reached")
     report={"task":"packet","candidate_id":cid,"status":"PROVISIONAL_REVIEWER_PACKET",
        "snapshot_sha256":packet["verification_v2"]["snapshot_sha256"],
        "primary_report_count":packet["primary_report_count"],"competitor_count":packet["competitor_count"],
