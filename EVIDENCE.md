@@ -249,3 +249,22 @@ secondary analysis lead, not a new independent randomization. The
 December record confirms that the trial was discussed before the
 February 2026 review search month, but does not establish original
 publication identity or review inclusion. [Hosted trace](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45894714951)
+
+### Academy rotation and provenance
+
+Hosted TrialReviewBench acquisition verified both newly pinned files,
+100 review entries and 100 screening rows. The source labels cover four
+oncology topics. Keep this as an external task-evaluation source and
+separate it from the independently adjudicated RCT-only opportunity
+panel. No full-text or weight redistribution occurred.
+[Hosted pinned import](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45957379849)
+
+The Academy live rotation and targeted bempedoic family audit confirmed
+comparison heterogeneity and recent competitor signals. CLEAR Outcomes
+PMID 38231501 is explicitly a secondary event analysis, so it does
+not add an independent trial. CLEAR-J phase 3 (40159243), a Japanese
+phase 2 dose-ranging report (40024737), and differing background
+therapies need original Methods and common outcome verification.
+The targeted review audit did not recover a cutoff.
+[Live rotation](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45956744925)
+[Bempedoic audit](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45957324701)

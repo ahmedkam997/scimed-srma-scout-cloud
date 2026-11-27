@@ -33,7 +33,8 @@
   judgments have not been supplied. The initial admission report
   therefore remains unready.
 - CSMeD inventory confirms reused literature collections and cannot
-  be assumed independent. TrialReviewBench hosted acquisition needs
-  schema validation and a pinned trusted digest before promotion.
-  LEADS corpus and model licensing and independent task labels
-  require separate clearance.
+  be assumed independent. Two TrialReviewBench files passed a
+  checksum-pinned hosted reacquisition, with 100 rows each. Study
+  family independence, label suitability and RCT-only applicability
+  are unresolved. LEADS corpus and model licensing and independent
+  task labels require separate clearance.

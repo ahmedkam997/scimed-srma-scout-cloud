@@ -95,3 +95,21 @@ competing reviews and no demonstrated seven-trial evidence set.
 For AF with HF, CAMERA-MRI II remains an unresolved report-family
 lead. Neither recovery established a new eligible comparison
 or synthesis-ready outcomes. [HF follow-up evidence](EVIDENCE.md)
+
+The Academy-period rotation yielded a bempedoic acid versus placebo
+lead (`RCT-309DA630FCC385BE`, seven bibliographic family leads)
+and an empagliflozin versus placebo lead (`RCT-931F387A4F8F8CE1`,
+20). Cardiology and general surgery coverage were partial, and the
+fixed-anchor surgical sample yielded zero leads. Both cardiology
+counts require population, comparator, family and endpoint checks.
+Bempedoic acid entered a focused family and competitor audit.
+[Live rotation](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45956744925)
+
+The focused bempedoic acid audit recovered three explicit registrations
+and four unlinked reports. The sample includes statin intolerance,
+Japanese phase 2 and phase 3 populations, ezetimibe and high-dose
+atorvastatin backgrounds, and a CLEAR Outcomes secondary analysis.
+The bounded review query found recent competing syntheses. None of
+four sampled full-text review cutoffs was recovered. This remains a
+provisional lead with no confirmed seven-trial evidence set or
+established novelty. [Focused candidate audit](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45957324701)

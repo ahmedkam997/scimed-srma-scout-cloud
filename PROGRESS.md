@@ -55,3 +55,11 @@
   The two Cohen lists share 49 PubMed identifiers. CSMeD source
   inventory was audited separately. Locally inaccessible datasets
   remain unresolved and are routed to authorized hosted acquisition.
+
+- The initial hosted Academy run passed. A separate diagnostic verified
+  query membership for the missed carotid reference without changing
+  its replay score. Reacquisition verified two pinned TrialReviewBench
+  files. All 595 Python tests and 68 web tests passed locally.
+- Live specialty rotation finished in parallel. The bempedoic follow-up
+  retained a provisional candidate and an incomplete Methods audit.
+  No FIRST-CHOICE dossier is established.

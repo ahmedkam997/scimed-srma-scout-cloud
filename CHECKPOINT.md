@@ -150,3 +150,19 @@ completed original/update review pair from a catalog of 25. Its
 publication-date proxy is separate from the sealed benchmark and from
 true Methods cutoffs. Use its retrieved report coverage to diagnose
 the next replay, with development labels outside model input.
+
+Academy run `45956921809` passed all four jobs. The follow-up
+`45957379849` verified newly pinned TrialReviewBench inputs. The
+carotid follow-up PMID `9510277` matched both replay queries in
+post-scoring diagnostics, but neither bounded ranking returned it.
+Keep replay scores immutable and investigate first-appearance dates
+and overlap beyond report-level labels.
+
+Clinical rotation `45956744925` finished with partial coverage in
+both specialties. Bempedoic audit `45957324701` exposed background
+therapy and population differences and incomplete review Methods
+coverage. Continue comparable-PICO triage of the empagliflozin
+versus placebo shortlist lead. Do not treat the five clinical
+leads, 30 development nominations or any benchmark score as a
+FIRST-CHOICE outcome. The independent test panel and clinical
+adjudication remain unmet.

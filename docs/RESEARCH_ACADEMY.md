@@ -67,3 +67,10 @@ failure diagnostics and baseline for each experiment.
 - Track discrepancies and corrective actions in the [lesson ledger](../benchmarks/academy/LESSONS.md).
   Advance live candidate verification independently of training and never
   use benchmark success as a substitute for signed scientific adjudication.
+
+## Reusable checks from the initial hosted run
+
+| Observation | Source | Reusable check |
+| --- | --- | --- |
+| The carotid update reference matched both broad and explicit PubMed queries but was absent from either 60-record sample. Its title identifies long-term follow-up. | [Hosted diagnostic](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45957258604) | Separate query membership from ranking and separate additional reports from new trial families. Exact-ID probes are diagnostic only. |
+| All-ratio extraction added seven cues with no recall advantage over the first-ratio baseline on four known controls. Hybrid ranking also tied the lexical baseline in both pools. | [Academy comparisons](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45956921809) | Track candidate verification workload as well as reference recall. Avoid promotion from a tie on small development controls. |

@@ -83,3 +83,32 @@
   The publication-date window is a proxy. Actual review search
   cutoffs, new independent participants and usability are unresolved.
   [Pinned review update corpus](https://github.com/Amal-Alharbi/Systematic_Reviews_Update/tree/35a78b615d9c9dbdd889c55a61e5032b3cc309c6)
+
+### Hosted Academy development results
+
+The initial Academy run passed and reproduced the paired screening
+results. PubMed retrieved all nine report controls. Explicit registry
+linkage recovered four of six known within-family report pairs, with
+zero false links across the 30 known cross-family pairs. The
+singleton baseline recovered none. Eight of nine reports had the
+expected registry link. This is a linkage proxy.
+
+On four primary outcome controls, the first-ratio baseline and all
+explicit ratio cues each matched all four named reference contrasts.
+The baseline proposed four cues and all-ratio extraction proposed
+11. Neither confirms endpoint direction or usability. The lexical
+and hybrid BM25 competitor methods each placed zero known cardiology
+references and one known surgery reference in the top five. Some
+reference reviews were absent from the retrieved inventory. No
+ranking or extraction expansion is promoted on this evidence.
+
+The 60-record statin replay found two of 12 known reports with the
+single-query and date-stratified routes, and three with the dual
+route. Both bounded carotid strategies missed the one update-labeled
+report. An exact, post-scoring PMID membership check established that
+the 1998 report matched both queries and describes long-term follow-up.
+The miss concerns bounded selection and ranking in this run. The
+retrieval label does not establish a new independent trial.
+[Hosted Academy run](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45956921809)
+[Post-scoring diagnostics](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45957258604)
+[Carotid follow-up PMID 9510277](https://pubmed.ncbi.nlm.nih.gov/9510277/)
