@@ -1,0 +1,80 @@
+name: scimed-autonomous-worker-v2-validation
+on:
+  pull_request:
+    branches: [autonomous-worker-v1]
+    paths:
+      - 'scripts/scimed_autonomous_worker_v2.py'
+      - 'tests/test_autonomous_worker_v2.py'
+      - '.github/workflows/autonomous-worker-v2-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: scimed-worker-v2-validation
+  cancel-in-progress: false
+jobs:
+  worker-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e '.[dev]'
+      - run: python -m pytest -q tests/test_autonomous_worker.py tests/test_autonomous_worker_v2.py
+      - name: Restore actual V1 checkpoint from successful discovery
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/45960183461" | jq -e '.head_sha == "2d857839b2d37036c2a9576ae09c13af2918f9d6" and .conclusion == "success"' >/dev/null
+          gh run download 45960183461 --repo "$GITHUB_REPOSITORY" --name scimed-worker-validation-state --dir bootstrap
+          test -s bootstrap/worker-state.json
+      - name: Run real family and competitor recovery with checkpoint handoff
+        run: |
+          set -euo pipefail
+          python -m scripts.scimed_autonomous_worker_v2 --checkpoint bootstrap/worker-state.json --output family-cycle
+          python -m scripts.scimed_autonomous_worker_v2 --checkpoint family-cycle/worker-state.json --output competitor-cycle
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path("family-cycle/report.json").read_text())
+          b=json.loads(Path("competitor-cycle/report.json").read_text())
+          assert a["task"]=="families" and b["task"]=="competitors"
+          assert b["cycle"]==a["cycle"]+1
+          assert a["qualification_granted"] is False and b["qualification_granted"] is False
+          assert a["candidate_id"]==b["candidate_id"]
+          assert "audit_error" not in a and "audit_error" not in b
+          print("LIVE_RECOVERY",json.dumps({"families":a,"competitors":b},default=str))
+          PY
+      - name: Compare existing Academy algorithms on real development references
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts.scimed_autonomous_worker import load,write
+          from scripts.scimed_autonomous_worker_v2 import learning,diagnostic
+          from scimed_scout.sources.pubmed import PubMedSource
+          s=load(Path("competitor-cycle/worker-state.json"))
+          result,raw=learning(s,PubMedSource(sort="relevance"))
+          d,extra=diagnostic(s)
+          out=Path("learning-test");out.mkdir(exist_ok=True)
+          write(out/"report.json",{"learning":result,"diagnostic":d})
+          write(out/"source-evidence.json",raw)
+          write(out/"worker-state.json",s)
+          print("LIVE_LEARNING",json.dumps({"report":result,"development_evidence":raw,"diagnostic":d},default=str))
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: autonomous-worker-v2-validation
+          path: |
+            family-cycle/
+            competitor-cycle/
+            learning-test/
+          retention-days: 14
