@@ -149,19 +149,59 @@ def registry(state,clients):
             "unpersisted_result_rows":raw.get("unpersisted_result_rows",0),"registry_result_cues":len(raw.get("registry_result_cues",[])),
             "qualification_granted":False},raw
 
-def prepare_packet(state,client,*,fetcher=v2.fetch_rows,fulltext=None):
+def fetch_with_recovery(client,ids,*,fetcher=v2.fetch_rows,alternate=None):
+    """Bounded alternate exact-ID route, with explicit recovery outcome."""
+    from scimed_scout.discovery.competitor_records import identifiers
+    from scimed_scout.discovery.evidence_first import _record
+    try:
+        found,diag=fetcher(client,ids)
+    except Exception as exc:
+        found={};diag={"error_type":type(exc).__name__}
+    found={str(p):r for p,r in found.items() if str(p) in ids}
+    missing=sorted(set(ids)-set(found))
+    attempts=[]
+    if alternate is not None:
+        for pid in missing[:2]:
+            try:
+                q=f"EXT_ID:{pid} AND SRC:MED"
+                response=alternate.search(q,limit=3)
+                candidates=[]
+                for item in response.records:
+                    row=_record(item);identity=identifiers(row)
+                    if identity["pmid"]=={pid} and len(identity["doi"])<=1:
+                        candidates.append(row)
+                # Exact identity only; multiple variants are unresolved.
+                recovered=len(candidates)==1 and bool(candidates[0].get("title"))
+                if recovered:found[pid]=candidates[0]
+                attempts.append({"pmid":pid,"source":alternate.name,"status":response.status.value,"exact_recovered":recovered})
+            except Exception as exc:
+                attempts.append({"pmid":pid,"source":alternate.name,"status":"ACCESS_FAILED","error_type":type(exc).__name__,"exact_recovered":False})
+    return found,{"primary":diag,"alternate_attempts":attempts,
+                  "missing_after_recovery":sorted(set(ids)-set(found))}
+
+def prepare_packet(state,client,*,fetcher=v2.fetch_rows,fulltext=None,alternate=None):
     from scimed_scout.discovery.structured_extraction_v2 import collect as extract
     cid=choose(state,"packet")
     if not cid:return None
     w=workspace(state,cid);w["last_packet"]=state["cycles"];j=v2.extend(state)["jobs"][cid]
+    if alternate is None and fetcher is v2.fetch_rows:
+        from scimed_scout.sources import EuropePMCSource
+        alternate=EuropePMCSource()
+    recovery_audit={}
+    attempts=w.setdefault("missing_attempts",{})
     for field,kind in (("trial_ids","PRIMARY_STUDY"),("review_ids","PUBLISHED_REVIEW")):
         # Retrieve next page of actual source IDs; preserve all retrieved rows.
         offset=w.get(field+"_cursor",0)%max(1,len(j[field]))
-        ids=j[field][offset:offset+20]
+        page=j[field][offset:offset+20]
+        retry=sorted((p for p in w["missing"] if p in j[field]),key=lambda p:(attempts.get(p,0),p))[:3]
+        ids=list(dict.fromkeys([*retry,*page]))[:23]
         try:
-            found,diag=fetcher(client,ids)
+            found,diag=fetch_with_recovery(client,ids,fetcher=fetcher,alternate=alternate)
+            recovery_audit[field]=diag
             missing=sorted(set(ids)-set(found))
             w["missing"]=sorted((set(w["missing"])|set(missing))-set(found))
+            for pid in missing:attempts[pid]=attempts.get(pid,0)+1
+            for pid in found:attempts.pop(pid,None)
             for pid,row in found.items():
                 if kind=="PUBLISHED_REVIEW":
                     cue=j["methods"].get(pid,{}).get("date_cue")
@@ -174,7 +214,7 @@ def prepare_packet(state,client,*,fetcher=v2.fetch_rows,fulltext=None):
                 if kind=="PUBLISHED_REVIEW" and classify_review_search_hit(SearchRecord(row["source"],row["source_record_id"],row["title"],metadata=row["payload"].get("metadata",{})))!="CONFIRMED_REVIEW_CUE":
                     target="OTHER";row["payload"]["originally_requested_evidence_type"]="PUBLISHED_REVIEW"
                 append_rows(w,[row],target)
-            w[field+"_cursor"]=(offset+len(ids))%max(1,len(j[field]))
+            w[field+"_cursor"]=(offset+len(page))%max(1,len(j[field]))
         except Exception:
             w["missing"]=sorted(set(w["missing"])|set(ids))
     led=WorkspaceLedger(cid,w);c=candidate(cid,state["ledger"][cid])
@@ -204,7 +244,9 @@ def prepare_packet(state,client,*,fetcher=v2.fetch_rows,fulltext=None):
        "fulltext_source_calls":extraction["source_calls"],"blockers":blocked,
        "qualification_granted":False}
     w["last_snapshot"]=report["snapshot_sha256"]
-    return report,{"packet":packet,"raw_source_rows":list(w["rows"].values()),"extraction":extraction,"search_log":[asdict(x) for x in led.list_search_log(cid)],"candidate":asdict(c)}
+    report["exact_id_recoveries"]=sum(a["exact_recovered"] for d in recovery_audit.values() for a in d["alternate_attempts"])
+    w["last_exact_id_recovery"]=recovery_audit
+    return report,{"packet":packet,"raw_source_rows":list(w["rows"].values()),"extraction":extraction,"exact_id_recovery":recovery_audit,"search_log":[asdict(x) for x in led.list_search_log(cid)],"candidate":asdict(c)}
 
 def validation_admission():
     from scripts.academy_benchmark import audit_manifest
