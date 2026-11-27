@@ -22,7 +22,7 @@ def terms(value):
 def clean(value):
     s=str(value or "").strip()
     return s if 3<=len(s)<=85 and re.fullmatch(r"[\w ,/()'’+-]+",s) else ""
-def derive(rows,existing,*,year,limit=2,allow_single=False,specialty=None,diagnostic=None):
+def derive(rows,existing,*,year,limit=2,allow_single=False,specialty=None,diagnostic=None,exploratory=False):
     from .rct_first import own_rct,has,family_summary,explicit_comparison,CONTROLS
     from .pico_matching import _groups,_normalize
     known={(_normalize(p),_normalize(i)) for p,i,*_ in existing}
@@ -74,16 +74,21 @@ def derive(rows,existing,*,year,limit=2,allow_single=False,specialty=None,diagno
     for key,records in pool.items():
         families=family_summary(records)
         direct=any(explicit_comparison(r["title"],(canonical[key][1],),c) for r in records for c in CONTROLS if not has(c,canonical[key][1]))
-        if families["family_leads"]>=2 or (allow_single and families["family_leads"]==1 and direct):
-            ranked.append((key,families,records))
-            if families["family_leads"]==1:stats["single_direct_arm_anchors"]+=1
-    ranked.sort(key=lambda x:(-int(x[1]["family_leads"]>=2),-x[1]["registry_linked_families"],-min(x[1]["family_leads"],10),x[0]))
+        # Exploratory anchors initiate retrieval only. P/I must already be
+        # corroborated in an exact indexed original-trial title; no comparator
+        # or eligibility inferred. Preserve stricter ordinary route by default.
+        search_only=exploratory and families["family_leads"]==1 and not direct
+        if families["family_leads"]>=2 or (allow_single and families["family_leads"]==1 and direct) or search_only:
+            ranked.append((key,families,records,search_only))
+            if families["family_leads"]==1 and direct:stats["single_direct_arm_anchors"]+=1
+    ranked.sort(key=lambda x:(x[3],-int(x[1]["family_leads"]>=2),-x[1]["registry_linked_families"],-min(x[1]["family_leads"],10),x[0]))
     out=[];seen=set()
-    for key,families,records in ranked:
+    for key,families,records,search_only in ranked:
         if key[0] in seen:continue
         seen.add(key[0]);out.append({"pair":canonical[key],"family_cues":families["family_leads"],
             "source_reports":[{"title":r["title"],"record_id":r["source_record_id"],"url":r["payload"].get("url")} for r in records[:8]],
-            "scope":"TITLE_CORROBORATED_MESH_ANCHOR_NOT_VERIFIED_PICO"})
+            "scope":"EXPLORATORY_PI_SEARCH_ONLY" if search_only else "TITLE_CORROBORATED_MESH_ANCHOR_NOT_VERIFIED_PICO",
+            "qualification_granted":False})
         if len(out)>=limit:break
     if diagnostic is not None:diagnostic.update(stats)
     return out
