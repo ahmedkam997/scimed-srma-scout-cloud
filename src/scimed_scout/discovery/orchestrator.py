@@ -53,6 +53,7 @@ class ReviewDiscoveryOrchestrator:
         adaptive_retrieval: bool = False,
         adaptive_recovery_only: bool = False,
         strict_rct_minimum: int = 0,
+        scientific_verifier=None,
     ):
         self.ledger = ledger
         self.clients = {client.name: client for client in clients}
@@ -69,6 +70,7 @@ class ReviewDiscoveryOrchestrator:
         self.adaptive_retrieval = adaptive_retrieval
         self.adaptive_recovery_only = adaptive_recovery_only
         self.strict_rct_minimum = max(0,int(strict_rct_minimum))
+        self.scientific_verifier = scientific_verifier
 
     def run(
         self,
@@ -272,6 +274,12 @@ class ReviewDiscoveryOrchestrator:
                 (recover_only and previous_supplement.get("status")=="DEFERRED_BASE_SOURCE_FAILURE")):
             self._supplementary_search(candidate)
             candidate=self.ledger.get_candidate(candidate_id) or candidate
+        if self.strict_rct_minimum and recover_only and not (candidate.metadata or {}).get('v2_disagreement_recovery_attempted'):
+            from .rct_first import strict_candidate_audit
+            before=strict_candidate_audit(candidate,self.ledger.list_external_evidence(candidate_id,'PRIMARY_STUDY'))
+            if before.get('family_leads',0)>=self.strict_rct_minimum and before.get('joint_comparison_pico_family_leads',0)<self.strict_rct_minimum:
+                self._recover_joint_comparison(candidate,before)
+                candidate=self.ledger.get_candidate(candidate_id) or candidate
         prior_enrichment=(candidate.metadata or {}).get("registration_enrichment_audit") or {}
         if self.adaptive_search and (not prior_enrichment or (recover_only and prior_enrichment.get("remaining_report_routes",1)>0)):
             self._check_cancellation()
@@ -288,6 +296,42 @@ class ReviewDiscoveryOrchestrator:
             candidate=self.ledger.get_candidate(candidate_id) or candidate
             candidate.metadata={**(candidate.metadata or {}),"registry_result_reference_audit":registry_audit}
             self.ledger.upsert_candidate(candidate)
+        if self.strict_rct_minimum and recover_only and self.adaptive_search and not (candidate.metadata or {}).get("v2_focused_review_recovery"):
+            from .competitor_priority_v2 import focused_review_query
+            client=self.clients.get("PubMed")
+            query=focused_review_query(candidate)
+            if client is not None and query:
+                self._check_cancellation()
+                diagnostic={"query":query,"coverage_clearance_allowed":False}
+                try:
+                    result=client.search(query,limit=40)
+                    diagnostic.update(status=result.status.value,total=result.total_count,retrieved=len(result.records))
+                    for record in result.records:
+                        self._check_cancellation()
+                        cue=classify_review_search_hit(record)
+                        self._store_record(candidate_id,"PUBLISHED_REVIEW" if cue=="CONFIRMED_REVIEW_CUE" else "OTHER",
+                            record,query,"V2_FOCUSED_COMPETITOR_RECOVERY",classification=cue,originally_requested="PUBLISHED_REVIEW")
+                except Exception as exc:
+                    self._check_cancellation()
+                    diagnostic.update(status="ACCESS_FAILED",error_type=type(exc).__name__)
+                candidate=self.ledger.get_candidate(candidate_id) or candidate
+                candidate.metadata={**(candidate.metadata or {}),"v2_focused_review_recovery":diagnostic}
+                self.ledger.upsert_candidate(candidate)
+        if self.strict_rct_minimum and self.adaptive_search:
+            from .structured_extraction_v2 import collect as extract_leads,recover_pubmed_abstracts
+            pubmed=self.clients.get("PubMed")
+            from scimed_scout.sources.pubmed import PubMedSource
+            if isinstance(pubmed,PubMedSource) and pubmed.http.loader is None:
+                recovery=recover_pubmed_abstracts(self.ledger,candidate_id,pubmed,previous=(candidate.metadata or {}).get("v2_exact_pmid_recovery"),check=self._check_cancellation)
+                candidate=self.ledger.get_candidate(candidate_id) or candidate
+                candidate.metadata={**(candidate.metadata or {}),"v2_exact_pmid_recovery":recovery}
+                self.ledger.upsert_candidate(candidate)
+            prior=(candidate.metadata or {}).get("structured_extraction_v2")
+            if not prior or recover_only:
+                extracted=extract_leads(self.ledger.list_external_evidence(candidate_id,"PRIMARY_STUDY"),previous=prior,check=self._check_cancellation)
+                candidate=self.ledger.get_candidate(candidate_id) or candidate
+                candidate.metadata={**(candidate.metadata or {}),"structured_extraction_v2":extracted}
+                self.ledger.upsert_candidate(candidate)
         logs = self.ledger.list_search_log(candidate_id)
         coverage = evaluate_coverage(logs, policy)
         evidence = discovery_evidence_snapshot(self.ledger, candidate_id)
@@ -295,6 +339,28 @@ class ReviewDiscoveryOrchestrator:
         pico_audit, pico_records = assess_pico(candidate, primary_records)
         evidence = replace(evidence, pico_audit=pico_audit)
         pending = list(coverage.blockers)
+        # V2 can only use operator-trusted adjudication. A bibliographic cue,
+        # model output or metadata flag cannot clear the independent RCT gate.
+        if self.strict_rct_minimum and self.scientific_verifier is not None:
+            from .scientific_verification_v2 import snapshot
+            try:
+                verified=self.scientific_verifier(snapshot(self.ledger,candidate),coverage,policy)
+            except (OSError,ValueError,TypeError,KeyError) as exc:
+                verified={"qualification_granted":False,"blockers":["trusted adjudication unavailable: "+type(exc).__name__]}
+            candidate.metadata={**(candidate.metadata or {}),"scientific_verification_v2":verified}
+            self.ledger.upsert_candidate(candidate)
+            gate=verified.get("gate_result") or {}
+            if (coverage.complete and verified.get("qualification_granted") is True
+                    and verified.get("confirmed_independent_rct_count",0)>=max(7,self.strict_rct_minimum)
+                    and gate.get("all_discovery_gates_passed") is True and not gate.get("unresolved_type_a")
+                    and gate.get("decision")=="QUALIFIED — FIRST-CHOICE REVIEW TOPIC"):
+                candidate.metadata={**candidate.metadata,"discovery_gate_inputs":verified["scorecard"],"discovery_scoring_preliminary_only":False}
+                self.ledger.upsert_candidate(candidate)
+                self.ledger.set_candidate_status(candidate_id,CandidateStatus.QUALIFIED)
+                self._append_decision(candidate,decision=gate["decision"],reason="Trusted dual-reviewer V2 adjudication and all gates passed",
+                    payload={"scope":"SCIENTIFIC_VERIFICATION_V2","scientific_verification":verified,"final_gate_result":gate})
+                return DiscoveryCandidateResult(candidate_id,ranking_score,coverage,evidence,[],gate["decision"],CandidateStatus.QUALIFIED,gate)
+            pending.extend("TYPE-A: V2: "+x for x in verified.get("blockers",[]))
         if self.require_pico_signals and evidence.conservative_family_lead_count >= MIN_DISCOVERY_STUDIES and pico_audit["pico_design_family_leads"] < MIN_DISCOVERY_STUDIES:
             pending.append("TYPE-A: insufficient source-linked PICO/design cues for the minimum family-lead count; unresolved records need title/abstract and full-text assessment")
         strict_ready=True
@@ -303,11 +369,11 @@ class ReviewDiscoveryOrchestrator:
             pending.append(f"TYPE-A: independent eligibility, exact arms and extractable outcomes for at least {self.strict_rct_minimum} RCTs require independent adjudication; bibliography is not a final GO")
             from .rct_first import strict_candidate_audit
             strict_audit=strict_candidate_audit(candidate,primary_records)
-            strict_ready=min(strict_audit.get('family_leads',0),pico_audit['pico_design_family_leads'])>=self.strict_rct_minimum
+            strict_ready=strict_audit.get('joint_comparison_pico_family_leads',0)>=self.strict_rct_minimum
             candidate.metadata={**(candidate.metadata or {}),'rct_first_final_audit':strict_audit}
             self.ledger.upsert_candidate(candidate)
             if not strict_ready:
-                pending.append(f'TYPE-A: fewer than {self.strict_rct_minimum} comparison-linked RCT family cues in bounded retrieval; not an eligibility exclusion')
+                pending.append(f'TYPE-A: fewer than {self.strict_rct_minimum} joint comparison and PICO/design RCT family cues in bounded retrieval; not an eligibility exclusion')
         scoring_records = pico_records if self.require_pico_signals else primary_records
         reviews = self.ledger.list_external_evidence(candidate_id, "PUBLISHED_REVIEW")
         registrations = self.ledger.list_external_evidence(candidate_id, "REGISTRATION")
@@ -671,6 +737,32 @@ class ReviewDiscoveryOrchestrator:
             candidate.metadata={**((self.ledger.get_candidate(candidate.candidate_id) or candidate).metadata or {}),"source_pagination_checkpoints":saved_pagination}
             self.ledger.upsert_candidate(candidate)
 
+    def _recover_joint_comparison(self,candidate,before):
+        from .rct_first import comparison_query,strict_candidate_audit
+        client=self.clients.get("PubMed")
+        info=(candidate.metadata or {}).get("rct_first") or {}
+        pair=info.get("pair")
+        if client is None or not isinstance(pair,(list,tuple)) or len(pair)!=4:return
+        self._check_cancellation()
+        query=comparison_query(pair,candidate.comparator_reference)
+        diagnostic={"query":query,"before_joint_cues":before.get("joint_comparison_pico_family_leads",0),"coverage_clearance_allowed":False,"limit":40}
+        try:
+            result=client.search(query,limit=40)
+            diagnostic.update(status=result.status.value,retrieved=len(result.records),total=result.total_count)
+            for record in result.records:
+                self._check_cancellation()
+                cue=classify_review_search_hit(record)
+                self._store_record(candidate.candidate_id,"PUBLISHED_REVIEW" if cue=="CONFIRMED_REVIEW_CUE" else "PRIMARY_STUDY",
+                    record,query,"V2_JOINT_PICO_RECOVERY",classification=cue,originally_requested="PRIMARY_STUDY")
+        except Exception as exc:
+            self._check_cancellation()
+            diagnostic.update(status="ACCESS_FAILED",error_type=type(exc).__name__)
+        candidate=self.ledger.get_candidate(candidate.candidate_id) or candidate
+        after=strict_candidate_audit(candidate,self.ledger.list_external_evidence(candidate.candidate_id,"PRIMARY_STUDY"))
+        diagnostic["after_joint_cues"]=after.get("joint_comparison_pico_family_leads",0)
+        candidate.metadata={**(candidate.metadata or {}),"v2_disagreement_recovery_attempted":True,"v2_joint_recovery_audit":diagnostic}
+        self.ledger.upsert_candidate(candidate)
+
     def _adaptive_pubmed_retrieval(self,candidate,plan,limit_per_query):
         client=self.clients.get("PubMed")
         if client is None:return
@@ -742,7 +834,7 @@ class ReviewDiscoveryOrchestrator:
         query: str, purpose: str, *,
         classification: str = "", originally_requested: str = "",
     ) -> None:
-        existing = next((item for item in self.ledger.list_external_evidence(candidate_id, evidence_type) if str(item.get("source_record_id") or "") == str(record.record_id)), None)
+        existing = next((item for item in self.ledger.list_external_evidence(candidate_id, evidence_type) if item.get("source")==record.source and str(item.get("source_record_id") or "") == str(record.record_id)), None)
         previous = dict((existing or {}).get("payload") or {})
         previous_metadata = previous.get("metadata") if isinstance(previous.get("metadata"), dict) else {}
         new_metadata = dict(record.metadata) if isinstance(record.metadata, dict) else {}

@@ -9,7 +9,7 @@ from scimed_scout.domain import CandidateStatus, SourceStatus
 from .models import CandidateRecord, DecisionRecord, ProjectRecord, SearchLogRecord, utc_now
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class SQLiteLedger:
@@ -82,7 +82,7 @@ class SQLiteLedger:
                 title TEXT NOT NULL DEFAULT '',
                 payload_json TEXT NOT NULL DEFAULT '{}',
                 updated_at TEXT NOT NULL,
-                PRIMARY KEY (candidate_id, evidence_type, source_record_id)
+                PRIMARY KEY (candidate_id, evidence_type, source, source_record_id)
             );
 
             CREATE TABLE IF NOT EXISTS search_log (
@@ -127,6 +127,32 @@ class SQLiteLedger:
             CREATE INDEX IF NOT EXISTS idx_decision_candidate ON decision_history(candidate_id);
             """
         )
+        # SQLite cannot alter a primary key in place. Rebuild atomically
+        # and preserve every currently stored row, including timestamps.
+        pk=[r["name"] for r in sorted(self.connection.execute("PRAGMA table_info(external_evidence)").fetchall(),key=lambda r:r["pk"]) if r["pk"]]
+        if pk==["candidate_id","evidence_type","source_record_id"]:
+            with self.connection:
+                self.connection.execute("BEGIN IMMEDIATE")
+                self.connection.execute("ALTER TABLE external_evidence RENAME TO external_evidence_v3")
+                self.connection.execute("""CREATE TABLE external_evidence (
+                    candidate_id TEXT NOT NULL REFERENCES candidates(candidate_id) ON DELETE CASCADE,
+                    evidence_type TEXT NOT NULL,source_record_id TEXT NOT NULL,source TEXT NOT NULL DEFAULT '',
+                    title TEXT NOT NULL DEFAULT '',payload_json TEXT NOT NULL DEFAULT '{}',updated_at TEXT NOT NULL,
+                    PRIMARY KEY(candidate_id,evidence_type,source,source_record_id))""")
+                self.connection.execute("INSERT INTO external_evidence SELECT * FROM external_evidence_v3")
+                old=self.connection.execute("SELECT COUNT(*) FROM external_evidence_v3").fetchone()[0]
+                new=self.connection.execute("SELECT COUNT(*) FROM external_evidence").fetchone()[0]
+                if old!=new:raise RuntimeError("evidence migration row count mismatch")
+                self.connection.execute("DROP TABLE external_evidence_v3")
+                self.connection.execute("CREATE INDEX IF NOT EXISTS idx_external_evidence_candidate ON external_evidence(candidate_id,evidence_type)")
+                # Legacy rows may already have been overwritten; mark affected
+                # candidate histories, never represent migration as recovery.
+                self.connection.execute("INSERT OR IGNORE INTO schema_meta(key,value) VALUES('legacy_evidence_collision_risk','1')")
+                self.connection.execute("CREATE TABLE IF NOT EXISTS legacy_evidence_candidates(candidate_id TEXT PRIMARY KEY REFERENCES candidates(candidate_id) ON DELETE CASCADE)")
+                self.connection.execute("INSERT OR IGNORE INTO legacy_evidence_candidates SELECT DISTINCT candidate_id FROM external_evidence")
+        elif pk!=["candidate_id","evidence_type","source","source_record_id"]:
+            raise RuntimeError("unexpected external_evidence primary key")
+        self.connection.execute("CREATE TABLE IF NOT EXISTS legacy_evidence_candidates(candidate_id TEXT PRIMARY KEY REFERENCES candidates(candidate_id) ON DELETE CASCADE)")
         self.connection.execute(
             "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', ?)",
             (str(SCHEMA_VERSION),),
@@ -251,7 +277,7 @@ class SQLiteLedger:
             """
             INSERT INTO external_evidence(candidate_id,evidence_type,source_record_id,source,title,payload_json,updated_at)
             VALUES(?,?,?,?,?,?,?)
-            ON CONFLICT(candidate_id,evidence_type,source_record_id) DO UPDATE SET
+            ON CONFLICT(candidate_id,evidence_type,source,source_record_id) DO UPDATE SET
                 source=excluded.source,title=excluded.title,payload_json=excluded.payload_json,updated_at=excluded.updated_at
             """,
             (candidate_id, evidence_type, source_record_id, source, title, _dump(payload or {}), utc_now()),
@@ -261,12 +287,12 @@ class SQLiteLedger:
     def list_external_evidence(self, candidate_id: str, evidence_type: str | None = None) -> list[dict[str, Any]]:
         if evidence_type is None:
             rows = self.connection.execute(
-                "SELECT * FROM external_evidence WHERE candidate_id=? ORDER BY evidence_type, source_record_id",
+                "SELECT * FROM external_evidence WHERE candidate_id=? ORDER BY evidence_type, source_record_id, source",
                 (candidate_id,),
             ).fetchall()
         else:
             rows = self.connection.execute(
-                "SELECT * FROM external_evidence WHERE candidate_id=? AND evidence_type=? ORDER BY source_record_id",
+                "SELECT * FROM external_evidence WHERE candidate_id=? AND evidence_type=? ORDER BY source_record_id, source",
                 (candidate_id, evidence_type.strip().upper()),
             ).fetchall()
         return [{
@@ -278,6 +304,13 @@ class SQLiteLedger:
             "payload": _load(row["payload_json"], {}),
             "updated_at": row["updated_at"],
         } for row in rows]
+
+    def evidence_identity_legacy_risk(self,candidate_id: str) -> bool:
+        return self.connection.execute("SELECT 1 FROM legacy_evidence_candidates WHERE candidate_id=?",(candidate_id,)).fetchone() is not None
+
+    def mark_legacy_evidence(self,candidate_id: str) -> None:
+        self.connection.execute("INSERT OR IGNORE INTO legacy_evidence_candidates(candidate_id) VALUES(?)",(candidate_id,))
+        self.connection.commit()
 
     def append_search_log(self, record: SearchLogRecord) -> int:
         cursor = self.connection.execute(

@@ -304,13 +304,26 @@ def comparison_rows(pair,rows,comparator=None,year=None,extra_controls=()):
                 buckets[control].append({**r,"comparison_excerpt":matches[0][:500]})
     return all_rows,buckets
 
+def joint_cue_audit(candidate,rows,exact):
+    from .pico_matching import assess_pico
+    def ident(r):return (str(r.get("source") or ""),str(r.get("source_record_id") or ""))
+    ids={ident(r) for r in exact}
+    # _groups is a bibliographic grouping heuristic, never adjudication.
+    variants=[r for g in _groups(rows) if any(ident(r) in ids for r in g["records"]) for r in g["records"]]
+    audit,matched=assess_pico(candidate,variants)
+    return {"joint_comparison_pico_family_leads":audit["pico_design_family_leads"],
+        "joint_comparison_pico_reports":audit["pico_design_report_leads"],
+        "joint_cue_scope":"SAME_REPORT_GROUP_COMPARISON_AND_PICO_DESIGN_CUES_ONLY",
+        "joint_cues_confirm_eligibility":False}
+
 def strict_candidate_audit(candidate,rows):
     info=(candidate.metadata or {}).get("rct_first") or {}
     raw=info.get("pair")
     if not isinstance(raw,(tuple,list)) or len(raw)!=4:return {"family_leads":0,"confirmed_independent_eligible_trials":None}
     all_rows,buckets=comparison_rows(raw,rows,candidate.comparator_reference)
     exact=buckets.get(candidate.comparator_reference,[])
-    return {**family_summary(exact),"population_intervention_family_leads":family_summary(all_rows)["family_leads"],
+    joint=joint_cue_audit(candidate,rows,exact)
+    return {**family_summary(exact),**joint,"population_intervention_family_leads":family_summary(all_rows)["family_leads"],
             "comparison_cues":[{"title":r["title"],"source":r["source"],"record_id":r["source_record_id"],
             "excerpt":r["comparison_excerpt"],"url":r["payload"].get("url"),"registration_ids":sorted(registration_signals(r))} for r in exact],
             "minimum":MIN_FAMILIES,"scope":"BIBLIOGRAPHIC_COMPARISON_CUES_ONLY"}

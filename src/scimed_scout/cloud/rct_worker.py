@@ -76,7 +76,12 @@ def recovery_reasons(result,metadata):
     if not result.coverage.complete:
         return ["MANDATORY_SOURCE_COVERAGE"]
     strict=metadata.get("rct_first_final_audit") or {}
-    if strict.get("family_leads",0)<MIN_FAMILIES or result.evidence.pico_audit.get("pico_design_family_leads",0)<MIN_FAMILIES:
+    joint=strict.get("joint_comparison_pico_family_leads",min(strict.get("family_leads",0),result.evidence.pico_audit.get("pico_design_family_leads",0)))
+    if strict.get("family_leads",0)<MIN_FAMILIES or joint<MIN_FAMILIES:
+        # Disagreement is actionable, not scientific exclusion. Avoid endless
+        # retries: one bounded recovery pass after the initial adaptive audit.
+        if strict.get("family_leads",0)>=MIN_FAMILIES and not metadata.get("v2_disagreement_recovery_attempted"):
+            return ["PICO_COMPARISON_DISAGREEMENT"]
         return []
     reasons=[]
     if any("competing published reviews are not fully assessed" in p or "competing review registrations are not fully assessed" in p or "limited competitor assessment scope" in p for p in result.pending):
@@ -119,6 +124,9 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
     else:
         store.update_job(job.id,stage="RCT_EVIDENCE_TRIAGE",progress=20,message=f"Found {len(candidates)} source-linked comparison question(s); selecting up to three for deep verification",
             result_json={"checkpoint":{"stage":"RCT_EVIDENCE_TRIAGE","verified":False,"candidates":drafts,"rct_first":seed}})
+    from scimed_scout.discovery.scientific_verification_v2 import TrustedDirectory
+    try:trusted_verifier=TrustedDirectory.from_env()
+    except (OSError,ValueError,TypeError):trusted_verifier=None
     try:provider=BoundedProvider(router_factory())
     except (RuntimeError,ValueError):provider=None
     clients=clients if clients is not None else build_default_source_clients()
@@ -155,7 +163,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     result=restore_audit(ledger,previous,job.id,c.candidate_id)
                     restored_count+=1
                     restored=ledger.get_candidate(c.candidate_id)
-                    if result.candidate_status!=CandidateStatus.QUALIFIED and not recovery_reasons(result,restored.metadata or {}):
+                    if trusted_verifier is None and result.candidate_status!=CandidateStatus.QUALIFIED and not recovery_reasons(result,restored.metadata or {}):
                         checked.append(result);reused_without_recheck+=1;continue
                     recovery_count+=1
                     # Retry restores source records and cached assessments rather
@@ -178,7 +186,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                 scoring=ReservedScoring(provider) if provider else None
                 engine=ReviewDiscoveryOrchestrator(ledger,clients,novelty_service=novelty,scoring_service=scoring,
                     cancellation_check=check,progress_callback=lambda pct,stage,msg:store.update_job(job.id,message=f"Topic {i}/{len(selected)}: {msg}") if pct==-1 else None,require_pico_signals=True,optimize_literature_queries=True,adaptive_search=True,
-                    adaptive_retrieval=True,strict_rct_minimum=MIN_FAMILIES)
+                    adaptive_retrieval=True,strict_rct_minimum=MIN_FAMILIES,scientific_verifier=trusted_verifier)
                 result=engine.verify_candidate(c.candidate_id,ranking_score=rank.score,limit_per_query=min(12,job.limit_per_query),recover_only=bool(previous))
                 assessed=ledger.get_candidate(c.candidate_id)
                 assessed.metadata["opportunity_mcda"]=profile(assessed,ledger.list_external_evidence(c.candidate_id,"PUBLISHED_REVIEW"),opportunity=assessed.metadata.get("discovery_review_opportunity"),scorecard=assessed.metadata.get("discovery_gate_inputs"),primary_records=ledger.list_external_evidence(c.candidate_id,"PRIMARY_STUDY"))
@@ -195,6 +203,8 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
                     "adaptive_retrieval_audit":m.get("adaptive_retrieval_audit") or [],"adaptive_search_audit":m.get("adaptive_search_audit") or {},"fulltext_search_date_resolutions":m.get("discovery_fulltext_search_date_resolutions") or [],
                     "competitor_audit":{"published_reviews_discovered":m.get("discovery_competitor_records_discovered",0),
                     "unassessed_reviews":m.get("discovery_unassessed_review_count"),"unassessed_registrations":m.get("discovery_unassessed_registration_count"),"total_pending_reviews":m.get("discovery_pending_review_count"),"total_pending_registrations":m.get("discovery_pending_registration_count")},
+                    "scientific_verification_v2":m.get("scientific_verification_v2") or {},
+                    "joint_comparison_recovery":m.get("v2_joint_recovery_audit") or {},
                     "scorecard":m.get("discovery_gate_inputs") or {},"scoring_deferred_reason":m.get("discovery_scoring_deferred_reason",""),"registry_result_reference_audit":m.get("registry_result_reference_audit") or {},"registration_enrichment_audit":m.get("registration_enrichment_audit") or {},"opportunity_mcda":m.get("opportunity_mcda") or {}})
             recovery_queue=[{"candidate_id":x.candidate_id,"reasons":recovery_reasons(x,ledger.get_candidate(x.candidate_id).metadata or {})} for x in checked]
             recovery_queue=[x for x in recovery_queue if x["reasons"]]
@@ -202,7 +212,7 @@ def process_rct_job(job,store,*,collector=collect,clients=None,router_factory=Ad
             run=DiscoveryRunResult(job.id,ranked,checked,qualified[:desired],qualified,desired)
             package=build_discovery_review_package(ledger,run)
             package["topic_review_prompt"] += "\n\n"+PROMPT
-            package["review_instructions"]="RCT evidence-first discovery shortlist: no automatically confirmed independent trials. Assess the dossiers independently before registration.\n"+PROMPT
+            package["review_instructions"]=("V2 qualified options are based on operator-trusted independent adjudication; review source data and synthesis assumptions before registration. Provisional options are not qualified.\n" if qualified else "RCT evidence-first discovery shortlist: no automatically confirmed independent trials. Assess the dossiers independently before registration.\n")+PROMPT
             package["weighted_assessment_comparison"]=compare_assessments([(c.candidate_id,(ledger.get_candidate(c.candidate_id).metadata or {})["opportunity_mcda"]["assessment"]) for c in candidates])
             ids={x.candidate_id for x in checked}
             package["unverified_generated_options"]=[_draft(c) for c in candidates if c.candidate_id not in ids]
