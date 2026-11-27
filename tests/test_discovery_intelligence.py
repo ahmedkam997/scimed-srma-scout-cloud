@@ -92,3 +92,25 @@ def test_explicit_receive_clause_with_numeric_population():
     assert not explicit_comparison(methods,("empagliflozin",),"placebo")
     shared="We randomly assigned 120 patients with heart failure and a left ventricular ejection fraction of more than 40% to receive dapagliflozin or dapagliflozin plus placebo."
     assert not explicit_comparison(shared,("dapagliflozin",),"placebo")
+
+def test_accumulate_exact_comparison_pages_without_duplicate_family_credit():
+    from scripts.phase3_family_methods import as_row
+    scope={"population":"hypertension","intervention":"renal denervation","comparator":"sham"}
+    def trial(pid,nct):
+        return as_row(pid,{"pubmed_efetch_title":"Renal denervation versus sham in hypertension: a randomized trial",
+            "publication_year":2023,"pubmed_efetch_identity":"EXACT_PMID","pubtype":["Randomized Controlled Trial"],
+            "trial_registration_ids":[nct] if nct else []})
+    first={str(i):trial(str(i),"NCT%08d"%i) for i in range(1,5)}
+    second={str(i):trial(str(i),"NCT%08d"%i) for i in range(5,8)}
+    second["8"]=trial("8","NCT00000001")
+    second["9"]=trial("9",None)
+    j={}
+    a=v2.accumulate_comparison_audit(j,v2.audit_recovered_comparisons(scope,first,list(first)),first,scope)
+    assert a["distinct_registered_family_cues"]==4 and not a["shortlist_signal"]
+    b=v2.accumulate_comparison_audit(j,v2.audit_recovered_comparisons(scope,second,list(second)),second,scope)
+    assert b["distinct_registered_family_cues"]==7 and b["shortlist_signal"]
+    assert b["distinct_matched_reports"]==9 and b["withheld_reports"]==1
+    assert b["qualification_granted"] is False and b["confirmed_independent_eligible_trials"] is None
+    conflicting={"7":trial("7","NCT00009999")}
+    c=v2.accumulate_comparison_audit(j,v2.audit_recovered_comparisons(scope,conflicting,list(conflicting)),conflicting,scope)
+    assert c["distinct_registered_family_cues"]==6 and not c["shortlist_signal"]
