@@ -126,6 +126,31 @@ def fetch_rows(client,ids):
     found,diag=parse_efetch(_fetch(client,ids),ids)
     return {p:as_row(p,m) for p,m in found.items()},diag
 
+def audit_recovered_comparisons(row,found,requested):
+    """Reapply the existing PICO/arm cue gate to one exact PMID page.
+    Never sum family counts across pages or treat registry linkage as eligibility.
+    """
+    from scimed_scout.discovery.rct_first import ANCHORS, comparison_rows, family_summary, MIN_FAMILIES
+    from scimed_scout.discovery.competitor_records import identifiers
+    pop,inter,comp=(row.get(k) for k in ("population","intervention","comparator"))
+    if not all(isinstance(x,str) and x.strip() for x in (pop,inter,comp)):
+        return {"status":"SCOPE_UNRESOLVED","family_leads":None,"qualification_granted":False}
+    pair=next((x for group in ANCHORS.values() for x in group if x[:2]==(pop,inter)),(pop,inter,(),()))
+    exact=[]
+    for pid,r in found.items():
+        if pid not in requested or r.get("source")!="PubMed":continue
+        if r.get("payload",{}).get("metadata",{}).get("pubmed_efetch_identity")!="EXACT_PMID":continue
+        if identifiers(r)["pmid"]!={pid}:continue
+        exact.append(r)
+    _,buckets=comparison_rows(pair,exact,comparator=comp)
+    matched=buckets.get(comp,[])
+    audit=family_summary(matched)
+    return {"status":"BOUNDED_EXACT_PAGE","family_leads":audit["family_leads"],
+        "source_pmids":sorted(str(x["source_record_id"]) for x in matched),
+        "registry_linked_families":audit["registry_linked_families"],
+        "shortlist_signal":audit["family_leads"]>=MIN_FAMILIES,
+        "confirmed_independent_eligible_trials":None,"qualification_granted":False}
+
 def recover(state,kind,client,*,searcher=search,fetcher=fetch_rows,resolver=None):
     ext=extend(state)
     selected=choose_job(state,kind)
@@ -174,6 +199,18 @@ def recover(state,kind,client,*,searcher=search,fetcher=fetch_rows,resolver=None
                 # Keep compact source-linked cues even after short-lived artifacts expire.
                 memory[pid]={"registry":links.get(pid),"role_cues":x["roles"]["cues"],
                              "ratio_count":len(x["ratios"]),"count_cues":len(x["counts"])}
+            comparison_audit=audit_recovered_comparisons(row,found,ids)
+            raw["comparison_audit"]=comparison_audit
+            out["comparison_audit"]=comparison_audit
+            j["latest_comparison_audit"]=comparison_audit
+            # Only a matched exact comparison page can raise the bibliographic
+            # triage priority. Keep all scientific qualification gates intact.
+            if comparison_audit.get("shortlist_signal") and not row.get("shortlist_cue"):
+                row["family_leads"]=comparison_audit["family_leads"]
+                row["shortlist_cue"]=True
+                row["shortlist_basis"]="RECOVERED_BIBLIOGRAPHIC_PAGE_ONLY"
+                row["qualification_granted"]=False
+                out["recovery_shortlist_signal_added"]=True
             j["family_audits"]+=1
         else:
             from scimed_scout.discovery.open_access_dates import OpenAccessSearchDateResolver
