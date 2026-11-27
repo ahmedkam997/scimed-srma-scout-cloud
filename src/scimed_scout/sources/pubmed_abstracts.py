@@ -43,7 +43,10 @@ def parse_efetch(raw,expected):
         chemicals=[_text(c) for c in med.findall("ChemicalList/Chemical/NameOfSubstance") if _text(c)]
         pmc_ids={_text(x).upper() for x in node.findall("PubmedData/ArticleIdList/ArticleId") if x.get("IdType") in ("pmc","pmcid") and re.fullmatch(r"PMC\d{4,12}",_text(x),re.I)}
         doi_ids={_text(x).casefold() for x in node.findall("PubmedData/ArticleIdList/ArticleId") if x.get("IdType")=="doi" and re.fullmatch(r"10\.\d{4,9}/[^\s<>]+",_text(x))}
-        result[pmid]={"doi":next(iter(doi_ids)) if len(doi_ids)==1 else "", "pmcid":next(iter(pmc_ids)) if len(pmc_ids)==1 else "", "abstractText":"\n".join(chunks),"pubtype":types,"trial_registration_ids":sorted(set(accessions)), "mesh_headings":mesh,"chemical_names":chemicals,
+        # Use the publication year, never the indexing or retrieval year.
+        year=_text(article.find("Journal/JournalIssue/PubDate/Year"))
+        publication_year=int(year) if re.fullmatch(r"[12]\d{3}",year) else None
+        result[pmid]={"publication_year":publication_year,"doi":next(iter(doi_ids)) if len(doi_ids)==1 else "", "pmcid":next(iter(pmc_ids)) if len(pmc_ids)==1 else "", "abstractText":"\n".join(chunks),"pubtype":types,"trial_registration_ids":sorted(set(accessions)), "mesh_headings":mesh,"chemical_names":chemicals,
             "pubmed_efetch_title":_text(article.find("ArticleTitle")),"pubmed_efetch_identity":"EXACT_PMID"}
     for pmid in duplicates:result.pop(pmid,None)
     return result,{"unexpected_pmids":unexpected,"ambiguous_pmids":len(duplicates)}
