@@ -85,10 +85,20 @@ def ingest_recovery(state,report,raw):
     if cid not in ext["packets"] and len(ext["packets"])>=MAX_PACKETS:return
     w=workspace(state,cid)
     result=raw.get("search",{})
+    # Preserve exact EFetch and full-text registration provenance before
+    # adding thinner search hits, even if the search failed on this cycle.
+    recovered=set()
+    if report["task"]=="families":
+        from scimed_scout.discovery.competitor_records import identifiers
+        for r in raw.get("recovered_rows",[]):
+            pid=str(r.get("source_record_id",""))
+            if r.get("source")!="PubMed" or r.get("payload",{}).get("metadata",{}).get("pubmed_efetch_identity")!="EXACT_PMID" or identifiers(r)["pmid"]!={pid} or len(identifiers(r)["doi"])>1:continue
+            append_rows(w,[r],"PRIMARY_STUDY");recovered.add(pid)
     if not result.get("query"):return
     from scimed_scout.discovery.evidence_classification import classify_review_search_hit
     from scimed_scout.sources.base import SearchRecord
     for r in result.get("rows",[]):
+        if report["task"]=="families" and r.get("source")=="PubMed" and str(r.get("source_record_id")) in recovered:continue
         kind="PRIMARY_STUDY" if report["task"]=="families" else "PUBLISHED_REVIEW"
         if kind=="PUBLISHED_REVIEW":
             cue=classify_review_search_hit(SearchRecord(r["source"],r["source_record_id"],r["title"],metadata=r.get("payload",{}).get("metadata",{})))
