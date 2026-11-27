@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
-      WORKER_REF: '1328c5f2128a69fc7e102500266108d9e9668897'
+      WORKER_REF: '0eaf2aae2579e0a481cb4c56b7b5df08331a5882'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -29,8 +29,9 @@ jobs:
       - uses: actions/setup-python@v6
         with: {python-version: '3.12'}
       - run: python -m pip install -e '.[dev]'
-      - run: python -m pytest -q tests/test_autonomous_worker.py tests/test_autonomous_worker_v2.py
+      - run: python -m pytest -q tests/test_autonomous_worker.py tests/test_autonomous_worker_v2.py tests/test_autonomous_scientist.py
       - name: Restore verified checkpoint from previous successful scheduled cycle
+        id: restore
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -41,13 +42,37 @@ jobs:
             [[ "$prior" =~ ^[0-9]+$ ]]
             gh run download "$prior" --repo "$GITHUB_REPOSITORY" --name scimed-autonomous-checkpoint --dir previous
           else
-            # One-time bootstrap from the independently executed V2 validation checkpoint.
-            gh api "repos/$GITHUB_REPOSITORY/actions/runs/45967932306" | jq -e --arg repo "$GITHUB_REPOSITORY" '.head_repository.full_name == $repo and .head_sha == "1328c5f2128a69fc7e102500266108d9e9668897" and .conclusion == "success"' >/dev/null
-            gh run download 45967932306 --repo "$GITHUB_REPOSITORY" --name autonomous-worker-v2-validation --dir previous
-            cp previous/learning-test/worker-state.json previous/worker-state.json
+            # One-time bootstrap from verified integrated V10 validation.
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/45971778309" | jq -e --arg repo "$GITHUB_REPOSITORY" --arg ref "$WORKER_REF" '.head_repository.full_name == $repo and .head_sha == $ref and .conclusion == "success"' >/dev/null
+            gh run download 45971778309 --repo "$GITHUB_REPOSITORY" --name autonomous-scientist-validation --dir previous
+            cp previous/audit-cycle/worker-state.json previous/worker-state.json
           fi
           test -s previous/worker-state.json
-          python -c 'from pathlib import Path; from scripts.scimed_autonomous_worker import load; from scripts.scimed_autonomous_worker_v2 import SCHEDULE; s=load(Path("previous/worker-state.json")); print("RESTORED_CYCLES",s["cycles"],"NEXT_TASK",SCHEDULE[s["cycles"]%len(SCHEDULE)])'
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from scripts.scimed_autonomous_worker import load
+          from scripts.scimed_autonomous_scientist import SCHEDULE,choose,extension
+          state=load(Path("previous/worker-state.json"))
+          task=SCHEDULE[state["cycles"]%len(SCHEDULE)]
+          print("RESTORED_CYCLES",state["cycles"],"NEXT_TASK",task)
+          requires=False
+          if task=="registry":
+              cid=choose(state,"registry")
+              if cid:
+                  routes=extension(state)["packets"].get(cid,{}).get("registry_routes",{})
+                  source=min(("ClinicalTrials.gov","Europe PMC","OSF Registries","PROSPERO"),key=lambda name:(routes.get(name,{}).get("cycle",-1000),name))
+                  requires=source=="PROSPERO"
+          with open(os.environ["GITHUB_OUTPUT"],"a") as f:
+              f.write("prospero="+str(requires).lower()+"\n")
+          PY
+      - uses: actions/setup-node@v6
+        if: steps.restore.outputs.prospero == 'true'
+        with: {node-version: '22'}
+      - name: Install pinned read-only PROSPERO adapter when needed
+        if: steps.restore.outputs.prospero == 'true'
+        continue-on-error: true
+        run: bash scripts/install_prospero_cli.sh
       - name: Execute bounded adaptive research cycle
         env:
           NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
@@ -57,7 +82,7 @@ jobs:
           SCIMED_FREE_GEMINI_API_KEY: ${{ secrets.SCIMED_FREE_GEMINI_API_KEY }}
           SCIMED_FREE_GROQ_ATTESTED: ${{ vars.SCIMED_FREE_GROQ_ATTESTED }}
           SCIMED_FREE_GEMINI_ATTESTED: ${{ vars.SCIMED_FREE_GEMINI_ATTESTED }}
-        run: python -m scripts.scimed_autonomous_worker_v2 --checkpoint previous/worker-state.json --advisory
+        run: python -m scripts.scimed_autonomous_scientist --checkpoint previous/worker-state.json --advisory
       - name: Validate checkpoint and publish bounded summary
         run: |
           python - <<'PY'
@@ -69,11 +94,12 @@ jobs:
           assert new["cycles"]==old["cycles"]+1
           assert Path("worker-output/worker-state.json").stat().st_size<=8388608
           assert new["v2"]["schema"]==2 and new["v2"]["policy"]["production_approved"] is False
+          assert new["scientist"]["schema"]==1
           r=json.loads(Path("worker-output/report.json").read_text())
           assert r["qualification_granted"] is False and r["first_choice_count"]==0
           with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
               f.write(f'Cycle {new["cycles"]}: {r["task"]}. Coverage/status: {r.get("source_status",r.get("coverage",r.get("status","RECORDED")))}. No scientific qualification.\n')
-              f.write('Task counts: '+json.dumps(new['v2']['task_counts'])+'\n')
+              f.write('Task counts: '+json.dumps(new['scientist']['task_counts'])+'\n')
           PY
       - uses: actions/upload-artifact@v6
         with:
