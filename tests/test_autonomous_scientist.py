@@ -83,3 +83,44 @@ def test_public_packet_definitive_status_refused(tmp_path):
     log=asdict(s.WorkspaceLedger(CID,w).list_search_log(CID)[0]);log["status"]="SEARCHED_POSITIVE"
     raw={"candidate":asdict(s.candidate(CID,x["ledger"][CID])),"packet":p,"raw_source_rows":[],"search_log":[log]}
     with pytest.raises(ValueError):import_packet(raw,tmp_path/"refuse.db")
+
+def test_private_update_gate_preserves_real_thresholds_synthetic_only(tmp_path,monkeypatch):
+    # Reuse original isolated fixture; never store keys or approvals in a workflow artifact.
+    from test_scientific_verification_v2 import make_ledger,make_submission,bundle,KEYS
+    from scimed_scout.discovery.scientific_verification_v2 import snapshot
+    db=tmp_path/"synthetic.sqlite"
+    with make_ledger(db,competitor=True)[0] as ledger:
+        c=ledger.get_candidate("c");p=snapshot(ledger,c);submission=make_submission(p,update=True)
+    approvals=tmp_path/"private"/"p";approvals.mkdir(parents=True)
+    (approvals/"c.json").write_text(json.dumps(bundle(submission)))
+    keyfile=tmp_path/"keys.json";keyfile.write_text(json.dumps({r:k.hex() for r,k in KEYS.items()}))
+    monkeypatch.setenv("SCIMED_TRUSTED_ADJUDICATION_DIR",str(approvals.parent))
+    monkeypatch.setenv("SCIMED_TRUSTED_REVIEWER_KEYS_FILE",str(keyfile))
+    passed=s.private_adjudicate(db,"c")
+    assert passed["qualification_granted"] is True
+    assert passed["confirmed_independent_rct_count"]==7
+    assert passed["update_audits"][0]["descriptive_inverse_variance_ratio"]==pytest.approx(7/5)
+    assert len(passed["gate_result"]["gates"])==15
+    submission["update_or_correction_audits"][0]["minimum_important_effect_change"]=10
+    (approvals/"c.json").write_text(json.dumps(bundle(submission)))
+    assert s.private_adjudicate(db,"c")["qualification_granted"] is False
+
+def test_frozen_scoring_and_tampered_predictions_synthetic_only():
+    from test_academy_benchmark import case,signed,manifest,KEYS
+    from scripts.academy_benchmark import model_observation
+    from scimed_scout.discovery.scientific_verification_v2 import digest,signature
+    m=manifest(*(signed(case(n,label=("UPDATE","NOVEL","NEGATIVE")[n%3])) for n in range(1,31)))
+    predictions=[{"case_id":c["case_id"],"prediction":c["opportunity"]} for c in m["cases"]]
+    # These are deliberately oracle-generated predictions for software tests only.
+    predictions[0]["prediction"]="UNRESOLVED"
+    payload={"schema":"SCIMED_FROZEN_EVALUATION_V1","manifest_sha256":digest(m),
+      "observation_sha256":digest([model_observation(c) for c in m["cases"]]),
+      "predictions_sha256":digest(predictions),"worker_commit":"1"*40,
+      "predictions_frozen_before_unblinding":True,"test_data_not_used_for_training":True,
+      "independent_extraction_and_screening_attested":True}
+    frozen={"submission":payload,"approvals":[{"reviewer":r,"signature":signature(payload,r,k)} for r,k in KEYS.items()]}
+    result=evaluate_frozen(m,KEYS,predictions,frozen)
+    assert result["n"]==30 and result["true_positive"]==19 and result["abstained"]==1
+    assert result["independent_validation_passed"] is False
+    predictions[0]["prediction"]="NOVEL"
+    with pytest.raises(ValueError):evaluate_frozen(m,KEYS,predictions,frozen)
