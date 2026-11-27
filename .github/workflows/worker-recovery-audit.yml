@@ -25,11 +25,14 @@ jobs:
           set -euo pipefail
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/scimed-autonomous-scheduler.yml/runs?per_page=30" > runs.json
           jq '{total_count, recent:[.workflow_runs[]|{id,event,status,conclusion,created_at,head_sha}]}' runs.json
+          jq -c '[.workflow_runs[]|select(.head_sha=="63f42fabb94e2d6b1d33e312f430c46b1be286ac")|{id,event,status,conclusion}]' runs.json | sed 's/^/PINNED_DEPLOYMENT_RUNS /'
           prior=$(jq -r '[.workflow_runs[]|select(.conclusion=="success")][0].id // empty' runs.json)
           if [[ -n "$prior" ]]; then
             gh api "repos/$GITHUB_REPOSITORY/actions/runs/$prior/artifacts" --jq '[.artifacts[]|{name,expired,size_in_bytes,expires_at}]'
             if gh run download "$prior" --repo "$GITHUB_REPOSITORY" --name scimed-autonomous-checkpoint --dir previous; then
               jq '{cycles,qualification_granted,ledger_count:(.ledger|length),task_counts:.scientist.task_counts}' previous/worker-state.json
+              sha256sum previous/worker-state.json
+              echo "ARCHIVE_SOURCE_RUN $prior"
             else
               echo "CHECKPOINT_NOT_RETRIEVABLE"
             fi
