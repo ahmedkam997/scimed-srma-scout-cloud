@@ -108,17 +108,20 @@ def registry(state,clients):
     source=min(clients,key=lambda name:(w["registry_routes"].get(name,{}).get("cycle",-1000),name))
     client=clients[source];w["last_registry"]=state["cycles"]
     # Validate public candidate strings before constructing source-specific syntax.
-    q=v2.phrase(row["intervention"]).removesuffix("[tiab]")+" AND "+v2.phrase(row["population"]).removesuffix("[tiab]")
-    if source=="Europe PMC":
-        q=" AND ".join("TITLE_ABS:"+term for term in q.split(" AND "))+" AND (PUB_TYPE:\"systematic review\" OR PUB_TYPE:\"meta-analysis\" OR TITLE_ABS:\"systematic review\" OR TITLE_ABS:\"meta-analysis\")"
+    q=""
     try:
+        q=v2.phrase(row["intervention"]).removesuffix("[tiab]")+" AND "+v2.phrase(row["population"]).removesuffix("[tiab]")
+        if source=="Europe PMC":
+            q=" AND ".join("TITLE_ABS:"+term for term in q.split(" AND "))+" AND (PUB_TYPE:\"systematic review\" OR PUB_TYPE:\"meta-analysis\" OR TITLE_ABS:\"systematic review\" OR TITLE_ABS:\"meta-analysis\")"
         # use existing source-specific adapters
         from scimed_scout.discovery.evidence_first import _record
         result=client.search(q,limit=20)
         # Registry adapters may retrieve much more than the nominal limit.
         # Keep cap status and aggregate, never call truncated results exhaustive.
-        rows=[_record(r) for r in result.records[:20]]
-        extra=max(0,len(result.records)-len(rows))
+        known={str(r["source_record_id"]) for r in w["rows"].values() if r["source"]==source}
+        unseen=[r for r in result.records if str(r.record_id) not in known]
+        rows=[_record(r) for r in unseen[:20]]
+        extra=max(0,len(unseen)-len(rows))
         if extra:w["registry_truncated"]=True
         kind="ONGOING_STUDY" if source=="ClinicalTrials.gov" else ("PUBLISHED_REVIEW" if source=="Europe PMC" else "REGISTRATION")
         from scimed_scout.discovery.evidence_classification import classify_review_search_hit,classify_registration_search_hit
@@ -258,6 +261,8 @@ def diagnose(state):
     report,raw=v2.diagnostic(state)
     ext=extension(state)
     report["packet_count"]=len(ext["packets"])
+    report["workspace_cap"]=MAX_PACKETS
+    report["shortlisted_without_workspace"]=sum(bool(row.get("shortlist_cue")) and cid not in ext["packets"] for cid,row in state["ledger"].items())
     report["pending_fulltext"]=sum(len(w.get("missing",[])) for w in ext["packets"].values())
     report["registry_routes"]={cid:w["registry_routes"] for cid,w in ext["packets"].items()}
     # Safe automated recovery: the next packet stage retries missing IDs, and
