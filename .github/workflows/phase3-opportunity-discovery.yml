@@ -19,11 +19,11 @@ jobs:
         include:
           - specialty: Cardiology
             slug: cardiology
-            rotation: 3
+            rotation: 4
             fixed_anchors: false
           - specialty: General Surgery
             slug: general-surgery
-            rotation: 1
+            rotation: 2
             fixed_anchors: true
     env:
       NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
