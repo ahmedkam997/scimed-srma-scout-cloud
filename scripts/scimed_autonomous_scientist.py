@@ -55,7 +55,7 @@ def append_rows(w,rows,kind):
             p={**old["payload"],**row.get("payload",{})}
             p["metadata"]={**old["payload"].get("metadata",{}),**{k:v for k,v in row.get("payload",{}).get("metadata",{}).items() if v is not None and v!=""}}
             row={**old,**row,"payload":p}
-        w["rows"][key]={**row,"evidence_type":kind}
+        w["rows"][key]={**row,"source_record_id":str(row["source_record_id"]),"evidence_type":kind}
 
 def log(w,source,query,status,count,*,bounded=True):
     # Source success for a bounded sample does not prove a systematic search.
@@ -102,7 +102,7 @@ def ingest_recovery(state,report,raw):
 
 def registry(state,clients):
     cid=choose(state,"registry")
-    if not cid:return None
+    if not cid or not clients:return None
     w=workspace(state,cid);row=state["ledger"][cid]
     # One source per cycle. Never infer an empty registry from a failed call.
     source=min(clients,key=lambda name:(w["registry_routes"].get(name,{}).get("cycle",-1000),name))
@@ -166,7 +166,6 @@ def prepare_packet(state,client,*,fetcher=v2.fetch_rows,fulltext=None):
         except Exception:
             w["missing"]=sorted(set(w["missing"])|set(ids))
     led=WorkspaceLedger(cid,w);c=candidate(cid,state["ledger"][cid])
-    packet=snapshot(led,c)
     policy=policy_for_question_type(c.question_type)
     coverage=evaluate_coverage(led.list_search_log(cid),policy)
     rows=led.list_external_evidence(cid,"PRIMARY_STUDY")
@@ -174,8 +173,15 @@ def prepare_packet(state,client,*,fetcher=v2.fetch_rows,fulltext=None):
     extraction=(fulltext or extract)(rows,previous=previous,max_fulltexts=2)
     # Persist attempt cursors and provenance only; full tables stay in raw artifact.
     w["extraction_attempts"]=[{k:r[k] for k in ("source","record_id","pmcid","fulltext_attempts","fulltext") if k in r} for r in extraction["reports"]]
-    # Store bounded extracted tables with exact hashes and locations. Refuse to
-    # claim completeness if the global checkpoint limit is exceeded.
+    # Bind exact full-text retrieval fingerprints into the snapshot; all
+    # table cells and passages remain in the extraction artifact/checkpoint.
+    for entry in extraction["reports"]:
+        ft=entry.get("fulltext") or {}
+        if ft.get("status")=="JATS_SOURCE_LINKED_LEADS":
+            key="PRIMARY_STUDY|"+entry["source"]+"|"+str(entry["record_id"])
+            if key in w["rows"]:
+                w["rows"][key]["payload"]["fulltext_source_fingerprint"]={k:ft[k] for k in ("sha256","url","status") if k in ft}
+    packet=snapshot(led,c)
     blocked=["independent full-text review and signed approvals not submitted","bounded search is not independently adjudicated complete",*coverage.blockers]
     if w["missing"]:blocked.append("exact PMID retrieval incomplete")
     report={"task":"packet","candidate_id":cid,"status":"PROVISIONAL_REVIEWER_PACKET",
