@@ -55,6 +55,12 @@ jobs:
           assert result["qualification_granted"] is False
           print("LIVE_PACKET_ROUNDTRIP",json.dumps({"report":report,"trusted_gate":result}))
           PY
+      - uses: actions/setup-node@v6
+        with: {node-version: '22'}
+      - name: Build existing pinned read-only PROSPERO adapter
+        id: prospero
+        continue-on-error: true
+        run: bash scripts/install_prospero_cli.sh
       - name: Live registry surveillance and independent benchmark admission
         run: |
           python - <<'PY'
@@ -62,16 +68,19 @@ jobs:
           from pathlib import Path
           from scripts.scimed_autonomous_worker import load,write
           from scripts.scimed_autonomous_scientist import registry,validation_admission,diagnose
-          from scimed_scout.sources import OSFRegistrationsSource
+          from scimed_scout.sources import OSFRegistrationsSource,ClinicalTrialsGovSource,ProsperoCliSource
           state=load(Path("packet-cycle/worker-state.json"))
-          report,raw=registry(state,{"OSF Registries":OSFRegistrationsSource()})
-          print("LIVE_REGISTRY",json.dumps(report))
+          reports=[];raws=[]
+          for client in (OSFRegistrationsSource(),ClinicalTrialsGovSource(),ProsperoCliSource()):
+              report,raw=registry(state,{client.name:client})
+              reports.append(report);raws.append(raw)
+              print("LIVE_REGISTRY",json.dumps(report))
           admission,_=validation_admission()
           print("INDEPENDENT_ADMISSION",json.dumps(admission))
           diagnostic,_=diagnose(state)
           out=Path("audit-cycle");out.mkdir(exist_ok=True)
-          write(out/"report.json",{"registry":report,"admission":admission,"diagnostic":diagnostic})
-          write(out/"source-evidence.json",raw)
+          write(out/"report.json",{"registry":reports,"admission":admission,"diagnostic":diagnostic})
+          write(out/"source-evidence.json",raws)
           write(out/"worker-state.json",state)
           assert not admission["qualification_granted"]
           PY
