@@ -10,7 +10,7 @@ from collections import Counter
 from scripts import scimed_autonomous_worker as v1
 
 SCHEDULE=("discovery","families","competitors","discovery","families","competitors","learning","diagnostic")
-ROUTES=("exact","broad")
+ROUTES=("exact","broad","stratified")
 OK={"SEARCHED_POSITIVE","SEARCHED_NEGATIVE"}
 MAX_IDS=100
 MAX_JOBS=100
@@ -39,7 +39,7 @@ def seed_jobs(state,raw):
     ext=extend(state)
     for row in raw.get("candidates",[]):
         cid=row["candidate_id"]
-        if cid not in state["ledger"]:continue
+        if cid not in state["ledger"] or not state["ledger"][cid].get("shortlist_cue"):continue
         if cid not in ext["jobs"] and len(ext["jobs"])>=MAX_JOBS:continue
         j=job_for(ext,cid)
         hints=row["metadata"]["rct_first"]
@@ -70,6 +70,8 @@ def choose_route(ext,j,kind):
     tried=j[field]
     missing=[r for r in ROUTES if r not in tried]
     if missing:
+        # Use independent text routes before a date-stratified expansion.
+        if len(missing)>1 and "stratified" in missing:missing.remove("stratified")
         # Development yield means extra bibliographic IDs only, not eligible trials.
         stats=ext["route_stats"]
         return max(missing,key=lambda r:(stats.get(kind+":"+r,{}).get("mean",0),r=="exact"))
@@ -99,6 +101,12 @@ def learn_route(ext,kind,route,gain,status):
 def search(client,row,kind,route):
     from scimed_scout.discovery.evidence_first import _record
     q=query_for(row,kind,route)
+    if route=="stratified":
+        from scimed_scout.discovery.stratified_retrieval import collect
+        audit,records=collect(client,q,budget=60)
+        # The source call budget, not exhaustive search, is complete.
+        return {"query":q,"status":"PARTIAL" if audit["status"]!="BOUNDED_SAMPLE" else ("SEARCHED_POSITIVE" if records else "SEARCHED_NEGATIVE"),
+                "reported_total":None,"strata":audit,"rows":[_record(x) for x in records]}
     result=client.search(q,limit=40)
     return {"query":q,"status":result.status.value,"reported_total":result.total_count,
             "rows":[_record(x) for x in result.records]}
@@ -127,7 +135,7 @@ def recover(state,kind,client,*,searcher=search,fetcher=fetch_rows,resolver=None
         before=set(j[field]);j[field],cap=union_ids(j[field],new)
         if cap:j[field+"_truncated"]=True
         gain=len(set(j[field])-before)
-        j[routefield][route]={"cycle":state["cycles"],"status":result["status"],"new_ids":gain}
+        j[routefield][route]={"cycle":state["cycles"],"status":result["status"],"new_ids":gain,"reported_total":result.get("reported_total"),"sample_size":len(result["rows"])}
         learn_route(ext,kind,route,gain,result["status"])
     except Exception as exc:
         result={"status":"ACCESS_UNRESOLVED","error_type":type(exc).__name__,"rows":[]};gain=0
@@ -214,6 +222,8 @@ def diagnostic(state):
             statuses.update(x["status"] for x in j[f].values())
     result={"task":"diagnostic","route_status_counts":dict(statuses),
             "inventory_caps":sum(bool(j.get("trial_ids_truncated") or j.get("review_ids_truncated")) for j in ext["jobs"].values()),
+            "recovery_queue_capacity":MAX_JOBS,"pending_shortlist_without_job":sum(row.get("shortlist_cue",False) and cid not in ext["jobs"] for cid,row in state["ledger"].items()),
+            "next_recovery_action":"Try remaining bounded exact, broad and date-stratified routes; unresolved source access and methods remain manual or alternate-source recovery tasks.",
             "unresolved_methods":sum(sum(not j["methods"].get(p,{}).get("date_cue") for p in j["review_ids"]) for j in ext["jobs"].values()),
             "qualification_granted":False}
     ext["last_diagnostic"]=result
