@@ -111,11 +111,15 @@ def advise(rows,env=None,transport=urlopen):
 
 def run(state,collect,triage,*,live_ai=False):
     specialty,rotation=plan(state)
+    # Alternate dynamic recent-trial discovery and curated anchors per specialty.
+    # A failed dynamic call gets the existing one-time retry in static mode.
+    dynamic=(rotation%2==0 and state["retries"]==0)
+    mode="dynamic" if dynamic else "curated"
     deadline=time.monotonic()+360
     def check():
         if time.monotonic()>deadline: raise TimeoutError("bounded discovery budget")
     try:
-        raw=collect(specialty,rotation,max_pairs=1,dynamic=False,citation=True,check=check)
+        raw=collect(specialty,rotation,max_pairs=1,dynamic=dynamic,citation=True,check=check)
         status=raw["status"]
         if status not in ("SAMPLED","PARTIAL_SAMPLE","ACCESS_UNRESOLVED"):raise ValueError("unexpected source status")
         rows=[candidate_summary(x) for x in raw["candidates"]]
@@ -123,6 +127,9 @@ def run(state,collect,triage,*,live_ai=False):
         raw={"status":"ACCESS_UNRESOLVED","error_type":type(exc).__name__,"candidates":[]}
         status=raw["status"];rows=[]
     remember(state,rows,status)
+    # These are observed anchors only, never novelty or eligibility clearance.
+    raw["worker_discovery_mode"]=mode
+    raw["dynamic_anchor_count"]=len((raw.get("dynamic_discovery") or {}).get("anchors",[]))
     shortlist=[x for x in rows if x["shortlist_cue"]]
     advisory=advise(shortlist) if live_ai else {"status":"DISABLED"}
     selected=next((x for x in shortlist if x["id"]==advisory.get("candidate_id")),shortlist[0] if shortlist else None)
@@ -137,6 +144,7 @@ def run(state,collect,triage,*,live_ai=False):
     advance(state,status)
     return {"schema":VERSION,"specialty":specialty,"rotation":rotation,"coverage":status,
             "candidates":rows,"advisory":advisory,"selected":selected,"audit":audit,
+            "discovery_mode":mode,"dynamic_anchor_count":raw["dynamic_anchor_count"],
             "qualification_granted":False,"first_choice_count":0,"next":plan(state)},raw
 
 def triage_public(row):
