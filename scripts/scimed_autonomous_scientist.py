@@ -7,7 +7,7 @@ import math
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from collections import Counter
+from dataclasses import asdict
 from scripts import scimed_autonomous_worker as v1, scimed_autonomous_worker_v2 as v2
 from scimed_scout.discovery.scientific_verification_v2 import digest, snapshot, TrustedDirectory
 from scimed_scout.storage import CandidateRecord, SearchLogRecord, SQLiteLedger
@@ -107,14 +107,25 @@ def registry(state,clients):
     # One source per cycle. Never infer an empty registry from a failed call.
     source=min(clients,key=lambda name:(w["registry_routes"].get(name,{}).get("cycle",-1000),name))
     client=clients[source];w["last_registry"]=state["cycles"]
-    q='"'+row["intervention"]+'" AND "'+row["population"]+'"'
+    # Validate public candidate strings before constructing source-specific syntax.
+    q=v2.phrase(row["intervention"]).removesuffix("[tiab]")+" AND "+v2.phrase(row["population"]).removesuffix("[tiab]")
+    if source=="Europe PMC":
+        q=" AND ".join("TITLE_ABS:"+term for term in q.split(" AND "))+" AND (PUB_TYPE:\"systematic review\" OR PUB_TYPE:\"meta-analysis\" OR TITLE_ABS:\"systematic review\" OR TITLE_ABS:\"meta-analysis\")"
     try:
         # use existing source-specific adapters
         from scimed_scout.discovery.evidence_first import _record
         result=client.search(q,limit=20)
         rows=[_record(r) for r in result.records]
         kind="ONGOING_STUDY" if source=="ClinicalTrials.gov" else ("PUBLISHED_REVIEW" if source=="Europe PMC" else "REGISTRATION")
-        append_rows(w,rows,kind)
+        from scimed_scout.discovery.evidence_classification import classify_review_search_hit,classify_registration_search_hit
+        from scimed_scout.sources.base import SearchRecord
+        for r in rows:
+            k=kind
+            rec=SearchRecord(r["source"],r["source_record_id"],r["title"],metadata=r.get("payload",{}).get("metadata",{}))
+            if kind=="PUBLISHED_REVIEW" and classify_review_search_hit(rec)!="CONFIRMED_REVIEW_CUE":k="OTHER"
+            if kind=="REGISTRATION" and classify_registration_search_hit(rec)!="REVIEW_REGISTRATION_CUE":k="OTHER"
+            if k=="OTHER":r={**r,"payload":{**r.get("payload",{}),"originally_requested_evidence_type":kind}}
+            append_rows(w,[r],k)
         log(w,source,q,result.status,result.total_count)
         status=result.status.value
         w["registry_routes"][source]={"cycle":state["cycles"],"status":status,"records":len(rows)}
@@ -144,7 +155,13 @@ def prepare_packet(state,client,*,fetcher=v2.fetch_rows,fulltext=None):
                     cue=j["methods"].get(pid,{}).get("date_cue")
                     if cue:
                         m=row["payload"]["metadata"];m.update(last_search_date=cue.get("date"),search_date_evidence_quote=cue.get("quote"),search_date_evidence_url=cue.get("source_url"),search_date_evidence_level=cue.get("source_type"))
-                append_rows(w,[row],kind)
+                # Retain ambiguous records rather than promote them to competing reviews.
+                from scimed_scout.discovery.evidence_classification import classify_review_search_hit
+                from scimed_scout.sources.base import SearchRecord
+                target=kind
+                if kind=="PUBLISHED_REVIEW" and classify_review_search_hit(SearchRecord(row["source"],row["source_record_id"],row["title"],metadata=row["payload"].get("metadata",{})))!="CONFIRMED_REVIEW_CUE":
+                    target="OTHER";row["payload"]["originally_requested_evidence_type"]="PUBLISHED_REVIEW"
+                append_rows(w,[row],target)
             w[field+"_cursor"]=(offset+len(ids))%max(1,len(j[field]))
         except Exception:
             w["missing"]=sorted(set(w["missing"])|set(ids))
@@ -156,7 +173,9 @@ def prepare_packet(state,client,*,fetcher=v2.fetch_rows,fulltext=None):
     previous={"reports":w.get("extraction_attempts",[])}
     extraction=(fulltext or extract)(rows,previous=previous,max_fulltexts=2)
     # Persist attempt cursors and provenance only; full tables stay in raw artifact.
-    w["extraction_attempts"]=[{k:r[k] for k in ("source","record_id","pmcid","fulltext_attempts") if k in r} for r in extraction["reports"]]
+    w["extraction_attempts"]=[{k:r[k] for k in ("source","record_id","pmcid","fulltext_attempts","fulltext") if k in r} for r in extraction["reports"]]
+    # Store bounded extracted tables with exact hashes and locations. Refuse to
+    # claim completeness if the global checkpoint limit is exceeded.
     blocked=["independent full-text review and signed approvals not submitted","bounded search is not independently adjudicated complete",*coverage.blockers]
     if w["missing"]:blocked.append("exact PMID retrieval incomplete")
     report={"task":"packet","candidate_id":cid,"status":"PROVISIONAL_REVIEWER_PACKET",
@@ -165,7 +184,7 @@ def prepare_packet(state,client,*,fetcher=v2.fetch_rows,fulltext=None):
        "fulltext_source_calls":extraction["source_calls"],"blockers":blocked,
        "qualification_granted":False}
     w["last_snapshot"]=report["snapshot_sha256"]
-    return report,{"packet":packet,"raw_source_rows":list(w["rows"].values()),"extraction":extraction,"search_log":led.list_search_log(cid)}
+    return report,{"packet":packet,"raw_source_rows":list(w["rows"].values()),"extraction":extraction,"search_log":[asdict(x) for x in led.list_search_log(cid)],"candidate":asdict(c)}
 
 def validation_admission():
     from scripts.academy_benchmark import audit_manifest
