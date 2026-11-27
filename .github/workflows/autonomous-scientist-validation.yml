@@ -1,0 +1,94 @@
+name: autonomous-scientist-v10-validation
+on:
+  pull_request:
+    branches: [autonomous-worker-v2]
+    paths:
+      - 'scripts/scimed_autonomous_*.py'
+      - 'scripts/scimed_private_review.py'
+      - 'scripts/scimed_independent_evaluation.py'
+      - 'tests/test_autonomous_scientist.py'
+      - '.github/workflows/autonomous-scientist-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: scientist-v10-validation
+  cancel-in-progress: false
+jobs:
+  validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e '.[dev]'
+      - run: python -m pytest -q tests/test_autonomous_scientist.py tests/test_autonomous_worker.py tests/test_autonomous_worker_v2.py tests/test_scientific_verification_v2.py tests/test_academy_benchmark.py
+      - name: Restore live checkpoint from V2 validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/45967932306" | jq -e '.head_sha == "1328c5f2128a69fc7e102500266108d9e9668897" and .conclusion == "success"' >/dev/null
+          gh run download 45967932306 --repo "$GITHUB_REPOSITORY" --name autonomous-worker-v2-validation --dir bootstrap
+          test -s bootstrap/learning-test/worker-state.json
+      - name: Run real packet generation and roundtrip to private ledger without keys
+        run: |
+          python -m scripts.scimed_autonomous_scientist --checkpoint bootstrap/learning-test/worker-state.json --output packet-cycle
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts.scimed_private_review import import_packet
+          from scripts.scimed_autonomous_scientist import private_adjudicate
+          raw=json.loads(Path("packet-cycle/source-evidence.json").read_text())
+          report=json.loads(Path("packet-cycle/report.json").read_text())
+          assert report["task"]=="packet" and report["primary_report_count"]>0
+          assert not report["qualification_granted"]
+          p=import_packet(raw,Path("local-test.db"))
+          assert p["verification_v2"]["snapshot_sha256"]==report["snapshot_sha256"]
+          result=private_adjudicate(Path("local-test.db"),report["candidate_id"])
+          assert result["qualification_granted"] is False
+          print("LIVE_PACKET_ROUNDTRIP",json.dumps({"report":report,"trusted_gate":result}))
+          PY
+      - uses: actions/setup-node@v6
+        with: {node-version: '22'}
+      - name: Build existing pinned read-only PROSPERO adapter
+        id: prospero
+        continue-on-error: true
+        run: bash scripts/install_prospero_cli.sh
+      - name: Live registry surveillance and independent benchmark admission
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from scripts.scimed_autonomous_worker import load,write
+          from scripts.scimed_autonomous_scientist import registry,validation_admission,diagnose
+          from scimed_scout.sources import OSFRegistrationsSource,ClinicalTrialsGovSource,ProsperoCliSource
+          state=load(Path("packet-cycle/worker-state.json"))
+          reports=[];raws=[]
+          for client in (OSFRegistrationsSource(),ClinicalTrialsGovSource(),ProsperoCliSource()):
+              report,raw=registry(state,{client.name:client})
+              reports.append(report);raws.append(raw)
+              print("LIVE_REGISTRY",json.dumps(report))
+          admission,_=validation_admission()
+          print("INDEPENDENT_ADMISSION",json.dumps(admission))
+          diagnostic,_=diagnose(state)
+          out=Path("audit-cycle");out.mkdir(exist_ok=True)
+          write(out/"report.json",{"registry":reports,"admission":admission,"diagnostic":diagnostic})
+          write(out/"source-evidence.json",raws)
+          write(out/"worker-state.json",state)
+          assert not admission["qualification_granted"]
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: autonomous-scientist-validation
+          path: |
+            packet-cycle/
+            audit-cycle/
+          retention-days: 14

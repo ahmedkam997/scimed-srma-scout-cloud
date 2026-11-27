@@ -229,8 +229,9 @@ def diagnostic(state):
     ext["last_diagnostic"]=result
     return result,{"policy":ext["policy"],"route_stats":ext["route_stats"]}
 
-def cycle(state,collect,client,*,live_ai=False,recoverer=recover,learner=learning):
-    ext=extend(state); planned=SCHEDULE[state["cycles"]%len(SCHEDULE)]
+def cycle(state,collect,client,*,live_ai=False,recoverer=recover,learner=learning,planned_task=None):
+    ext=extend(state); planned=planned_task or SCHEDULE[state["cycles"]%len(SCHEDULE)]
+    if planned not in SCHEDULE:raise ValueError("unknown task")
     start=state["cycles"]
     result=None
     if planned in ("families","competitors"):result=recoverer(state,planned,client)
