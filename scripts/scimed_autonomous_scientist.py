@@ -116,6 +116,13 @@ def registry(state,clients):
         # use existing source-specific adapters
         from scimed_scout.discovery.evidence_first import _record
         result=client.search(q,limit=20)
+        attempt_log=[{"query":q,"status":result.status.value,"reported_total":result.total_count}]
+        if source=="PROSPERO" and result.status==SourceStatus.ACCESS_FAILED:
+            log(w,source,q,result.status,result.total_count)
+            # Explicit alternate search route, not an inferred negative result.
+            q=row["intervention"]
+            result=client.search(q,limit=20)
+            attempt_log.append({"query":q,"status":result.status.value,"reported_total":result.total_count})
         # Registry adapters may retrieve much more than the nominal limit.
         # Keep cap status and aggregate, never call truncated results exhaustive.
         known={str(r["source_record_id"]) for r in w["rows"].values() if r["source"]==source}
@@ -136,7 +143,7 @@ def registry(state,clients):
         log(w,source,q,result.status,result.total_count)
         status=result.status.value
         w["registry_routes"][source]={"cycle":state["cycles"],"status":status,"records":len(rows)}
-        raw={"source":source,"query":q,"records":rows,"reported_total":result.total_count,"status":status,"unpersisted_result_rows":extra}
+        raw={"source":source,"query":q,"records":rows,"reported_total":result.total_count,"status":status,"unpersisted_result_rows":extra,"attempts":attempt_log}
         if source=="ClinicalTrials.gov":
             from scimed_scout.discovery.structured_extraction_v2 import registry_leads
             leads=[registry_leads(r["payload"].get("metadata",{}),str(r["source_record_id"])) for r in rows]
@@ -150,6 +157,7 @@ def registry(state,clients):
         raw={"source":source,"query":q,"status":status,"error_type":type(exc).__name__}
     return {"task":"registry","candidate_id":cid,"source":source,"source_status":status,"records":len(raw.get("records",[])),
             "unpersisted_result_rows":raw.get("unpersisted_result_rows",0),"registry_result_cues":len(raw.get("registry_result_cues",[])),
+            "attempts":raw.get("attempts",[]),
             "qualification_granted":False},raw
 
 def fetch_with_recovery(client,ids,*,fetcher=v2.fetch_rows,alternate=None):
