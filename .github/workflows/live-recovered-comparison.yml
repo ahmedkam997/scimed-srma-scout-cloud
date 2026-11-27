@@ -4,6 +4,8 @@ on:
     branches: [autonomous-scientist-v10]
     paths:
       - '.github/workflows/live-recovered-comparison.yml'
+      - 'src/scimed_scout/discovery/rct_first.py'
+      - 'tests/test_discovery_intelligence.py'
       - 'scripts/scimed_autonomous_worker_v2.py'
       - 'scripts/phase3_family_methods.py'
       - 'src/scimed_scout/sources/pubmed_abstracts.py'
