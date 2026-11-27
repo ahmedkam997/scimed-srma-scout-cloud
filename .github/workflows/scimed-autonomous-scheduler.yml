@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
-      WORKER_REF: '2f714c9e179a1a583504fb2dc1c56bdd9a0191dc'
+      WORKER_REF: 'f5fdf0d1634f9a2bf5d817836b34172a161cbcc6'
       BOOTSTRAP_REF: '0eaf2aae2579e0a481cb4c56b7b5df08331a5882'
     steps:
       - uses: actions/checkout@v6
