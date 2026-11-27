@@ -119,7 +119,7 @@ def run(state,collect,triage,*,live_ai=False):
     def check():
         if time.monotonic()>deadline: raise TimeoutError("bounded discovery budget")
     try:
-        raw=collect(specialty,rotation,max_pairs=1,dynamic=dynamic,citation=True,check=check)
+        raw=collect(specialty,rotation,max_pairs=1,dynamic=dynamic,exploratory=dynamic,citation=True,check=check)
         status=raw["status"]
         if status not in ("SAMPLED","PARTIAL_SAMPLE","ACCESS_UNRESOLVED"):raise ValueError("unexpected source status")
         rows=[candidate_summary(x) for x in raw["candidates"]]
@@ -130,6 +130,14 @@ def run(state,collect,triage,*,live_ai=False):
     # These are observed anchors only, never novelty or eligibility clearance.
     raw["worker_discovery_mode"]=mode
     raw["dynamic_anchor_count"]=len((raw.get("dynamic_discovery") or {}).get("anchors",[]))
+    # Small public hypothesis cache, never mixed with verified candidates.
+    memory=state.setdefault("idea_hypotheses",{})
+    for anchor in (raw.get("dynamic_discovery") or {}).get("anchors",[]):
+        if anchor.get("scope")!="EXPLORATORY_PI_SEARCH_ONLY":continue
+        from hashlib import sha256
+        pair=anchor["pair"];key=sha256(json.dumps(pair).encode()).hexdigest()[:16]
+        memory[key]={"population":pair[0],"intervention":pair[1],"source_reports":anchor["source_reports"],"last_cycle":state["cycles"],"qualification_granted":False,"status":"SEARCH_HYPOTHESIS_ONLY"}
+    state["idea_hypotheses"]={k:memory[k] for k in sorted(memory,key=lambda k:(memory[k]["last_cycle"],k),reverse=True)[:100]}
     shortlist=[x for x in rows if x["shortlist_cue"]]
     advisory=advise(shortlist) if live_ai else {"status":"DISABLED"}
     selected=next((x for x in shortlist if x["id"]==advisory.get("candidate_id")),shortlist[0] if shortlist else None)
