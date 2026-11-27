@@ -152,3 +152,21 @@ def test_recover_private_uses_strict_existing_engine_and_never_signs(tmp_path,mo
     assert result["recovery_status"]=="TIME_BUDGET_CHECKPOINT"
     assert observed=={"minimum":7,"verifier":None,"limit_per_query":40,"recover_only":True}
     assert result["qualification_granted"] is False
+
+def test_exact_recovered_registration_preserved_despite_thin_search_or_search_failure():
+    x=state()
+    exact=row("111","Exact source title")
+    exact["payload"]["metadata"]={"pubmed_efetch_identity":"EXACT_PMID","trial_registration_id":"NCT03619213",
+       "registration_enrichment_evidence":{"pmid":"111","registration_id":"NCT03619213","scope":"OWN_TRIAL_REGISTRATION_IN_METHODS"}}
+    wrong=row("333");wrong["payload"]["metadata"]={"pmid":"444","pubmed_efetch_identity":"EXACT_PMID"}
+    s.ingest_recovery(x,{"candidate_id":CID,"task":"families"},
+      {"search":{"query":"example","status":"SEARCHED_POSITIVE","rows":[row("111","Thin title")]},
+       "recovered_rows":[exact,wrong]})
+    w=s.workspace(x,CID)
+    assert len(w["rows"])==1
+    kept=next(iter(w["rows"].values()))
+    assert kept["title"]=="Exact source title" and kept["payload"]["metadata"]["trial_registration_id"]=="NCT03619213"
+    newer=row("555");newer["payload"]["metadata"]={"pubmed_efetch_identity":"EXACT_PMID"}
+    s.ingest_recovery(x,{"candidate_id":CID,"task":"families"},
+      {"search":{"status":"ACCESS_UNRESOLVED","rows":[]},"recovered_rows":[newer]})
+    assert len(w["rows"])==2
