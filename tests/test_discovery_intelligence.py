@@ -84,3 +84,11 @@ def test_recovered_comparison_audit_keeps_exact_scope_and_family_identity():
     assert audit["confirmed_independent_eligible_trials"] is None
     assert audit["qualification_granted"] is False
     assert not v2.audit_recovered_comparisons(lead,rows,["1","8","9","10","11"])["shortlist_signal"]
+
+def test_explicit_receive_clause_with_numeric_population():
+    from scimed_scout.discovery.rct_first import explicit_comparison
+    methods="We randomly assigned 120 patients with heart failure and a left ventricular ejection fraction of more than 40% to receive dapagliflozin daily or matching placebo, in addition to usual therapy."
+    assert explicit_comparison(methods,("dapagliflozin",),"placebo")
+    assert not explicit_comparison(methods,("empagliflozin",),"placebo")
+    shared="We randomly assigned 120 patients with heart failure and a left ventricular ejection fraction of more than 40% to receive dapagliflozin or dapagliflozin plus placebo."
+    assert not explicit_comparison(shared,("dapagliflozin",),"placebo")
