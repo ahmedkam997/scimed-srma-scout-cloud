@@ -1,0 +1,167 @@
+name: phase3-research-academy
+on:
+  workflow_dispatch:
+  push:
+    branches: [scientific-verification-v2-phase3-replay]
+    paths:
+      - '.github/workflows/phase3-research-academy.yml'
+      - 'scripts/academy_*.py'
+      - 'benchmarks/academy/**'
+permissions:
+  contents: read
+concurrency:
+  group: phase3-research-academy-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  admission:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e '.[dev]'
+      - run: python -m pytest -q tests/test_academy*.py
+      - run: python -m scripts.academy_benchmark benchmarks/academy/benchmark.json --output academy-admission.json
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: academy-benchmark-admission
+          path: academy-admission.json
+          retention-days: 14
+  datasets-and-screening:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: python -m scripts.academy_datasets --stage academy-data --fetch --output academy-dataset-audit.json
+      - name: Verify the required screening input independently
+        run: python -m scripts.academy_datasets --stage academy-data --dataset synergy-plus-muthu --strict --output academy-screening-input.json
+      - run: python -m pip install 'asreview==3.0.8' 'synergy-dataset==2.2'
+      - name: Prepare a finite closed-corpus screening simulation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from synergy_dataset import Dataset
+
+          corpus = Dataset("Muthu_2020", path=Path("academy-data/Muthu_2020")).to_frame()
+          assert corpus.index.is_unique and set(corpus["label_included"]) == {0, 1}
+          corpus[["title", "abstract", "label_included"]].to_csv("academy-muthu.csv", index=False)
+          PY
+      - name: Compare TF-IDF SVM and naive Bayes against random workload
+        run: |
+          for seed in 17 73; do
+            for model in elas_u4 elas_u3; do
+              name="academy-screening-$model-$seed"
+              asreview simulate academy-muthu.csv -o "$name.asreview" --ai "$model" --seed "$seed" --prior-seed "$seed" --n-prior-included 1 --n-prior-excluded 1
+              python -m scripts.asreview_screening_audit academy-muthu.csv "$name.asreview" --seed "$seed" --output "$name.json"
+            done
+          done
+      - name: Summarize data admission and observed screening workload
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = Path("academy-dataset-audit.json")
+          statuses = {}
+          if data.is_file():
+              statuses = {name: row["status"] for name, row in json.loads(data.read_text())["datasets"].items()}
+          workload = {}
+          for path in sorted(Path(".").glob("academy-screening-elas_*.json")):
+              result = json.loads(path.read_text())["record_decisions"]
+              workload[path.stem] = {
+                  "records_at_95": result["screened_at_95"],
+                  "random_expected_records": result["random_expected_screened_at_95"],
+                  "wss95": result["wss95"],
+              }
+          print("::notice title=Academy data and screening::" + json.dumps({"datasets": statuses, "screening": workload}))
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: academy-external-data-and-screening
+          path: |
+            academy-dataset-audit.json
+            academy-screening-input.json
+            academy-screening-elas_*.json
+          retention-days: 14
+  historical-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e .
+      - run: python -m scripts.academy_replay --output academy-replay-offline.json
+      - run: python -m scripts.academy_replay --live --output academy-replay-live.json
+      - name: Summarize bounded retrieval without declaring benchmark qualification
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("academy-replay-live.json")
+          if path.is_file():
+              replay = json.loads(path.read_text())
+              retrieval = replay["retrieval"]
+              report = {
+                  "source_resolved": retrieval["resolved"],
+                  "review_pairs_scored": len(replay["review_pairs"]),
+                  "report_budget_per_variant": retrieval["per_variant_report_budget"],
+                  "relative_reference_recall": {
+                      key: row["relative_recall"] for key, row in retrieval["variants"].items()
+                  },
+              }
+              pair = replay.get("completed_public_review_pair")
+              if pair:
+                  report["published_pair"] = {
+                      "case": pair["case"],
+                      "source_resolved": pair["source_resolved"],
+                      "labelled_added_reports": pair.get("source_labelled_added_report_count"),
+                      "recall": {
+                          key: row["relative_added_report_recall"]
+                          for key, row in (pair.get("variants") or {}).items()
+                      },
+                  }
+              print("::notice title=Academy historical retrieval::" + json.dumps(report))
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: academy-historical-replay
+          path: academy-replay-*.json
+          retention-days: 14
+  report-components:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e .
+      - run: python -m scripts.academy_components --output academy-report-components.json
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: academy-report-components
+          path: academy-report-components.json
+          retention-days: 14

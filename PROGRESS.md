@@ -45,3 +45,13 @@
   two distinct Chagas registrations and an unresolved CAMERA-MRI II
   report lead. Thirty targeted tests passed. No candidate met the
   scientific qualification threshold.
+
+- Started SciMed Research Academy on the Phase 3 development branch.
+  Added pinned external audits, 30 development-exposed nominations,
+  a signed and leakage-checked benchmark admission contract, historical
+  replay, and separate component comparisons. The held-out benchmark
+  contains zero admitted cases.
+- Verified the pinned Cohen and SYNERGY+ training inputs locally.
+  The two Cohen lists share 49 PubMed identifiers. CSMeD source
+  inventory was audited separately. Locally inaccessible datasets
+  remain unresolved and are routed to authorized hosted acquisition.

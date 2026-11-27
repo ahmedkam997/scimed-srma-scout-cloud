@@ -237,3 +237,15 @@ unverified. CAMERA-MRI II PMID 42246906 had no explicit registry
 link in the retrieved metadata. The hosted trace exited nonzero and
 did not establish that this report was a new independent primary trial.
 [Hosted report trace](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45894544804)
+
+### CAMERA-MRI II follow-up
+
+Unquoted title and abstract-token searches recovered a December 2025
+CAMERA-MRI II titled record (PMID 40878836, with no abstract in the
+retrieved EFetch) and the October 2026 report (PMID 42246906). The
+October report's Methods describes reclassifying participants from the
+existing randomized study by left-ventricular fibrosis. It supplies a
+secondary analysis lead, not a new independent randomization. The
+December record confirms that the trial was discussed before the
+February 2026 review search month, but does not establish original
+publication identity or review inclusion. [Hosted trace](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45894714951)

@@ -15,3 +15,14 @@
 5. Integrate technical fixes only where evidence demonstrates a bottleneck.
    Compare PRESS/TARCiS search recovery and published CPU methods on separate
    development controls. Freeze evaluation splits before further training.
+
+## Research Academy
+
+1. Acquire pinned external controls and audit license, identity, label
+   coverage and source overlap before use.
+2. Build an evidence-linked nomination queue and obtain genuinely
+   independent signed judgments before admitting the 30-case temporal test.
+3. Compare CPU screening, retrieval and report components in isolation.
+   Freeze model options before any held-out score and retain error lessons.
+4. Rotate live cardiology and fixed-anchor surgery searches alongside the
+   learning workflow. Apply the existing FIRST-CHOICE gates to all leads.

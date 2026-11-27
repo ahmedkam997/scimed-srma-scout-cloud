@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "datasets": [
+    {
+      "id": "cohen-statins",
+      "name": "ASReview Cohen 2006 Statins",
+      "revision": "38b35218e4d0f99621cec5a8a25a0147bb88c654",
+      "source": "https://github.com/asreview/systematic-review-datasets/tree/38b35218e4d0f99621cec5a8a25a0147bb88c654/datasets/Cohen_2006",
+      "role": "closed_corpus_screening_development",
+      "source_families": ["cohen-2006"],
+      "license_evidence": "Upstream repository MIT license. Review underlying article abstract rights separately before redistribution.",
+      "artifacts": [
+        {"path": "statins.csv", "url": "https://raw.githubusercontent.com/asreview/systematic-review-datasets/38b35218e4d0f99621cec5a8a25a0147bb88c654/datasets/Cohen_2006/output/online/Statins.csv", "sha256": "d880b79bef64296a57ee8f0b886ae1f7a7267ce12a3f7a8596ad77539210b470", "kind": "cohen_csv"}
+      ]
+    },
+    {
+      "id": "cohen-ace",
+      "name": "ASReview Cohen 2006 ACE inhibitors",
+      "revision": "38b35218e4d0f99621cec5a8a25a0147bb88c654",
+      "source": "https://github.com/asreview/systematic-review-datasets/tree/38b35218e4d0f99621cec5a8a25a0147bb88c654/datasets/Cohen_2006",
+      "role": "closed_corpus_screening_development",
+      "source_families": ["cohen-2006"],
+      "license_evidence": "Upstream repository MIT license. Review underlying article abstract rights separately before redistribution.",
+      "artifacts": [
+        {"path": "ace.csv", "url": "https://raw.githubusercontent.com/asreview/systematic-review-datasets/38b35218e4d0f99621cec5a8a25a0147bb88c654/datasets/Cohen_2006/output/online/ACEInhibitors.csv", "sha256": "67bc0b3ad9bd9d98610cfe124336fb192a19a921dfb6ac52ee486caac64fd27f", "kind": "cohen_csv"}
+      ]
+    },
+    {
+      "id": "synergy-plus-muthu",
+      "name": "SYNERGY+ Muthu 2020",
+      "revision": "d6c46f32bd0e325a64eafa9da6dd3bdb9db5579f",
+      "source": "https://github.com/asreview/synergy-dataset/tree/d6c46f32bd0e325a64eafa9da6dd3bdb9db5579f/Muthu_2020",
+      "role": "closed_corpus_screening_development",
+      "source_families": ["muthu-2020"],
+      "license_evidence": "Previously acquired public benchmark files. No blanket redistribution right is assumed for article metadata or abstracts.",
+      "artifacts": [
+        {"path": "Muthu_2020/metadata.json", "url": "https://raw.githubusercontent.com/asreview/synergy-dataset/d6c46f32bd0e325a64eafa9da6dd3bdb9db5579f/Muthu_2020/metadata.json", "sha256": "a8d94627257d8beeb978b54bcfd30a671f747ebd94f281b6c582e9963cdbe35e", "kind": "object"},
+        {"path": "Muthu_2020/labels.csv", "url": "https://raw.githubusercontent.com/asreview/synergy-dataset/d6c46f32bd0e325a64eafa9da6dd3bdb9db5579f/Muthu_2020/labels.csv", "sha256": "0797ea2f25a1d532a6108f2d3f8b5539cdcfbcd010499bdb8dac7af0abc64e87", "kind": "synergy_csv"},
+        {"path": "Muthu_2020/works_1.zip", "url": "https://raw.githubusercontent.com/asreview/synergy-dataset/d6c46f32bd0e325a64eafa9da6dd3bdb9db5579f/Muthu_2020/works_1.zip", "sha256": "23843fe4520b8c1a30e829e71b2c635baa5f903b508ce4b2d43ddbec84da5577", "kind": "zip"}
+      ]
+    },
+    {
+      "id": "trialreviewbench",
+      "name": "TrialReviewBench",
+      "revision": "6dfc322004341212eb905a6874ccfae416b9f9f5",
+      "source": "https://huggingface.co/datasets/zifeng-ai/TrialReviewBench/tree/6dfc322004341212eb905a6874ccfae416b9f9f5",
+      "role": "external_task_evaluation_only",
+      "source_families": ["trialreviewbench"],
+      "license_evidence": "Apache-2.0 dataset card recorded in Phase 3. Oncology-heavy and not verified as RCT-only.",
+      "artifacts": [
+        {"path": "trialreviewbench/reviews.csv", "url": "https://huggingface.co/datasets/zifeng-ai/TrialReviewBench/resolve/6dfc322004341212eb905a6874ccfae416b9f9f5/TrialReviewBench-reviews.csv", "sha256": null, "kind": "review_csv"},
+        {"path": "trialreviewbench/screening.jsonl", "url": "https://huggingface.co/datasets/zifeng-ai/TrialReviewBench/resolve/6dfc322004341212eb905a6874ccfae416b9f9f5/TrialReviewBench-study-search-screening.jsonl", "sha256": null, "kind": "review_jsonl"}
+      ]
+    },
+    {
+      "id": "csmed",
+      "name": "CSMeD source inventory",
+      "revision": "b30e9739939f52b1e799295138791f1fd5b002a5",
+      "source": "https://github.com/WojciechKusa/systematic-review-datasets/tree/b30e9739939f52b1e799295138791f1fd5b002a5",
+      "role": "source_inventory_only",
+      "source_families": ["cohen-2006", "csmed-other-unmapped"],
+      "license_evidence": "Repository Apache-2.0. Constituent corpus licenses and study-family overlap need review before data import.",
+      "artifacts": [
+        {"path": "csmed/README.md", "url": "https://raw.githubusercontent.com/WojciechKusa/systematic-review-datasets/b30e9739939f52b1e799295138791f1fd5b002a5/README.md", "sha256": "aac09e59a7589ce9d3f125b34fe130900e8e0b5c3b6f0546ed8860e1fa485841", "kind": "csmed_inventory"},
+        {"path": "csmed/LICENSE", "url": "https://raw.githubusercontent.com/WojciechKusa/systematic-review-datasets/b30e9739939f52b1e799295138791f1fd5b002a5/LICENSE", "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4", "kind": "text"}
+      ]
+    },
+    {
+      "id": "leads",
+      "name": "LEADS and LEADSInstruct",
+      "revision": null,
+      "source": "https://doi.org/10.1038/s41467-025-62058-5",
+      "role": "source_review_required",
+      "source_families": ["leads-unmapped"],
+      "license_evidence": "Phase 3 recorded an MIT model and dataset card. Pin task data, verify source-level rights and reconcile overlaps before use. No model-weight download.",
+      "artifacts": []
+    }
+  ]
+}

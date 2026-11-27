@@ -127,3 +127,26 @@ paper using title terms without relying on a hyphenated acronym
 alone. Check the recent Chagas reviews before considering a separate
 update, and rotate if that scope does not approach seven independent
 eligible trials. No change to adjudication or qualification gates.
+
+## Research Academy checkpoint
+
+Start from [Research Academy](docs/RESEARCH_ACADEMY.md), the
+[development nominations](benchmarks/academy/nominations.json),
+and the [benchmark admission protocol](docs/ACADEMY_BENCHMARK_INTAKE.md).
+The 30 nominated cases are development-exposed and have no trusted
+scientific labels. The independent evaluation manifest is empty
+pending fresh case recruitment and two authorized reviewer judgments
+per case. Keep all current FIRST-CHOICE gates in force.
+
+The CAMERA-MRI II October report describes an existing randomized
+population stratified by fibrosis. Exclude it from new independent trial
+counts. The Academy workflow starts external source intake, historical
+replay, CPU screening and report-level controls. Live cardiology
+rotation 4 and fixed-anchor surgery rotation 2 run in parallel.
+
+Published live discovery rotation run `45956744925` for the Academy
+development period. The historical intake retrieved one pinned
+completed original/update review pair from a catalog of 25. Its
+publication-date proxy is separate from the sealed benchmark and from
+true Methods cutoffs. Use its retrieved report coverage to diagnose
+the next replay, with development labels outside model input.

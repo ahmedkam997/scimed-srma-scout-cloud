@@ -64,3 +64,22 @@
   The search is a bounded screen, so any date or comparator match
   requires verification against original trial methods.
   [Narrow follow-up](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45894434834)
+
+- Academy CPU screening paired two seeds on the same filtered SYNERGY+
+  Muthu corpus, with one oracle positive and one oracle negative per
+  seed. Naive Bayes reached 95% reference recall after 590 and 602
+  decisions; SVM required 699 and 703. Expected random ordering
+  required 836 decisions. These are in-corpus development simulations,
+  with all 20 corpus positives eventually found in each run.
+  [Paired CPU results](benchmarks/academy/screening-development.json)
+
+- Imported and checksum-verified a completed original/update review
+  pair from the Alharbi and Stevenson public corpus. Cochrane CD000160
+  (patch angioplasty versus primary closure for carotid endarterectomy)
+  has original and updated publications dated 17 May 1996 and 8 July
+  2009. The imported reference lists have six original included reports
+  and one report newly listed in the update. The hosted comparison uses
+  equal budgets for a population-only search and explicit comparison.
+  The publication-date window is a proxy. Actual review search
+  cutoffs, new independent participants and usability are unresolved.
+  [Pinned review update corpus](https://github.com/Amal-Alharbi/Systematic_Reviews_Update/tree/35a78b615d9c9dbdd889c55a61e5032b3cc309c6)

@@ -25,3 +25,15 @@
   EFetch recovered the four publisher DOIs, but the local proxy denied
   DOI resolution. Try the publisher pages on an authorized hosted runner
   before treating full-text access as exhausted. [OAI and DOI audit](https://github.com/ahmedkam997/scimed-srma-scout-cloud/actions/runs/45892819750)
+
+- The Academy's 30 nominations were exposed during development.
+  A separate 30-case test panel needs fresh, nonoverlapping source
+  families, verified historical cutoffs, and two genuine independent
+  reviewer approvals per case. The private reviewer credentials and
+  judgments have not been supplied. The initial admission report
+  therefore remains unready.
+- CSMeD inventory confirms reused literature collections and cannot
+  be assumed independent. TrialReviewBench hosted acquisition needs
+  schema validation and a pinned trusted digest before promotion.
+  LEADS corpus and model licensing and independent task labels
+  require separate clearance.
