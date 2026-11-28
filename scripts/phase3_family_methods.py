@@ -66,7 +66,7 @@ def as_row(pmid, metadata):
     return {
         "source": "PubMed", "source_record_id": pmid,
         "title": metadata.get("pubmed_efetch_title", ""),
-        "payload": {"url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/", "metadata": metadata},
+        "payload": {"url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/", "year": metadata.get("publication_year"), "metadata": metadata},
     }
 
 

@@ -1,0 +1,60 @@
+name: pubmed-inventory-development
+on:
+  pull_request:
+    branches: [autonomous-scientist-v10]
+    paths:
+      - '.github/workflows/pubmed-inventory-development.yml'
+      - 'src/scimed_scout/discovery/pubmed_id_inventory.py'
+      - 'tests/test_pubmed_id_inventory.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pubmed-inventory-development
+  cancel-in-progress: false
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e '.[dev]'
+      - run: python -m pytest -q tests/test_pubmed_id_inventory.py
+      - name: Replay known historical reference reports with resumable inventory
+        env:
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+        run: |
+          python - <<'PY'
+          from datetime import date
+          import json
+          from pathlib import Path
+          from scimed_scout.sources.pubmed import PubMedSource
+          from scimed_scout.discovery.pubmed_id_inventory import initial,step
+          from scripts.v2_historical_replay_dev import REFERENCE,DRUG,RCT,NARROW,BROAD,STRATEGIES,retrieve
+          client=PubMedSource(sort="relevance")
+          state=initial(f"{DRUG} AND ({NARROW} OR {BROAD}) AND {RCT}",end=date(2017,10,31))
+          reports=[]
+          for i in range(24):
+              if not state["pending"]:break
+              reports.append(step(state,client,cap=1000))
+              state=json.loads(json.dumps(state))
+              if reports[-1]["status"]=="STORAGE_LIMIT":break
+          targets=set(REFERENCE["linked_reports"])-set(REFERENCE["excluded_from_rct_oriented_report_metric"])
+          top,audit=retrieve(client,STRATEGIES["dual_route"])
+          result={"split":"development","references":len(targets),"top100_hits":sorted(top&targets),"inventory_hits":sorted(set(state["ids"])&targets),"inventory_size":len(state["ids"]),"query_enumeration_complete":state["query_enumeration_complete"],"pending":len(state["pending"]),"unresolved":len(state["unresolved"]),"source_calls":len(reports),"top_routes":audit,"historical_index_snapshot":False,"qualification_granted":False}
+          print("INVENTORY_REPLAY",json.dumps(result),flush=True)
+          Path("inventory-replay.json").write_text(json.dumps(result,indent=2))
+          Path("inventory-state.json").write_text(json.dumps(state,indent=2))
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: pubmed-inventory-development
+          path: |
+            inventory-state.json
+            inventory-replay.json
+          retention-days: 14

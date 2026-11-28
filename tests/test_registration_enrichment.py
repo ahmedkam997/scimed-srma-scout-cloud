@@ -103,3 +103,15 @@ def test_bioc_third_route_links_only_verified_methods_within_budget():
     obj[0]["documents"][0]["passages"][0]["text"]="The trial is registered with ClinicalTrials.gov (NCT03619213)."
     obj[0]["documents"][0]["passages"][0]["infons"]["section_type"]="DISCUSS"
     assert extract_bioc_registration(b,json.dumps(obj).encode(),source_url="test") is None
+
+def test_fair_reuses_exact_prior_evidence_without_network_call():
+    from scimed_scout.discovery.registration_enrichment import enrich_fair
+    original=row()
+    _,first=enrich_fair([original],fetcher=lambda _:xml("The trial is registered with ClinicalTrials.gov (NCT03619213)."),max_lookups=1)
+    def unexpected(url):raise AssertionError("cached exact record should not be fetched again")
+    revised,second=enrich_fair([original],fetcher=unexpected,max_lookups=1,previous=first)
+    assert second["source_calls"]==0
+    assert revised[0]["payload"]["metadata"]["trial_registration_id"]=="NCT03619213"
+    changed=row(pmid="999")
+    revised,_=enrich_fair([changed],max_lookups=0,previous=first)
+    assert revised==[changed]

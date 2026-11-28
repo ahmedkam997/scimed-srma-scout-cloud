@@ -1,0 +1,68 @@
+name: pubmed-inventory-resume
+on:
+  pull_request:
+    branches: [autonomous-scientist-v10]
+    paths:
+      - '.github/workflows/pubmed-inventory-resume.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: pubmed-inventory-resume
+  cancel-in-progress: false
+jobs:
+  resume:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e '.[dev]'
+      - run: python -m pytest -q tests/test_pubmed_id_inventory.py
+      - name: Restore verified original inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/46069682753" | jq -e --arg repo "$GITHUB_REPOSITORY" '.head_repository.full_name==$repo and .head_sha=="5d3758cf9ef6a4bd27394f68a829f09543baeac5" and .conclusion=="success"' >/dev/null
+          gh run download 46069682753 --repo "$GITHUB_REPOSITORY" --name pubmed-inventory-development --dir previous
+          test -s previous/inventory-state.json
+      - name: Continue pending date partitions instead of restarting
+        env:
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          SCIMED_CONTACT_EMAIL: ${{ secrets.SCIMED_CONTACT_EMAIL }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from scimed_scout.sources.pubmed import PubMedSource
+          from scimed_scout.discovery.pubmed_id_inventory import step
+          from scripts.v2_historical_replay_dev import REFERENCE
+          s=json.loads(Path("previous/inventory-state.json").read_text())
+          old=set(s["ids"]);reports=[]
+          targets=set(REFERENCE["linked_reports"])-set(REFERENCE["excluded_from_rct_oriented_report_metric"])
+          assert s["qualification_granted"] is False and s["date_range"][1]=="2017-10-31"
+          c=PubMedSource(sort="relevance")
+          for _ in range(24):
+              if not s["pending"]:break
+              reports.append(step(s,c,cap=1000))
+              if reports[-1]["status"]=="STORAGE_LIMIT":break
+          assert old<=set(s["ids"])
+          result={"old_ids":len(old),"new_ids":len(s["ids"]),"old_reference_hits":sorted(old&targets),"new_reference_hits":sorted(set(s["ids"])&targets),"reference_total":len(targets),"pending":len(s["pending"]),"unresolved":len(s["unresolved"]),"query_enumeration_complete":s["query_enumeration_complete"],"source_calls":len(reports),"historical_index_snapshot":False,"qualification_granted":False}
+          print("RESUMED_INVENTORY",json.dumps(result),flush=True)
+          Path("inventory-state.json").write_text(json.dumps(s,indent=2))
+          Path("resume-result.json").write_text(json.dumps(result,indent=2))
+          Path("partition-audit.json").write_text(json.dumps(reports,indent=2))
+          PY
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: resumed-pubmed-inventory
+          path: |
+            inventory-state.json
+            resume-result.json
+            partition-audit.json
+          retention-days: 14
